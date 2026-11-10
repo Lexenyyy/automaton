@@ -24,7 +24,7 @@ import type {
   InputSource,
   ModelStrategyConfig,
 } from "../types.js";
-import { DEFAULT_MODEL_STRATEGY_CONFIG } from "../types.js";
+import { DEFAULT_MODEL_STRATEGY_CONFIG, DEFAULT_TREASURY_POLICY } from "../types.js";
 import type { PolicyEngine } from "./policy-engine.js";
 import { buildSystemPrompt, buildWakeupPrompt } from "./system-prompt.js";
 import { buildContextMessages, trimContext } from "./context.js";
@@ -47,7 +47,7 @@ import {
 import type { InboxMessageRow } from "../state/database.js";
 import { ulid } from "ulid";
 import { ModelRegistry } from "../inference/registry.js";
-import { InferenceBudgetTracker } from "../inference/budget.js";
+import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
 import { InferenceRouter } from "../inference/router.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
@@ -121,7 +121,11 @@ export async function runAgentLoop(
     const { discoverOllamaModels } = await import("../ollama/discover.js");
     await discoverOllamaModels(ollamaBaseUrl, db.raw);
   }
-  const budgetTracker = new InferenceBudgetTracker(db.raw, modelStrategyConfig);
+  // Enforce the stricter of the two daily inference caps (model strategy vs treasury).
+  const budgetTracker = new InferenceBudgetTracker(db.raw, {
+    ...modelStrategyConfig,
+    dailyBudgetCents: resolveDailyInferenceCap(modelStrategyConfig, config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY),
+  });
   const inferenceRouter = new InferenceRouter(db.raw, modelRegistry, budgetTracker);
 
   // Optional orchestration bootstrap (requires V9 goals/task tables)
@@ -611,6 +615,26 @@ export async function runAgentLoop(
         },
         (msgs, opts) => inference.chat(msgs, { ...opts, tools: inferenceTools }),
       );
+
+      // ── Budget stop ──
+      // The router refused the call (per-call, hourly, daily or session cap).
+      // No inference ran and nothing was spent. Don't record an empty turn or
+      // spin through more turns: put claimed inbox messages back and sleep
+      // until the next UTC hour (at least 5 minutes), then check again.
+      if (routerResult.finishReason === "budget_exceeded") {
+        log(config, `[BUDGET] ${routerResult.content}`);
+        if (claimedMessages.length > 0) {
+          resetInboxToReceived(db.raw, claimedMessages.map((m) => m.id));
+        }
+        const nextHour = new Date();
+        nextHour.setUTCMinutes(60, 0, 0);
+        const wakeAt = Math.max(nextHour.getTime(), Date.now() + 5 * 60_000);
+        db.setKV("sleep_until", new Date(wakeAt).toISOString());
+        db.setAgentState("sleeping");
+        onStateChange?.("sleeping");
+        running = false;
+        break;
+      }
 
       // Build a compatible response for the rest of the loop
       const response = {

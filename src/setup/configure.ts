@@ -246,6 +246,10 @@ async function configureModelStrategy(config: AutomatonConfig): Promise<void> {
   s.maxTokensPerTurn = maxTokens;
   config.maxTokensPerTurn = maxTokens;
 
+  s.dailyBudgetCents = await askNumber(
+    "Daily inference budget (cents, 0 = unlimited)",
+    s.dailyBudgetCents,
+  );
   s.hourlyBudgetCents = await askNumber(
     "Hourly inference budget (cents, 0 = unlimited)",
     s.hourlyBudgetCents,

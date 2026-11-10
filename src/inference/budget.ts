@@ -7,7 +7,7 @@
 
 import type BetterSqlite3 from "better-sqlite3";
 import { ulid } from "ulid";
-import type { InferenceCostRow, ModelStrategyConfig } from "../types.js";
+import type { InferenceCostRow, ModelStrategyConfig, TreasuryPolicy } from "../types.js";
 import {
   inferenceInsertCost,
   inferenceGetSessionCosts,
@@ -17,6 +17,21 @@ import {
 } from "../state/database.js";
 
 type Database = BetterSqlite3.Database;
+
+/**
+ * Resolve the daily inference cap from both config sources.
+ * Returns the strictest positive limit; 0 means neither source sets a limit.
+ * Invalid values (negative, NaN, Infinity) are ignored.
+ */
+export function resolveDailyInferenceCap(
+  strategy: Pick<ModelStrategyConfig, "dailyBudgetCents">,
+  treasury: Pick<TreasuryPolicy, "maxInferenceDailyCents"> | undefined,
+): number {
+  const limits = [strategy.dailyBudgetCents, treasury?.maxInferenceDailyCents].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0,
+  );
+  return limits.length > 0 ? Math.min(...limits) : 0;
+}
 
 export class InferenceBudgetTracker {
   private db: Database;
@@ -50,6 +65,17 @@ export class InferenceBudgetTracker {
         return {
           allowed: false,
           reason: `Hourly budget exhausted: ${hourlyCost}c spent + ${estimatedCostCents}c estimated > ${this.config.hourlyBudgetCents}c limit`,
+        };
+      }
+    }
+
+    // Daily budget check (UTC day)
+    if (this.config.dailyBudgetCents > 0) {
+      const dailyCost = this.getDailyCost();
+      if (dailyCost + estimatedCostCents > this.config.dailyBudgetCents) {
+        return {
+          allowed: false,
+          reason: `Daily inference budget exhausted: ${dailyCost}c spent + ${estimatedCostCents}c estimated > ${this.config.dailyBudgetCents}c limit`,
         };
       }
     }

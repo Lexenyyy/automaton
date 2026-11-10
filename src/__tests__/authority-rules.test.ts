@@ -581,7 +581,7 @@ describe("Financial Phase 1 Rules", () => {
       });
       const spendTracker = createMockSpendTracker({
         getDailySpend: (category: SpendCategory) =>
-          category === "inference" ? 100 : 0, // Under the 500 default cap
+          category === "inference" ? 50 : 0, // Under the 100 default cap
       });
       const request = createRequest(tool, {}, "agent", undefined, spendTracker);
 
@@ -682,7 +682,7 @@ describe("Treasury Config", () => {
     expect(DEFAULT_TREASURY_POLICY.x402AllowedDomains).toEqual(["conway.tech"]);
     expect(DEFAULT_TREASURY_POLICY.transferCooldownMs).toBe(0);
     expect(DEFAULT_TREASURY_POLICY.maxTransfersPerTurn).toBe(1);
-    expect(DEFAULT_TREASURY_POLICY.maxInferenceDailyCents).toBe(500);
+    expect(DEFAULT_TREASURY_POLICY.maxInferenceDailyCents).toBe(100);
     expect(DEFAULT_TREASURY_POLICY.requireConfirmationAboveCents).toBe(100);
   });
 

@@ -593,7 +593,7 @@ export const DEFAULT_TREASURY_POLICY: TreasuryPolicy = {
   x402AllowedDomains: ['conway.tech'],
   transferCooldownMs: 0,
   maxTransfersPerTurn: 1,
-  maxInferenceDailyCents: 500,
+  maxInferenceDailyCents: 100, // $1/day during testing (CLAUDE.md rule 3)
   requireConfirmationAboveCents: 100,
 };
 
@@ -1241,9 +1241,12 @@ export interface ModelStrategyConfig {
   lowComputeModel: string;
   criticalModel: string;
   maxTokensPerTurn: number;
-  hourlyBudgetCents: number; // default: 0 (no limit)
+  /** Daily inference cap in cents (UTC day); 0 = no limit. The loop enforces the
+   *  stricter of this and treasuryPolicy.maxInferenceDailyCents. */
+  dailyBudgetCents: number; // fork default: 100 ($1/day)
+  hourlyBudgetCents: number; // 0 = no limit; fork default: 25
   sessionBudgetCents: number; // default: 0 (no limit)
-  perCallCeilingCents: number; // default: 0 (no limit)
+  perCallCeilingCents: number; // 0 = no limit; fork default: 5
   enableModelFallback: boolean; // default: true
   anthropicApiVersion: string; // default: "2023-06-01"
 }
@@ -1253,9 +1256,10 @@ export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   lowComputeModel: "gpt-4.1-nano",
   criticalModel: "gpt-4.1-nano",
   maxTokensPerTurn: 4096,
-  hourlyBudgetCents: 0,
+  dailyBudgetCents: 100,
+  hourlyBudgetCents: 25,
   sessionBudgetCents: 0,
-  perCallCeilingCents: 0,
+  perCallCeilingCents: 5,
   enableModelFallback: true,
   anthropicApiVersion: "2023-06-01",
 };

@@ -72,3 +72,31 @@
   - Unchanged: the deprecated `survival/low-compute.ts` and `setLowComputeMode` fallbacks (the router
     no longer uses them). Groq/Ollama setups still get the OpenAI baseline from the matrix, which
     needs its own design.
+- 2026-11-10: **Change 1c: real inference budgets, $1/day cap for testing.**
+  Before this change, `InferenceBudgetTracker` had no daily check, and every limit defaulted to 0 (no limit).
+  | Setting | Before | After |
+  |---|---|---|
+  | `modelStrategy.dailyBudgetCents` (new) | – | 100 ($1/day, UTC day) |
+  | `modelStrategy.hourlyBudgetCents` | 0 | 25 |
+  | `modelStrategy.perCallCeilingCents` | 0 | 5 |
+  | `modelStrategy.sessionBudgetCents` | 0 | 0 (unchanged; session id is often `"default"`, so a cap would be a lifetime cap) |
+  | `treasuryPolicy.maxInferenceDailyCents` | 500 | 100 |
+  - The loop enforces whichever daily cap is stricter, the model-strategy one or the treasury one
+    (`resolveDailyInferenceCap`). A saved config with a looser value in one place is still limited
+    by the other.
+  - Router cost estimate: it now uses the real call's `maxTokens` (before, it assumed 1000 output
+    tokens while calls could use 4096 to 8192) and counts the tool schemas sent with each request.
+  - Budget stop in the loop: when the router refuses a call, the loop now records no turn, puts
+    claimed inbox messages back, and sleeps until the next UTC hour (at least 5 minutes). Before, it
+    spun through up to 25 empty turns and slept only 2 minutes.
+  - `configure` asks for the daily budget.
+  - Tests:
+    - New: daily cap allow and deny, the router refusing without calling the model, the estimate
+      using the preference's `maxTokens`, `resolveDailyInferenceCap`, and the loop budget stop.
+    - Four existing tests checked one limit while assuming all the others were 0. They now set the
+      other limits to 0 explicitly. The inference-cap rule test spends 50 instead of 100 to stay under
+      the new 100 cap. No production limit was loosened.
+  - Still open (ROADMAP Phase 1): calls that bypass the router (compression, planner, orchestrator,
+    plan-mode, summarization, harnesses) are not capped yet. Old saved `modelStrategy` values still
+    override the defaults. Recorded costs are rounded up to whole cents per call (at least 1¢), which
+    overcounts, so it errs on the safe side.

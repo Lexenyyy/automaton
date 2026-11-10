@@ -24,7 +24,8 @@ import {
 } from "../state/database.js";
 import { ModelRegistry } from "../inference/registry.js";
 import { InferenceRouter } from "../inference/router.js";
-import { InferenceBudgetTracker } from "../inference/budget.js";
+import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
+import { DEFAULT_TREASURY_POLICY } from "../types.js";
 import {
   STATIC_MODEL_BASELINE,
   DEFAULT_ROUTING_MATRIX,
@@ -364,6 +365,10 @@ describe("InferenceRouter", () => {
       const sessionBudget = new InferenceBudgetTracker(db, {
         ...DEFAULT_MODEL_STRATEGY_CONFIG,
         sessionBudgetCents: 5,
+        // isolate the session check
+        perCallCeilingCents: 0,
+        hourlyBudgetCents: 0,
+        dailyBudgetCents: 0,
       });
       const sessionRouter = new InferenceRouter(db, registry, sessionBudget);
 
@@ -559,6 +564,9 @@ describe("InferenceBudgetTracker", () => {
     const tracker = new InferenceBudgetTracker(db, {
       ...DEFAULT_MODEL_STRATEGY_CONFIG,
       hourlyBudgetCents: 100,
+      // isolate the hourly check
+      perCallCeilingCents: 0,
+      dailyBudgetCents: 0,
     });
 
     // Record some existing costs to push over the limit
@@ -585,7 +593,13 @@ describe("InferenceBudgetTracker", () => {
   });
 
   it("checkBudget allows when no limits are set (0 = unlimited)", () => {
-    const tracker = new InferenceBudgetTracker(db, DEFAULT_MODEL_STRATEGY_CONFIG);
+    const tracker = new InferenceBudgetTracker(db, {
+      ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      dailyBudgetCents: 0,
+      hourlyBudgetCents: 0,
+      sessionBudgetCents: 0,
+      perCallCeilingCents: 0,
+    });
 
     const result = tracker.checkBudget(9999, "gpt-4.1");
     expect(result.allowed).toBe(true);
@@ -974,8 +988,107 @@ describe("DEFAULT_MODEL_STRATEGY_CONFIG", () => {
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-4.1-nano");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-4.1-nano");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.enableModelFallback).toBe(true);
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.hourlyBudgetCents).toBe(0); // no limit
+    // Fork budgets (change 1c): $1/day testing cap
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.dailyBudgetCents).toBe(100);
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.hourlyBudgetCents).toBe(25);
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.sessionBudgetCents).toBe(0); // no limit
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.perCallCeilingCents).toBe(0); // no limit
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.perCallCeilingCents).toBe(5);
+  });
+});
+
+// ─── Daily Inference Cap (change 1c) ──────────────────────────────
+
+describe("daily inference cap", () => {
+  const spend = (tracker: InferenceBudgetTracker, cents: number) =>
+    tracker.recordCost({
+      sessionId: "daily",
+      turnId: null,
+      model: "gpt-4.1-mini",
+      provider: "openai",
+      inputTokens: 1000,
+      outputTokens: 500,
+      costCents: cents,
+      latencyMs: 100,
+      tier: "normal",
+      taskType: "agent_turn",
+      cacheHit: false,
+    });
+
+  it("allows a call that stays within the daily budget", () => {
+    const tracker = new InferenceBudgetTracker(db, {
+      ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      hourlyBudgetCents: 0,
+      dailyBudgetCents: 100,
+    });
+    spend(tracker, 95);
+    expect(tracker.checkBudget(5, "gpt-4.1-mini").allowed).toBe(true);
+  });
+
+  it("denies a call that would pass the daily budget", () => {
+    const tracker = new InferenceBudgetTracker(db, {
+      ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      hourlyBudgetCents: 0,
+      dailyBudgetCents: 100,
+    });
+    spend(tracker, 99);
+    const result = tracker.checkBudget(2, "gpt-4.1-mini");
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Daily inference budget exhausted");
+  });
+
+  it("router returns budget_exceeded once the daily budget is spent", async () => {
+    const tracker = new InferenceBudgetTracker(db, {
+      ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      hourlyBudgetCents: 0,
+    });
+    spend(tracker, 100);
+    const registry = new ModelRegistry(db);
+    registry.initialize();
+    const r = new InferenceRouter(db, registry, tracker);
+    let called = false;
+    const result = await r.route(
+      { messages: [{ role: "user", content: "hi" }], taskType: "agent_turn", tier: "normal", sessionId: "s" },
+      async () => {
+        called = true;
+        return { message: { content: "x" }, usage: { promptTokens: 1, completionTokens: 1 }, finishReason: "stop" };
+      },
+    );
+    expect(result.finishReason).toBe("budget_exceeded");
+    expect(called).toBe(false);
+  });
+
+  it("estimate uses the routing preference's maxTokens, not a fixed 1000", async () => {
+    // high/planning: gpt-4.1-mini, maxTokens 8192 -> output estimate 8192*16/100000 = 1.31c -> 2c.
+    // With the old fixed 1000-token estimate this would be 1c and pass a 1c ceiling.
+    const tracker = new InferenceBudgetTracker(db, {
+      ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      perCallCeilingCents: 1,
+    });
+    const registry = new ModelRegistry(db);
+    registry.initialize();
+    const r = new InferenceRouter(db, registry, tracker);
+    const result = await r.route(
+      { messages: [{ role: "user", content: "plan" }], taskType: "planning", tier: "high", sessionId: "s" },
+      async () => ({ message: { content: "x" }, usage: { promptTokens: 1, completionTokens: 1 }, finishReason: "stop" }),
+    );
+    expect(result.finishReason).toBe("budget_exceeded");
+    expect(result.content).toContain("Per-call cost 2c");
+  });
+
+  describe("resolveDailyInferenceCap", () => {
+    it("picks the stricter positive limit", () => {
+      expect(resolveDailyInferenceCap({ dailyBudgetCents: 100 }, { maxInferenceDailyCents: 500 })).toBe(100);
+      expect(resolveDailyInferenceCap({ dailyBudgetCents: 300 }, { maxInferenceDailyCents: 50 })).toBe(50);
+    });
+
+    it("ignores 0 (no limit) and invalid values on one side", () => {
+      expect(resolveDailyInferenceCap({ dailyBudgetCents: 0 }, { maxInferenceDailyCents: 100 })).toBe(100);
+      expect(resolveDailyInferenceCap({ dailyBudgetCents: 100 }, undefined)).toBe(100);
+      expect(resolveDailyInferenceCap({ dailyBudgetCents: -5 }, { maxInferenceDailyCents: NaN })).toBe(0);
+    });
+
+    it("defaults resolve to $1/day", () => {
+      expect(resolveDailyInferenceCap(DEFAULT_MODEL_STRATEGY_CONFIG, DEFAULT_TREASURY_POLICY)).toBe(100);
+    });
   });
 });

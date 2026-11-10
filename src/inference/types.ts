@@ -184,9 +184,10 @@ export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   lowComputeModel: "gpt-4.1-nano",
   criticalModel: "gpt-4.1-nano",
   maxTokensPerTurn: 4096,
-  hourlyBudgetCents: 0,
+  dailyBudgetCents: 100,
+  hourlyBudgetCents: 25,
   sessionBudgetCents: 0,
-  perCallCeilingCents: 0,
+  perCallCeilingCents: 5,
   enableModelFallback: true,
   anthropicApiVersion: "2023-06-01",
 };

@@ -61,11 +61,17 @@ export class InferenceRouter {
       };
     }
 
-    // 2. Estimate cost and check budget
-    const estimatedTokens = messages.reduce((sum, m) => sum + (m.content?.length || 0) / 4, 0);
+    // 2. Estimate cost and check budget.
+    //    Use the same maxTokens the real call will use, and count the tool
+    //    schemas sent with the request, so the estimate is not too low.
+    const preference = this.getPreference(tier, taskType);
+    const maxTokens = request.maxTokens || preference?.maxTokens || model.maxTokens;
+    const toolChars = tools && tools.length > 0 ? JSON.stringify(tools).length : 0;
+    const estimatedTokens =
+      (messages.reduce((sum, m) => sum + (m.content?.length || 0), 0) + toolChars) / 4;
     const estimatedCostCents = Math.ceil(
       (estimatedTokens / 1000) * model.costPer1kInput / 100 +
-      (request.maxTokens || 1000) / 1000 * model.costPer1kOutput / 100,
+      maxTokens / 1000 * model.costPer1kOutput / 100,
     );
 
     const budgetCheck = this.budget.checkBudget(estimatedCostCents, model.modelId);
@@ -102,9 +108,7 @@ export class InferenceRouter {
     // 4. Transform messages for provider
     const transformedMessages = this.transformMessagesForProvider(messages, model.provider);
 
-    // 5. Build inference options
-    const preference = this.getPreference(tier, taskType);
-    const maxTokens = request.maxTokens || preference?.maxTokens || model.maxTokens;
+    // 5. Build inference options (maxTokens resolved in step 2)
     const timeout = TASK_TIMEOUTS[taskType] || 120_000;
 
     const inferenceOptions: any = {

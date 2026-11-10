@@ -18,6 +18,7 @@ import {
   noToolResponse,
 } from "./mocks.js";
 import type { AutomatonDatabase, AgentTurn, AgentState } from "../types.js";
+import { inferenceInsertCost } from "../state/database.js";
 
 describe("Agent Loop", () => {
   let db: AutomatonDatabase;
@@ -136,6 +137,42 @@ describe("Agent Loop", () => {
 
     expect(db.getAgentState()).toBe("sleeping");
     expect(db.getKV("sleep_until")).toBeDefined();
+  });
+
+  it("budget stop: sleeps without calling the model when the daily cap is spent", async () => {
+    // Fill today's inference budget ($1/day default).
+    inferenceInsertCost(db.raw, {
+      sessionId: "earlier",
+      turnId: null,
+      model: "gpt-4.1-mini",
+      provider: "openai",
+      inputTokens: 1000,
+      outputTokens: 500,
+      costCents: 100,
+      latencyMs: 100,
+      tier: "normal",
+      taskType: "agent_turn",
+      cacheHit: false,
+    });
+
+    const inference = new MockInferenceClient([noToolResponse("should not run")]);
+    const turns: AgentTurn[] = [];
+    const before = Date.now();
+
+    await runAgentLoop({
+      identity,
+      config,
+      db,
+      conway,
+      inference,
+      onTurnComplete: (turn) => turns.push(turn),
+    });
+
+    expect(inference.calls.length).toBe(0);
+    expect(turns.length).toBe(0);
+    expect(db.getAgentState()).toBe("sleeping");
+    const sleepUntil = new Date(db.getKV("sleep_until")!).getTime();
+    expect(sleepUntil).toBeGreaterThanOrEqual(before + 5 * 60_000);
   });
 
   it("idle auto-sleep on no tool calls", async () => {

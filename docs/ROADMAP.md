@@ -51,8 +51,10 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         all tool calls, which is misleading. This is cleanup only.
   - [ ] **Route all inference through the budget tracker.** The main loop uses `InferenceRouter`, which checks
         budgets, but compression, planner, orchestrator, plan-mode, context summarization and harnesses call
-        `inference.chat` directly. Those calls skip the budget checks and the cost record. Also,
-        `maxInferenceDailyCents` limits nothing today, because nothing records `inference` spend.
+        `inference.chat` directly. Those calls skip the budget checks and the cost record.
+        (Done in change 1c for the main loop: the router now enforces a $1/day cap, the stricter of
+        `modelStrategy.dailyBudgetCents` and `maxInferenceDailyCents`. The policy rule
+        `financial.inference_daily_cap` still sees no `inference` spend.)
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
