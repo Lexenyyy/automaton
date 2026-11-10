@@ -100,3 +100,11 @@
     plan-mode, summarization, harnesses) are not capped yet. Old saved `modelStrategy` values still
     override the defaults. Recorded costs are rounded up to whole cents per call (at least 1¢), which
     overcounts, so it errs on the safe side.
+- 2026-11-10: **Docs: card payments added to the plan.**
+  - ROADMAP Phase 5a: card payments via Stripe Checkout (cards, Apple Pay, Google Pay) alongside
+    x402/USDC. Checkout is hosted, so the agent never sees card data. Payments are confirmed by signed
+    webhooks. The owner owns the Stripe account, and we use test mode until Phase 8. Stripe secrets
+    fall under CLAUDE.md rule 5. "Done when" now also needs a Stripe test-mode payment confirmed by a
+    signed webhook.
+  - Change 3 (CLAUDE.md) and ROADMAP Phase 3: the balance/ledger must count both USDC and Stripe revenue.
+  - ROADMAP Phase 8: VAT/tax setup checked with an accountant before taking real card payments.

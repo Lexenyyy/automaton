@@ -65,5 +65,5 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 ## Planned order of first changes
 1. Tighten `DEFAULT_TREASURY_POLICY`.
 2. Add a testnet (Base Sepolia) mode.
-3. Replace the Conway-only balance source.
+3. Replace the Conway-only balance source. The balance/ledger must count both USDC and Stripe revenue.
 4. Replace `exposePort` for self-hosted VPS deployment.

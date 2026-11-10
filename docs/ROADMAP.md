@@ -69,7 +69,8 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
 - Base Sepolia only; fund with faucet test USDC
 - Balance visible to the agent each turn
 - Payment tool with code-enforced limits: per transaction, per day, recipient allowlist
-- Our own balance source replacing Conway-only `getCreditsBalance()`
+- Our own balance source replacing Conway-only `getCreditsBalance()`. The balance/ledger must count
+  both USDC and Stripe revenue (Stripe arrives in Phase 5a; design the ledger for both from the start)
 - Creator `fund` command
 Done when: testnet payment works within limits; over-limit payments are blocked by code; key never leaks.
 
@@ -81,10 +82,14 @@ Done when: draining the testnet balance moves through all tiers correctly.
 
 ## Phase 5a — Service base: general and reusable (1–2 weeks)
 - Small web server with a per-request payment endpoint (x402 or USDC invoice), with no job logic in it
+- Card payments via Stripe Checkout (cards, Apple Pay, Google Pay) alongside x402/USDC. Hosted checkout
+  only, the agent never sees card data; confirm payments via signed webhooks. Stripe account is owned
+  by the owner. Use Stripe test mode until Phase 8. The Stripe secret key and webhook signing secret
+  fall under CLAUDE.md rule 5 (never printed, logged or committed).
 - Own VPS + domain + HTTPS; replace `exposePort` (reverse proxy, e.g. Caddy) to get a public URL
 - Revenue vs cost tracking (general plumbing)
 Done when: a placeholder endpoint is reachable at the public HTTPS URL and accepts a testnet payment
-within the limits.
+within the limits, and a Stripe test-mode payment, confirmed by a signed webhook.
 
 ## CHECKPOINT — base template
 - [ ] Tag `base-v1`. STOP and tell the owner: the base template is ready. Explain how to create a new
@@ -115,6 +120,7 @@ Done when: one child runs; spawning beyond cap is blocked; kill switch stops all
 - ERC-8004 registration (re-check current spec); agent card with service and pricing
 - Security review: keys, payment limits, injection defenses, open ports
 - Base mainnet with an amount the owner can afford to lose
+- VAT/tax setup checked with an accountant before taking real card payments.
 - Alerts: tier changes, unusual spend, crashes, self-edits, spawns
 Done when: 2 weeks on mainnet within budget; every alert tested; every action auditable.
 
