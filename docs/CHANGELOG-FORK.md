@@ -45,3 +45,12 @@
     formatting, no `tsconfig` migration or dependency upgrades without approval, testnet only, and our
     spending limits. `agent-security-hardening` was clean and is unchanged.
   - CLAUDE.md wins on any conflict with these skills.
+- 2026-11-10: **Base agent template checkpoint** (docs only). ROADMAP Phase 5 is split into:
+  - 5a: the general service base (web server, payment endpoint, VPS, public URL replacing `exposePort`)
+  - a CHECKPOINT: tag `base-v1`, stop and tell the owner how to create a new agent repo from it, and
+    continue only after they confirm. Later general improvements get new tags (`base-v2`, …).
+  - 5b: the job-specific service
+
+  CLAUDE.md gets rule 7, "Reusable base": job code goes in `src/services/<job>/`, genesis prompt, skills
+  and config; prefer settings over hardcoded values; warn the owner when a change would tie the base to
+  one job; one wallet per agent, keys never shared.

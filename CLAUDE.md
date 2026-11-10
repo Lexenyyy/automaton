@@ -22,6 +22,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
    `~/.automaton/wallet.json`, API keys or `.env` files.
 6. **Do not run `node dist/index.js --run`** (starts the real agent and setup wizard) unless the
    owner asks for it.
+7. **Reusable base:** keep job-specific code in `src/services/<job>/` and in genesis prompt, skills and
+   config, never mixed into core code. Prefer settings over hardcoded values (name, prices, models,
+   limits). Warn the owner if a change would tie the base to one specific job. Each agent gets its own
+   wallet; never share keys.
 
 ## Workflow for every code change
 - Explain the plan first for anything non-trivial; the owner approves edits manually.

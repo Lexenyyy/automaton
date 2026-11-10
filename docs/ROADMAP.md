@@ -9,7 +9,7 @@ Estimates assume one developer, part-time. Total: about 4 to 6 months.
 - [x] Read architecture; map Conway dependencies (see CLAUDE.md "Phase 0 findings")
 - [x] Docker installed and working
 - [ ] Write our own genesis prompt and review `constitution.md`
-- [ ] Decide the ONE service the agent will sell (blocks Phase 5 planning)
+- [ ] Decide the ONE service the agent will sell (blocks Phase 5b)
 - [ ] Apply planned changes 1–2 from CLAUDE.md (tighter treasury limits, testnet mode)
 Done when: build passes, every `src/` folder is understood, sandbox is isolated.
 
@@ -77,12 +77,23 @@ Done when: testnet payment works within limits; over-limit payments are blocked 
 - Tier and runway in context every turn; clean shutdown at zero with owner notification
 Done when: draining the testnet balance moves through all tiers correctly.
 
-## Phase 5 — Earning (3–6 weeks, ongoing)
+## Phase 5a — Service base: general and reusable (1–2 weeks)
+- Small web server with a per-request payment endpoint (x402 or USDC invoice), with no job logic in it
+- Own VPS + domain + HTTPS; replace `exposePort` (reverse proxy, e.g. Caddy) to get a public URL
+- Revenue vs cost tracking (general plumbing)
+Done when: a placeholder endpoint is reachable at the public HTTPS URL and accepts a testnet payment
+within the limits.
+
+## CHECKPOINT — base template
+- [ ] Tag `base-v1`. STOP and tell the owner: the base template is ready. Explain how to create a new
+      agent repo from `base-v1`, then continue building this agent's job only after the owner confirms.
+- Later general improvements (Phases 6–8) go into the base and get a new tag (`base-v2`, …), not into
+  job code.
+
+## Phase 5b — Job-specific service (2–4 weeks, ongoing)
 - Pick ONE narrow, legal, automatable service
-- Small web server endpoint; per-request payment (x402 or USDC invoice)
-- Own VPS + domain + HTTPS; replace `exposePort` (reverse proxy, e.g. Caddy)
+- Build it in `src/services/<job>/` plus its genesis prompt, skills and config (see CLAUDE.md rule 7)
 - Agent operates, monitors and improves the service; honest, policy-compliant promotion only
-- Track revenue vs cost
 Done when: at least one real paying customer; known whether it covers its own cost.
 
 ## Phase 6 — Self-modification (2–3 weeks)
