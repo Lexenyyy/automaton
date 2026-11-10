@@ -227,19 +227,35 @@ describe("InferenceRouter", () => {
     it("returns correct model for normal/agent_turn", () => {
       const model = router.selectModel("normal", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-5.2");
+      expect(model!.modelId).toBe("gpt-4.1-mini");
+    });
+
+    it("prefers gpt-4.1-mini over gpt-5-mini in the high tier", () => {
+      expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-4.1-mini");
+      expect(router.selectModel("high", "planning")!.modelId).toBe("gpt-4.1-mini");
+      registry.setEnabled("gpt-4.1-mini", false);
+      expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-5-mini");
+    });
+
+    it("never routes to gpt-5.2 or gpt-5.3 by default", () => {
+      for (const tier of Object.keys(DEFAULT_ROUTING_MATRIX) as Array<keyof typeof DEFAULT_ROUTING_MATRIX>) {
+        for (const pref of Object.values(DEFAULT_ROUTING_MATRIX[tier])) {
+          expect(pref.candidates).not.toContain("gpt-5.2");
+          expect(pref.candidates).not.toContain("gpt-5.3");
+        }
+      }
     });
 
     it("returns cheaper model for low_compute tier", () => {
       const model = router.selectModel("low_compute", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-5-mini");
+      expect(model!.modelId).toBe("gpt-4.1-mini");
     });
 
     it("returns minimal model for critical tier", () => {
       const model = router.selectModel("critical", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-5-mini");
+      expect(model!.modelId).toBe("gpt-4.1-nano");
     });
 
     it("returns null for dead tier", () => {
@@ -253,10 +269,10 @@ describe("InferenceRouter", () => {
     });
 
     it("skips disabled models and picks next candidate", () => {
-      registry.setEnabled("gpt-5.2", false);
+      registry.setEnabled("gpt-4.1-mini", false);
       const model = router.selectModel("normal", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-5-mini");
+      expect(model!.modelId).toBe("gpt-4.1-nano");
     });
   });
 
@@ -279,17 +295,17 @@ describe("InferenceRouter", () => {
       );
 
       expect(result.content).toBe("Hello!");
-      expect(result.model).toBe("gpt-5.2");
+      expect(result.model).toBe("gpt-4.1-mini");
       expect(result.finishReason).toBe("stop");
 
       // Verify cost was recorded
       const costs = inferenceGetSessionCosts(db, "test-session");
       expect(costs.length).toBe(1);
-      expect(costs[0].model).toBe("gpt-5.2");
+      expect(costs[0].model).toBe("gpt-4.1-mini");
     });
 
     it("computes actualCostCents accurately from token usage", async () => {
-      // gpt-5.2 has costPer1kInput=20, costPer1kOutput=80 (hundredths of cents)
+      // gpt-4.1-mini has costPer1kInput=4, costPer1kOutput=16 (hundredths of cents)
       // Formula: Math.ceil((input/1000)*costPer1kInput/100 + (output/1000)*costPer1kOutput/100)
       const mockChat = async (_msgs: any[], _opts: any) => ({
         message: { content: "result", role: "assistant" },
@@ -954,9 +970,9 @@ describe("Inference DB Helpers", () => {
 
 describe("DEFAULT_MODEL_STRATEGY_CONFIG", () => {
   it("has sensible defaults", () => {
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel).toBe("gpt-5.2");
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-5-mini");
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-5-mini");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel).toBe("gpt-4.1-mini");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-4.1-nano");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-4.1-nano");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.enableModelFallback).toBe(true);
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.hourlyBudgetCents).toBe(0); // no limit
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.sessionBudgetCents).toBe(0); // no limit

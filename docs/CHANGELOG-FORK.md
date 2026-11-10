@@ -54,3 +54,21 @@
   CLAUDE.md gets rule 7, "Reusable base": job code goes in `src/services/<job>/`, genesis prompt, skills
   and config; prefer settings over hardcoded values; warn the owner when a change would tie the base to
   one job; one wallet per agent, keys never shared.
+- 2026-11-10: **Change 1b: cheap default models.** The routing matrix (`src/inference/types.ts`) chose the
+  model, not the config, so a normal-tier turn always went to `gpt-5.2` ($1.75/$14 per M tokens).
+  - The new defaults use the cheapest capable models: `gpt-4.1-mini` ($0.40/$1.60) for turns, planning,
+    safety checks and summaries, and `gpt-4.1-nano` ($0.10/$0.40) for heartbeat triage and the
+    low_compute/critical tiers. The high tier tries `gpt-4.1-mini` first and falls back to `gpt-5-mini`.
+    No default route uses `gpt-5.2` or `gpt-5.3` any more.
+  - We prefer `gpt-4.1-mini` over `gpt-5-mini` because it is cheaper per token, and `gpt-5-mini`
+    bills hidden reasoning tokens as output. Prices are from the unchanged `STATIC_MODEL_BASELINE`
+    and are not verified against OpenAI's current price list.
+  - `DEFAULT_MODEL_STRATEGY_CONFIG` (both copies) and `DEFAULT_CONFIG.inferenceModel` now default to
+    `gpt-4.1-mini` / `gpt-4.1-nano`, with matching fallbacks in `config.ts` and `index.ts`.
+  - `InferenceRouter.selectModel` change: when the matrix explicitly lists no candidates (critical
+    summarization and planning), the config fallback may only pick free models. Without this, the new
+    `criticalModel` (`gpt-4.1-nano`, tierMinimum critical) would have turned those tasks back on.
+    Before, the old `gpt-5-mini` was blocked by its tier minimum.
+  - Unchanged: the deprecated `survival/low-compute.ts` and `setLowComputeMode` fallbacks (the router
+    no longer uses them). Groq/Ollama setups still get the OpenAI baseline from the matrix, which
+    needs its own design.

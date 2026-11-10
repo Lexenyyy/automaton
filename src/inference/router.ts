@@ -209,6 +209,9 @@ export class InferenceRouter {
 
     // 2. Fall back to user-configured models.
     //    This handles local/Ollama setups where routing-matrix models are absent.
+    //    An explicitly empty candidate list means "don't run this task at this
+    //    tier" (e.g. critical/summarization): then only free models may run it.
+    const explicitlyDisabled = preference !== undefined && preference.candidates.length === 0;
     const strategy = this.budget.config;
     const fallbackIds: (string | undefined)[] =
       tier === "critical" || tier === "dead"
@@ -221,7 +224,7 @@ export class InferenceRouter {
       if (!entry || !entry.enabled) continue;
       const isFree = entry.costPer1kInput === 0 && entry.costPer1kOutput === 0;
       const tierOk = tierRank >= (TIER_ORDER[entry.tierMinimum] ?? 0);
-      if (isFree || tierOk) {
+      if (isFree || (tierOk && !explicitlyDisabled)) {
         return entry;
       }
     }
