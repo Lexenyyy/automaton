@@ -32,6 +32,7 @@ import type {
 import { ulid } from "ulid";
 import { createLogger } from "../observability/logger.js";
 import type { ChainType } from "../identity/chain.js";
+import { assertNetworkAllowed, getActiveNetwork } from "../identity/network.js";
 const logger = createLogger("registry.erc8004");
 
 /**
@@ -227,10 +228,11 @@ function updateTransactionStatus(
 export async function registerAgent(
   account: PrivateKeyAccount,
   agentURI: string,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   db: AutomatonDatabase,
   rpcUrl?: string,
 ): Promise<RegistryEntry> {
+  assertNetworkAllowed(network); // on-chain write: active network only (fork change 2)
   const contracts = CONTRACTS[network];
   const chain = contracts.chain;
   const rpc = resolveRpcUrl(rpcUrl);
@@ -315,10 +317,11 @@ export async function updateAgentURI(
   account: PrivateKeyAccount,
   agentId: string,
   newAgentURI: string,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   db: AutomatonDatabase,
   rpcUrl?: string,
 ): Promise<string> {
+  assertNetworkAllowed(network); // on-chain write: active network only (fork change 2)
   const contracts = CONTRACTS[network];
   const chain = contracts.chain;
 
@@ -376,7 +379,7 @@ export async function leaveFeedback(
   agentId: string,
   score: number,
   comment: string,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   db: AutomatonDatabase,
   rpcUrl?: string,
 ): Promise<string> {
@@ -392,6 +395,7 @@ export async function leaveFeedback(
     throw new Error(`Comment too long: ${comment.length} chars (max 500).`);
   }
 
+  assertNetworkAllowed(network); // on-chain write: active network only (fork change 2)
   const contracts = CONTRACTS[network];
   const chain = contracts.chain;
 
@@ -435,7 +439,7 @@ export async function leaveFeedback(
  */
 export async function queryAgent(
   agentId: string,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   rpcUrl?: string,
 ): Promise<DiscoveredAgent | null> {
   const contracts = CONTRACTS[network];
@@ -483,7 +487,7 @@ export async function queryAgent(
  * ERC-721 Enumerable), falls back to a binary search on ownerOf().
  */
 export async function getTotalAgents(
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   rpcUrl?: string,
 ): Promise<number> {
   const contracts = CONTRACTS[network];
@@ -565,7 +569,7 @@ async function estimateTotalByBinarySearch(
  * Returns token IDs and owners extracted directly from event data.
  */
 export async function getRegisteredAgentsByEvents(
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   limit: number = 20,
   rpcUrl?: string,
 ): Promise<{ tokenId: string; owner: string }[]> {
@@ -672,7 +676,7 @@ export async function getRegisteredAgentsByEvents(
  */
 export async function hasRegisteredAgent(
   address: Address,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   rpcUrl?: string,
 ): Promise<boolean> {
   const contracts = CONTRACTS[network];

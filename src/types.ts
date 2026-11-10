@@ -75,6 +75,12 @@ export interface AutomatonConfig {
   rpcUrl?: string;
   /** Chain type for this automaton. Defaults to "evm" if absent. */
   chainType?: ChainType;
+  /**
+   * EVM network: "testnet" (Base Sepolia, default) or "mainnet" (Base).
+   * Mainnet also needs AUTOMATON_MAINNET_APPROVED=<wallet address> in the
+   * environment (see src/identity/network.ts).
+   */
+  network?: "testnet" | "mainnet";
 }
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
@@ -90,6 +96,7 @@ export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
   maxTurnsPerCycle: 25,
   childSandboxMemoryMb: 1024,
   socialRelayUrl: "https://social.conway.tech",
+  network: "testnet",
 };
 
 // ─── Agent State ─────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import type {
 } from "../types.js";
 import { DEFAULT_DISCOVERY_CONFIG } from "../types.js";
 import { queryAgent, getTotalAgents, getRegisteredAgentsByEvents } from "./erc8004.js";
+import { getActiveNetwork } from "../identity/network.js";
 import { keccak256, toBytes } from "viem";
 import { createLogger } from "../observability/logger.js";
 const logger = createLogger("registry.discovery");
@@ -215,7 +216,7 @@ async function enrichAgentWithCard(
  */
 export async function discoverAgents(
   limit: number = 20,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   config?: Partial<DiscoveryConfig>,
   db?: import("better-sqlite3").Database,
   rpcUrl?: string,
@@ -367,7 +368,7 @@ export async function fetchAgentCard(
 export async function searchAgents(
   keyword: string,
   limit: number = 10,
-  network: Network = "mainnet",
+  network: Network = getActiveNetwork().mode,
   config?: Partial<DiscoveryConfig>,
   db?: import("better-sqlite3").Database,
   rpcUrl?: string,

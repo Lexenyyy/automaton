@@ -307,7 +307,14 @@ async function configureGeneral(config: AutomatonConfig): Promise<void> {
   );
   config.maxChildren = await askNumber("Max child automatons", config.maxChildren);
   config.socialRelayUrl = (await askString("Social relay URL", config.socialRelayUrl)) || undefined;
-  config.rpcUrl = (await askString("RPC endpoint  (Base chain, e.g. https://mainnet.base.org)", config.rpcUrl)) || undefined;
+  // Network is shown read-only. Mainnet is set only by editing automaton.json by hand
+  // AND setting AUTOMATON_MAINNET_APPROVED (see src/identity/network.ts); never via this wizard.
+  const isMainnet = config.network === "mainnet";
+  console.log(dim(`  Network: ${isMainnet ? "Base mainnet (needs owner approval at start)" : "Base Sepolia (testnet)"}`));
+  config.rpcUrl = (await askString(
+    `RPC endpoint  (must match the network, e.g. ${isMainnet ? "https://mainnet.base.org" : "https://sepolia.base.org"})`,
+    config.rpcUrl,
+  )) || undefined;
 
   console.log("");
 }

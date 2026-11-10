@@ -21,6 +21,7 @@ import type {
 } from "../types.js";
 import type { PolicyEngine } from "./policy-engine.js";
 import { sanitizeToolResult, sanitizeInput } from "./injection-defense.js";
+import { getForbiddenCommandMatch } from "./policy-rules/command-safety.js";
 import { createLogger } from "../observability/logger.js";
 
 const logger = createLogger("tools");
@@ -96,6 +97,13 @@ function isForbiddenCommand(command: string, sandboxId: string): string | null {
     if (pattern.test(command)) {
       return `Blocked: Command matches self-harm pattern: ${pattern.source}`;
     }
+  }
+
+  // Also apply the policy engine's full list (a superset, including the fork's
+  // start-up/environment rules), so this fallback is never weaker than the policy.
+  const policyMatch = getForbiddenCommandMatch(command);
+  if (policyMatch) {
+    return `Blocked: ${policyMatch.description} (pattern: ${policyMatch.pattern})`;
   }
 
   // Block deleting own sandbox
@@ -266,10 +274,11 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
       parameters: { type: "object", properties: {} },
       execute: async (_args, ctx) => {
         const { getUsdcBalance } = await import("../conway/x402.js");
+        const { getActiveNetwork } = await import("../identity/network.js");
         const chainType = ctx.config.chainType || ctx.identity.chainType || "evm";
-        const network = chainType === "solana" ? "solana:mainnet" : "eip155:8453";
+        const network = chainType === "solana" ? "solana:mainnet" : getActiveNetwork().caip2;
         const balance = await getUsdcBalance(ctx.identity.address, network, chainType);
-        const networkLabel = chainType === "solana" ? "Solana" : "Base";
+        const networkLabel = chainType === "solana" ? "Solana" : getActiveNetwork().label;
         return `USDC balance: ${balance.toFixed(6)} USDC on ${networkLabel}`;
       },
     },
@@ -307,7 +316,7 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
 
         // Check USDC balance first (EVM-only path after Solana guard above)
         const { getUsdcBalance } = await import("../conway/x402.js");
-        const usdcBalance = await getUsdcBalance(ctx.identity.address, "eip155:8453");
+        const usdcBalance = await getUsdcBalance(ctx.identity.address);
         if (usdcBalance < amountUsd) {
           return `Insufficient USDC. Balance: $${usdcBalance.toFixed(2)}, requested: $${amountUsd}. Choose a smaller tier or wait for funding.`;
         }
@@ -1407,7 +1416,7 @@ Model: ${ctx.inference.getDefaultModel()}
           },
           network: {
             type: "string",
-            description: "mainnet or testnet (default: mainnet)",
+            description: "mainnet or testnet (default: your configured network; other networks are blocked)",
           },
         },
         required: ["agent_uri"],
@@ -1431,7 +1440,7 @@ Model: ${ctx.inference.getDefaultModel()}
           const entry = await registerAgent(
             ctx.identity.account,
             args.agent_uri as string,
-            ((args.network as string) || "mainnet") as any,
+            ((args.network as string) || (await import("../identity/network.js")).getActiveNetwork().mode) as any,
             ctx.db,
             ctx.config.rpcUrl,
           );
@@ -1480,7 +1489,8 @@ Model: ${ctx.inference.getDefaultModel()}
       execute: async (args, ctx) => {
         const { discoverAgents, searchAgents } =
           await import("../registry/discovery.js");
-        const network = ((args.network as string) || "mainnet") as any;
+        const { getActiveNetwork } = await import("../identity/network.js");
+        const network = ((args.network as string) || getActiveNetwork().mode) as any;
         const keyword = args.keyword as string | undefined;
         const limit = (args.limit as number) || 10;
 
@@ -1532,7 +1542,7 @@ Model: ${ctx.inference.getDefaultModel()}
           },
           network: {
             type: "string",
-            description: "mainnet or testnet (default: mainnet)",
+            description: "mainnet or testnet (default: your configured network; other networks are blocked)",
           },
         },
         required: ["agent_id", "score", "comment"],
@@ -1555,8 +1565,9 @@ Model: ${ctx.inference.getDefaultModel()}
           return `Comment too long: ${comment.length} chars (max 500).`;
         }
         const { leaveFeedback } = await import("../registry/erc8004.js");
-        // Phase 3.2: Use config-based network, not hardcoded "mainnet"
-        const network = ((args.network as string) || "mainnet") as any;
+        // Fork change 2: default to the active network; leaveFeedback blocks any other
+        const { getActiveNetwork } = await import("../identity/network.js");
+        const network = ((args.network as string) || getActiveNetwork().mode) as any;
         const hash = await leaveFeedback(
           ctx.identity.account,
           args.agent_id as string,

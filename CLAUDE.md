@@ -53,8 +53,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - **Balance depends on Conway:** `getCreditsBalance()` in `src/conway/client.ts` always calls
   Conway's API. Without Conway it returns 0, so the agent wrongly believes it is broke.
   Needs our own balance source (wallet USDC + local ledger).
-- **Mainnet is hardcoded** in provisioning (`chainId: 8453` in `src/identity/provision.ts`).
-  `src/conway/x402.ts` already knows `base-sepolia`, so a testnet mode is feasible.
+- ~~**Mainnet is hardcoded**~~ Resolved in change 2: `src/identity/network.ts` makes Base Sepolia the
+  default. Mainnet needs `"network": "mainnet"` in `automaton.json` AND
+  `AUTOMATON_MAINNET_APPROVED=<wallet address>` set by the owner (Phase 8 only). The remaining
+  `chainId: 8453` in `provision.ts`/`client.ts` is only the Conway API sign-in and moves no money.
 - **Default spending limits are too loose** for this project (`DEFAULT_TREASURY_POLICY` in
   `src/types.ts`: $50/transfer, $250/day transfers, $500/day inference). To be tightened.
 - **Local mode is not public:** `exposePort` returns `http://localhost:PORT` when no Conway

@@ -48,6 +48,7 @@ import type { InboxMessageRow } from "../state/database.js";
 import { ulid } from "ulid";
 import { ModelRegistry } from "../inference/registry.js";
 import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
+import { getActiveNetwork } from "../identity/network.js";
 import { InferenceRouter } from "../inference/router.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
@@ -1008,7 +1009,7 @@ async function getFinancialState(
   }
 
   try {
-    const network = chainType === "solana" ? "solana:mainnet" : "eip155:8453";
+    const network = chainType === "solana" ? "solana:mainnet" : getActiveNetwork().caip2;
     usdcBalance = await getUsdcBalance(address, network, chainType as any);
     if (usdcBalance > 0) _lastKnownUsdc = usdcBalance;
   } catch (error) {

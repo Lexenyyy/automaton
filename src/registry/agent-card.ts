@@ -18,6 +18,7 @@ import type {
   AutomatonDatabase,
   ConwayClient,
 } from "../types.js";
+import { getActiveNetwork } from "../identity/network.js";
 
 const AGENT_CARD_TYPE =
   "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
@@ -36,11 +37,12 @@ export function generateAgentCard(
   config: AutomatonConfig,
   _db: AutomatonDatabase,
 ): AgentCard {
-  // Chain-aware endpoint: EVM uses CAIP-2 eip155:8453, Solana uses solana:mainnet
+  // Chain-aware endpoint: EVM uses the active network's CAIP-2 id
+  // (eip155:84532 on testnet, eip155:8453 on mainnet), Solana uses solana:mainnet
   const chainType = config.chainType || identity.chainType || "evm";
   const walletEndpoint = chainType === "solana"
     ? `solana:mainnet:${identity.address}`
-    : `eip155:8453:${identity.address}`;
+    : `${getActiveNetwork().caip2}:${identity.address}`;
 
   const services: AgentService[] = [
     {

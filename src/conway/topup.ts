@@ -17,6 +17,7 @@ import type { PrivateKeyAccount, Address } from "viem";
 import { x402Fetch, getUsdcBalance } from "./x402.js";
 import { createLogger } from "../observability/logger.js";
 import type { ChainType } from "../identity/chain.js";
+import { getActiveNetwork } from "../identity/network.js";
 
 const logger = createLogger("topup");
 
@@ -42,6 +43,13 @@ export async function topupCredits(
   amountUsd: number,
   recipientAddress?: Address,
 ): Promise<TopupResult> {
+  // Conway sells credits for real USDC on Base mainnet. Disabled in testnet mode (fork change 2).
+  if (getActiveNetwork().mode !== "mainnet") {
+    const error = "Conway credit top-ups use real USDC on Base mainnet; disabled in testnet mode.";
+    logger.info(`Credit topup skipped: ${error}`);
+    return { success: false, amountUsd, error };
+  }
+
   const address = recipientAddress || account.address;
   const url = `${apiUrl}/pay/${amountUsd}/${address}`;
 

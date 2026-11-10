@@ -99,6 +99,57 @@ const BLOCKED_DIRECTORY_PATTERNS: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * Files that set the agent's environment or start-up on its next start
+ * (fork change 2). The agent knows its own wallet address, so it must not be
+ * able to write AUTOMATON_MAINNET_APPROVED (or anything else) into a file that
+ * the supervisor or shell reads when it restarts the agent.
+ * Matched on the file name, case-insensitive, independent of the OS path format.
+ */
+const STARTUP_ENV_BASENAME_PATTERNS: readonly RegExp[] = Object.freeze([
+  /^\.env(\..+)?$/i, // .env, .env.local, .env.production, ...
+  /^\.envrc$/i, // direnv
+  /^ecosystem(\.config)?\.(c?js|mjs|json|ya?ml)$/i, // pm2
+  /^\.(bashrc|bash_profile|bash_login|profile|zshrc|zprofile|zshenv|zlogin|pam_environment)$/i,
+  /^\.npmrc$/i,
+  /\.(service|socket|timer)$/i, // systemd units
+  /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/i,
+  /^Dockerfile(\..+)?$/i,
+  /^(start|run|launch|entrypoint|docker-entrypoint)[\w.-]*\.(sh|bash|cmd|bat|ps1)$/i,
+  /^automaton\.sh$/i, // scripts/automaton.sh
+]);
+
+/** Directories (or exact files) that hold start-up/environment config. */
+const STARTUP_ENV_PATH_FRAGMENTS: readonly string[] = Object.freeze([
+  "/.pm2/",
+  "/systemd/",
+  "/etc/environment",
+  "/etc/profile",
+  "/etc/init.d/",
+  "/etc/supervisor",
+  "/etc/default/",
+  "/etc/crontab",
+  "/cron.d/",
+  "/var/spool/cron/",
+]);
+
+/**
+ * True if the path is a start-up or environment file the agent must not write.
+ * Checks both the path as given and the resolved path, with forward slashes.
+ */
+export function isStartupEnvFile(filePath: string): boolean {
+  const candidates = [filePath, path.resolve(filePath)].map(
+    (p) => "/" + p.replace(/\\/g, "/").replace(/\/+$/, "") + "/",
+  );
+  for (const p of candidates) {
+    const base = p.slice(0, -1).split("/").pop() || "";
+    if (STARTUP_ENV_BASENAME_PATTERNS.some((re) => re.test(base))) return true;
+    const lower = p.toLowerCase();
+    if (STARTUP_ENV_PATH_FRAGMENTS.some((frag) => lower.includes(frag))) return true;
+  }
+  return false;
+}
+
+/**
  * Maximum number of self-modifications per hour.
  * Prevents runaway modification loops.
  */
@@ -156,6 +207,9 @@ function resolveAndValidatePath(filePath: string): string | null {
  * Check if a file path is protected from modification.
  */
 export function isProtectedFile(filePath: string): boolean {
+  // Start-up / environment files (fork change 2)
+  if (isStartupEnvFile(filePath)) return true;
+
   const resolved = path.resolve(filePath);
 
   // Check against protected file patterns using path-segment matching

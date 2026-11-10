@@ -67,6 +67,41 @@ const FORBIDDEN_COMMAND_PATTERNS: { pattern: RegExp; description: string }[] = [
   { pattern: /sed\s+.*policy-rules/, description: "Modify policy rules via sed" },
   { pattern: />\s*.*policy-engine/, description: "Overwrite policy engine" },
   { pattern: />\s*.*policy-rules/, description: "Overwrite policy rules" },
+
+  // ── Fork change 2: the agent must not set its own environment for the next start ──
+  // It knows its wallet address, so it could otherwise write the mainnet approval
+  // itself. Best-effort pattern list (defense-in-depth); the hard boundary is
+  // OS isolation (ROADMAP Phase 1: shell only inside Docker as non-root).
+  // Mainnet approval variable, in any form or case
+  { pattern: /MAINNET_APPROVED/i, description: "Touch the mainnet approval variable" },
+  // Setting any AUTOMATON_* variable (approval, RPC URL, ...)
+  { pattern: /\bAUTOMATON_[A-Z0-9_]+\s*=/i, description: "Set an AUTOMATON_* environment variable" },
+  // Config and env/start-up files: any reference (read or write)
+  { pattern: /automaton\.json/i, description: "Access agent config file" },
+  { pattern: /(^|[\s"'=:\/<>|;&(])\.env(\.[\w.-]+)?(?![\w-])/, description: "Access .env file" },
+  { pattern: /\.envrc\b/, description: "Access direnv file" },
+  { pattern: /ecosystem(\.config)?\.(c?js|mjs|json|ya?ml)\b/i, description: "Access pm2 ecosystem file" },
+  { pattern: /\.(bashrc|bash_profile|bash_login|zshrc|zprofile|zshenv|zlogin|pam_environment)\b/, description: "Access shell start-up file" },
+  { pattern: /(^|[\s"'=:\/<>|;&(])\.profile\b/, description: "Access shell profile" },
+  { pattern: /\.npmrc\b/, description: "Access npm config" },
+  { pattern: /\/etc\/(environment|profile|init\.d|supervisor|default|crontab|cron\.d)/, description: "Access system start-up/env config" },
+  { pattern: /\.pm2\b/, description: "Access pm2 home" },
+  { pattern: /systemd/, description: "Access systemd config" },
+  { pattern: /\.(service|socket|timer)(?![\w.-])/, description: "Access systemd unit file" },
+  { pattern: /(docker-)?compose(\.[\w-]+)?\.ya?ml\b/i, description: "Access Docker Compose file" },
+  { pattern: /Dockerfile/i, description: "Access Dockerfile" },
+  { pattern: /\b(start|run|launch|entrypoint|docker-entrypoint)[\w.-]*\.(sh|bash|cmd|bat|ps1)\b/i, description: "Access start script" },
+  { pattern: /automaton\.sh\b/, description: "Access start script" },
+  // Supervisor commands that change the environment or start config
+  { pattern: /--update-env\b/, description: "Restart with a changed environment" },
+  { pattern: /\bpm2\s+(set|unset|start|startOrRestart|ecosystem|init|save|resurrect|startup|deploy|env|conf|config)\b/, description: "Change pm2 start config" },
+  { pattern: /\bsystemctl\b.*\b(edit|set-environment|unset-environment|import-environment|link|daemon-reload|revert|enable|preset|set-property)\b/, description: "Change systemd service config" },
+  { pattern: /\blaunchctl\s+(setenv|load|bootstrap)\b/, description: "Change launchd config" },
+  { pattern: /\bcrontab\b/, description: "Change scheduled jobs" },
+  // Persistent environment on Windows
+  { pattern: /\bsetx\b/i, description: "Set persistent Windows environment variable" },
+  { pattern: /SetEnvironmentVariable/i, description: "Set persistent Windows environment variable" },
+  { pattern: /HKCU\\Environment|HKEY_CURRENT_USER\\Environment|Session Manager\\Environment/i, description: "Change environment in the registry" },
 ];
 
 export function getForbiddenCommandMatch(command: string): { description: string; pattern: string } | null {

@@ -15,6 +15,7 @@ import {
 import { base, baseSepolia } from "viem/chains";
 import { ResilientHttpClient } from "./http-client.js";
 import type { ChainType } from "../identity/chain.js";
+import { assertNetworkAllowed, getActiveNetwork } from "../identity/network.js";
 
 const x402HttpClient = new ResilientHttpClient();
 
@@ -177,6 +178,14 @@ function parseMaxAmountRequired(maxAmountRequired: string, x402Version: number):
 }
 
 function selectRequirement(parsed: PaymentRequiredResponse): PaymentRequirement {
+  // Prefer an "exact" requirement on the active network (fork change 2).
+  // signPayment() refuses any other network, so a server that only offers
+  // mainnet gets no signature while we're in testnet mode.
+  const activeCaip2 = getActiveNetwork().caip2;
+  const onActive = parsed.accepts.find(
+    (r) => r.scheme === "exact" && r.network === activeCaip2,
+  );
+  if (onActive) return onActive;
   const exactSupported = parsed.accepts.find(
     (r) => r.scheme === "exact" && !!CHAINS[r.network],
   );
@@ -193,7 +202,7 @@ const SOLANA_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
  */
 export async function getUsdcBalance(
   address: string,
-  network: string = "eip155:8453",
+  network: string = getActiveNetwork().caip2,
   chainType?: ChainType,
 ): Promise<number> {
   if (chainType === "solana" || network === "solana:mainnet") {
@@ -244,7 +253,7 @@ async function getSolanaUsdcBalance(address: string): Promise<number> {
  */
 export async function getUsdcBalanceDetailed(
   address: Address,
-  network: string = "eip155:8453",
+  network: string = getActiveNetwork().caip2,
 ): Promise<UsdcBalanceResult> {
   const chain = CHAINS[network];
   const usdcAddress = USDC_ADDRESSES[network];
@@ -457,6 +466,8 @@ async function signPayment(
   if (!chain) {
     throw new Error(`Unsupported network: ${requirement.network}`);
   }
+  // Never sign a payment for a network other than the active one (fork change 2).
+  assertNetworkAllowed(requirement.network);
 
   const nonce = `0x${Buffer.from(
     crypto.getRandomValues(new Uint8Array(32)),

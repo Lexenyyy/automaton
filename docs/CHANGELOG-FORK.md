@@ -108,3 +108,44 @@
     signed webhook.
   - Change 3 (CLAUDE.md) and ROADMAP Phase 3: the balance/ledger must count both USDC and Stripe revenue.
   - ROADMAP Phase 8: VAT/tax setup checked with an accountant before taking real card payments.
+- 2026-11-10: **Change 2: Base Sepolia testnet mode, default until Phase 8.**
+  - New `src/identity/network.ts` decides the network. Testnet is the default and the fail-closed state.
+    Mainnet needs both `"network": "mainnet"` in `automaton.json` and
+    `AUTOMATON_MAINNET_APPROVED=<this agent's wallet address>` in the environment, read once at
+    start-up. Tying the approval to the wallet address means it can't carry over to another agent.
+    If mainnet is set without a matching approval, or the value is unknown, the agent refuses to start.
+  - Start-up checks that a configured RPC URL serves the active chain id, and refuses to start if not.
+  - x402: `signPayment` refuses any network except the active one, so a server asking for mainnet gets
+    no signature. Requirement selection prefers the active network. Balance reads default to the
+    active network.
+  - Conway credit top-ups are disabled in testnet mode, because Conway sells credits for real USDC
+    on Base mainnet.
+  - ERC-8004: the defaults follow the active network, and `registerAgent`, `updateAgentURI` and
+    `leaveFeedback` throw on any other network before any RPC call. Discovery still reads either.
+  - Hardcoded `eip155:8453` in these places now follows the active network: the tools, the loop, the
+    heartbeat, the agent card and the status output. `configure` shows the network read-only and
+    can't switch to mainnet.
+  - Not changed: `chainId: 8453` in the Conway sign-in (`provision.ts`, `client.ts`), which moves no
+    money; the schema defaults (inserts set `chain` explicitly); Solana paths.
+  - **The agent can't set its own environment for the next start** (owner-approved policy change,
+    stricter only):
+    - `isProtectedFile` (`self-mod/code.ts`) now also blocks writes (via `write_file` and
+      `edit_own_file`) to `.env*`, `.envrc`, pm2 ecosystem files and `~/.pm2/`, systemd units and
+      `systemd/` dirs, shell profiles (`.bashrc`, `.profile`, `.zshrc`, …), `/etc/environment`,
+      `/etc/profile*`, `/etc/default/`, cron, `.npmrc`, Docker/Compose files, `start*/run*/entrypoint*`
+      scripts and `scripts/automaton.sh`. Matching is by file name, so it works with any OS path
+      format. `automaton.json` was already protected.
+    - New `command.forbidden_patterns` entries block any shell command that mentions
+      `MAINNET_APPROVED`, sets any `AUTOMATON_*` variable, references those files (or
+      `automaton.json`), or changes supervisor or environment config: `--update-env`,
+      `pm2 set/start/save/…`, `systemctl edit/set-environment/…`, `crontab`, `setx`,
+      `SetEnvironmentVariable`, the registry environment keys.
+    - The inline `exec` guard in `tools.ts` now also checks the policy list, so it's never weaker.
+    - Limit: a regex blocklist is best-effort. ROADMAP Phase 1 (shell only in Docker, non-root) is the
+      hard boundary.
+  - Tests: new `network.test.ts` (69 tests). It covers network resolution and approval, x402 refusing
+    mainnet and signing Sepolia, top-up refused, ERC-8004 writes blocked, a write blocked for each
+    start-up/env file, each blocked shell command (including setting `AUTOMATON_MAINNET_APPROVED`),
+    and ordinary files and commands still allowed.
+  - Known gap: the ERC-8004 testnet contract addresses equal the mainnet ones in `erc8004.ts`, and
+    we couldn't verify them. On testnet a wrong address only wastes test ETH. Re-check in Phase 8.

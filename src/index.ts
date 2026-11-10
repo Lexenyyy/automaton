@@ -35,9 +35,30 @@ import { createLogger, setGlobalLogLevel, StructuredLogger } from "./observabili
 import { prettySink } from "./observability/pretty-sink.js";
 import { bootstrapTopup } from "./conway/topup.js";
 import { randomUUID } from "crypto";
-import { keccak256, toHex } from "viem";
+import { keccak256, toHex, createPublicClient, http } from "viem";
+import { activateNetwork, getActiveNetwork } from "./identity/network.js";
 
 const logger = createLogger("main");
+
+/**
+ * If a custom RPC URL is configured, make sure it serves the active chain.
+ * A mainnet RPC with testnet mode (or the reverse) would read the wrong balances.
+ */
+async function verifyRpcChain(rpcUrl: string | undefined, expectedChainId: number): Promise<void> {
+  if (!rpcUrl) return;
+  const client = createPublicClient({ chain: getActiveNetwork().chain, transport: http(rpcUrl, { timeout: 10_000 }) });
+  let actual: number;
+  try {
+    actual = await client.getChainId();
+  } catch (err: any) {
+    throw new Error(`Could not verify the RPC chain id: ${err?.message || String(err)}. Refusing to start.`);
+  }
+  if (actual !== expectedChainId) {
+    throw new Error(
+      `RPC chain id ${actual} does not match the active network (${expectedChainId}). Fix rpcUrl / AUTOMATON_RPC_URL. Refusing to start.`,
+    );
+  }
+}
 const VERSION = "0.2.1";
 
 async function main(): Promise<void> {
@@ -172,6 +193,7 @@ Tools:      ${tools.length} installed
 Skills:     ${skills.length} active
 Heartbeats: ${heartbeats.filter((h) => h.enabled).length} active
 Children:   ${children.filter((c) => c.status !== "dead").length} alive / ${children.length} total
+Network:    ${config.network === "mainnet" ? "Base mainnet (needs owner approval at start)" : "Base Sepolia (testnet)"}
 Agent ID:   ${registry?.agentId || "not registered"}
 Model:      ${config.inferenceModel}
 Version:    ${config.version}
@@ -196,6 +218,15 @@ async function run(): Promise<void> {
   // Load wallet (chain-aware)
   const { account, chainIdentity, chainType: walletChainType } = await getWallet();
   const resolvedChainType = config.chainType || walletChainType || "evm";
+
+  // EVM network: testnet unless mainnet is set AND approved by the owner (fork change 2).
+  // Throws (refuses to start) on mainnet without approval or an unknown value.
+  const network = activateNetwork({ network: config.network, walletAddress: chainIdentity.address });
+  logger.info(`[${new Date().toISOString()}] Network: ${network.label}`);
+  if (resolvedChainType !== "solana") {
+    await verifyRpcChain(config.rpcUrl || process.env.AUTOMATON_RPC_URL, network.chainId);
+  }
+
   const apiKey = config.conwayApiKey || loadApiKeyFromConfig();
   if (!apiKey) {
     logger.error("No API key found. Run: automaton --provision");

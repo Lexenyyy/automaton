@@ -10,7 +10,7 @@ Estimates assume one developer, part-time. Total: about 4 to 6 months.
 - [x] Docker installed and working
 - [ ] Write our own genesis prompt and review `constitution.md`
 - [ ] Decide the ONE service the agent will sell (blocks Phase 5b)
-- [ ] Apply planned changes 1–2 from CLAUDE.md (tighter treasury limits, testnet mode)
+- [x] Apply planned changes 1–2 from CLAUDE.md (tighter treasury limits, testnet mode)
 Done when: build passes, every `src/` folder is understood, sandbox is isolated.
 
 ## Phase 1 — Core agent loop (2 weeks)
@@ -20,7 +20,10 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
 - Turn limits per hour; SQLite persistence across restarts (exists: `src/state/`)
 - Context summarization when history grows (exists: `src/memory/`)
 - Structured logs with per-call cost
-- Safety now: shell only inside Docker as non-root; hard daily spend cap in code; working kill command
+- Safety now: shell only inside Docker as non-root; hard daily spend cap in code; working kill command.
+  This is also the hard boundary for change 2: the shell pattern blocklist for start-up/env files is
+  best-effort (obfuscated commands can get past regexes), so the agent's shell must not be able to
+  write `automaton.json`, `.env`, pm2/systemd configs or start scripts at the OS level.
 - Found in Phase 0 review, to fix in this phase:
   - [ ] **HIGH PRIORITY: fix this before the agent ever runs. The tokenizer can freeze the agent loop.**
         `estimateTokens` (`src/agent/context.ts`) runs every turn through `js-tiktoken`, which gets very
@@ -119,7 +122,9 @@ Done when: one child runs; spawning beyond cap is blocked; kill switch stops all
 ## Phase 8 — On-chain identity & launch (1–2 weeks)
 - ERC-8004 registration (re-check current spec); agent card with service and pricing
 - Security review: keys, payment limits, injection defenses, open ports
-- Base mainnet with an amount the owner can afford to lose
+- Base mainnet with an amount the owner can afford to lose. Owner only: set `"network": "mainnet"` in
+  `automaton.json` and `AUTOMATON_MAINNET_APPROVED=<this agent's wallet address>` in the supervisor's
+  environment (not in a file the agent can write); check the RPC URL points at Base mainnet
 - VAT/tax setup checked with an accountant before taking real card payments.
 - Alerts: tier changes, unusual spend, crashes, self-edits, spawns
 Done when: 2 weeks on mainnet within budget; every alert tested; every action auditable.
