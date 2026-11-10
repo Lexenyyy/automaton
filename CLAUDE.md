@@ -13,6 +13,8 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
    models) for routine work; use expensive models only where they are clearly needed.
 3. **Test money first.** Use Base Sepolia testnet until the roadmap reaches Phase 8. Never move
    real funds or switch to mainnet without the owner's explicit approval.
+   **Testing budget: $5 total real money until Phase 8** (this covers model API spend too). Default
+   caps must keep any single day well below that (daily inference cap: $1).
 4. **Safety is enforced in code, not prompts.** Never weaken the policy engine
    (`src/agent/policy-engine.ts`, `src/agent/policy-rules/`), path protection, the constitution,
    spending limits, or injection defenses. Changes there need the owner's explicit approval.
@@ -25,6 +27,14 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Explain the plan first for anything non-trivial; the owner approves edits manually.
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
+  **Temporary Windows baseline (2026-11-10, until the Linux Docker test run exists):** `pnpm build`
+  passes, and the only test failures are 22 known Windows path failures that were already there
+  before our changes. These are in `skills-hardening` (12), `command-injection` (5),
+  `tools-security` (3), `path-protection` (1) and `orchestration/local-worker-harness` (1).
+  Run the suite with `src/__tests__/context-hardening.test.ts` excluded, because it hangs
+  (tokenizer bug, see ROADMAP Phase 1):
+  `npx vitest run --exclude src/__tests__/context-hardening.test.ts --exclude "**/node_modules/**"`.
+  Baseline at commit 8b5220c is 1592 passed and 22 failed. Any other failure is a regression.
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 

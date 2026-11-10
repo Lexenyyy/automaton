@@ -21,6 +21,38 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
 - Context summarization when history grows (exists: `src/memory/`)
 - Structured logs with per-call cost
 - Safety now: shell only inside Docker as non-root; hard daily spend cap in code; working kill command
+- Found in Phase 0 review, to fix in this phase:
+  - [ ] **HIGH PRIORITY: fix this before the agent ever runs. The tokenizer can freeze the agent loop.**
+        `estimateTokens` (`src/agent/context.ts`) runs every turn through `js-tiktoken`, which gets very
+        slow on long strings with no spaces. Measured: 5k chars take 1 s, 10k take 4 s, 20k take 21 s,
+        while 50k chars of normal words take 6 ms. One large tool result (base64, minified code, a long
+        hash) would block the loop for minutes or hours. This is synchronous code, so timeouts can't
+        stop it. It also makes `src/__tests__/context-hardening.test.ts` hang (3 tests in
+        "buildContextMessages token budget"). Likely fix: above a size limit, skip the tokenizer and use
+        the length-based estimate. Show the plan to the owner first.
+  - [ ] **Run the test suite in a Linux Docker container.** The VPS will run Linux. This should clear
+        the 22 Windows-only path failures and give a true baseline. After that, replace the temporary
+        Windows baseline in CLAUDE.md.
+  - [ ] **Windows test failures that already existed (22).** Test helpers build paths in a way that
+        produces `C:\C:\...` and use POSIX paths like `/root/...`:
+        `skills-hardening` (12), `command-injection` (5), `tools-security` (3), `path-protection` (1),
+        `orchestration/local-worker-harness` (1). Check them again after the Linux run, and fix only
+        those that also fail on Linux, or that matter for running on Windows.
+  - [ ] **Enforce the minimum reserve in code.** `financial.minimum_reserve` (`src/agent/policy-rules/financial.ts`)
+        only states the limit and always returns `null`. The only real guard is "max half the balance" inside
+        `transfer_credits`. Needs the balance source from change 3. This is a policy-engine change, so it needs
+        the owner's approval.
+  - [ ] **Old saved config overrides the new defaults.** `saveConfig` writes the whole `treasuryPolicy` to
+        `~/.automaton/automaton.json`, and `loadConfig` lets saved values win. A config created before the
+        tightened defaults keeps the old, looser limits. Options: warn when a saved limit is looser than the
+        default, or clamp it to the default.
+  - [ ] **Rename `turnToolCallCount` to `turnTransferCount`.** I checked `loop.ts` and `general-harness.ts`: both
+        count only `transfer_credits` calls, so `maxTransfersPerTurn` works correctly. The name suggests it counts
+        all tool calls, which is misleading. This is cleanup only.
+  - [ ] **Route all inference through the budget tracker.** The main loop uses `InferenceRouter`, which checks
+        budgets, but compression, planner, orchestrator, plan-mode, context summarization and harnesses call
+        `inference.chat` directly. Those calls skip the budget checks and the cost record. Also,
+        `maxInferenceDailyCents` limits nothing today, because nothing records `inference` spend.
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
