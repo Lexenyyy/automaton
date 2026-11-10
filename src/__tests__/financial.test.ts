@@ -31,7 +31,22 @@ import type {
   LimitCheckResult,
   ToolContext,
 } from "../types.js";
-import { DEFAULT_TREASURY_POLICY } from "../types.js";
+
+// Fixed test policy (upstream Conway values). Rule-logic tests below use
+// these numbers so they don't depend on the fork's DEFAULT_TREASURY_POLICY,
+// which is asserted separately in authority-rules.test.ts.
+const UPSTREAM_TEST_POLICY: TreasuryPolicy = {
+  maxSingleTransferCents: 5000,
+  maxHourlyTransferCents: 10000,
+  maxDailyTransferCents: 25000,
+  minimumReserveCents: 1000,
+  maxX402PaymentCents: 100,
+  x402AllowedDomains: ["conway.tech"],
+  transferCooldownMs: 0,
+  maxTransfersPerTurn: 2,
+  maxInferenceDailyCents: 50000,
+  requireConfirmationAboveCents: 1000,
+};
 
 // ─── Test Helpers ───────────────────────────────────────────────
 
@@ -155,7 +170,7 @@ describe("Financial Policy Rules", () => {
 
   beforeEach(() => {
     db = createTestDb();
-    rules = createFinancialRules(DEFAULT_TREASURY_POLICY);
+    rules = createFinancialRules(UPSTREAM_TEST_POLICY);
     engine = new PolicyEngine(db, rules);
     spendTracker = new SpendTracker(db);
   });
@@ -331,7 +346,7 @@ describe("Financial Policy Rules", () => {
     it("denies when daily total would exceed 25000", () => {
       // Use custom policy with high hourly cap
       const policy: TreasuryPolicy = {
-        ...DEFAULT_TREASURY_POLICY,
+        ...UPSTREAM_TEST_POLICY,
         maxHourlyTransferCents: 100_000,
         maxDailyTransferCents: 25000,
       };
@@ -462,7 +477,7 @@ describe("Financial Policy Rules", () => {
     it("hourly cap blocks without turn limit (high confirmation threshold)", () => {
       // Use policy with no turn limit and high confirmation threshold
       const policy: TreasuryPolicy = {
-        ...DEFAULT_TREASURY_POLICY,
+        ...UPSTREAM_TEST_POLICY,
         maxTransfersPerTurn: 100, // effectively no turn limit
         requireConfirmationAboveCents: 100000, // high enough to not trigger
       };

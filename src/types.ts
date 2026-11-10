@@ -580,17 +580,21 @@ export interface TreasuryPolicy {
   requireConfirmationAboveCents: number;
 }
 
+// Fork defaults (Lexenyyy/automaton): tightened for minimum cost and small
+// balances. Upstream values were $50/transfer, $100/hr, $250/day transfers,
+// $1 x402, 2 transfers/turn, $500/day inference, confirm above $10.
+// See docs/CHANGELOG-FORK.md.
 export const DEFAULT_TREASURY_POLICY: TreasuryPolicy = {
-  maxSingleTransferCents: 5000,
-  maxHourlyTransferCents: 10000,
-  maxDailyTransferCents: 25000,
+  maxSingleTransferCents: 500,
+  maxHourlyTransferCents: 1000,
+  maxDailyTransferCents: 2000,
   minimumReserveCents: 1000,
-  maxX402PaymentCents: 100,
+  maxX402PaymentCents: 50,
   x402AllowedDomains: ['conway.tech'],
   transferCooldownMs: 0,
-  maxTransfersPerTurn: 2,
-  maxInferenceDailyCents: 50000,
-  requireConfirmationAboveCents: 1000,
+  maxTransfersPerTurn: 1,
+  maxInferenceDailyCents: 500,
+  requireConfirmationAboveCents: 100,
 };
 
 // ─── Phase 1: Inbox Message Status ──────────────────────────────

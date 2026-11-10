@@ -581,7 +581,7 @@ describe("Financial Phase 1 Rules", () => {
       });
       const spendTracker = createMockSpendTracker({
         getDailySpend: (category: SpendCategory) =>
-          category === "inference" ? 1000 : 0,
+          category === "inference" ? 100 : 0, // Under the 500 default cap
       });
       const request = createRequest(tool, {}, "agent", undefined, spendTracker);
 
@@ -600,7 +600,7 @@ describe("Financial Phase 1 Rules", () => {
       });
       const spendTracker = createMockSpendTracker({
         getDailySpend: (category: SpendCategory) =>
-          category === "inference" ? 60000 : 0, // Over the 50000 default cap
+          category === "inference" ? 600 : 0, // Over the 500 default cap
       });
       const request = createRequest(tool, {}, "agent", undefined, spendTracker);
 
@@ -620,10 +620,10 @@ describe("Financial Phase 1 Rules", () => {
         riskLevel: "dangerous",
         category: "financial",
       });
-      const request = createRequest(tool, { amount_cents: 500 }, "agent");
+      const request = createRequest(tool, { amount_cents: 50 }, "agent");
 
       const decision = engine.evaluate(request);
-      // Should not be quarantined (500 < 1000 threshold)
+      // Should not be quarantined (50 < 100 threshold)
       expect(decision.action).not.toBe("quarantine");
     });
 
@@ -636,11 +636,11 @@ describe("Financial Phase 1 Rules", () => {
         riskLevel: "dangerous",
         category: "financial",
       });
-      const request = createRequest(tool, { amount_cents: 2000 }, "agent");
+      const request = createRequest(tool, { amount_cents: 300 }, "agent");
 
       const decision = engine.evaluate(request);
-      // Should be quarantined (2000 > 1000 threshold), but may also be denied
-      // by transfer_max_single if over that limit. 2000 < 5000 so it won't be denied.
+      // Should be quarantined (300 > 100 threshold), but may also be denied
+      // by transfer_max_single if over that limit. 300 < 500 so it won't be denied.
       expect(decision.action).toBe("quarantine");
       expect(decision.reasonCode).toBe("CONFIRMATION_REQUIRED");
     });
@@ -673,16 +673,17 @@ describe("Financial Phase 1 Rules", () => {
 
 describe("Treasury Config", () => {
   it("DEFAULT_TREASURY_POLICY has all required fields", () => {
-    expect(DEFAULT_TREASURY_POLICY.maxSingleTransferCents).toBe(5000);
-    expect(DEFAULT_TREASURY_POLICY.maxHourlyTransferCents).toBe(10000);
-    expect(DEFAULT_TREASURY_POLICY.maxDailyTransferCents).toBe(25000);
+    // Fork defaults (tightened; see docs/CHANGELOG-FORK.md)
+    expect(DEFAULT_TREASURY_POLICY.maxSingleTransferCents).toBe(500);
+    expect(DEFAULT_TREASURY_POLICY.maxHourlyTransferCents).toBe(1000);
+    expect(DEFAULT_TREASURY_POLICY.maxDailyTransferCents).toBe(2000);
     expect(DEFAULT_TREASURY_POLICY.minimumReserveCents).toBe(1000);
-    expect(DEFAULT_TREASURY_POLICY.maxX402PaymentCents).toBe(100);
+    expect(DEFAULT_TREASURY_POLICY.maxX402PaymentCents).toBe(50);
     expect(DEFAULT_TREASURY_POLICY.x402AllowedDomains).toEqual(["conway.tech"]);
     expect(DEFAULT_TREASURY_POLICY.transferCooldownMs).toBe(0);
-    expect(DEFAULT_TREASURY_POLICY.maxTransfersPerTurn).toBe(2);
-    expect(DEFAULT_TREASURY_POLICY.maxInferenceDailyCents).toBe(50000);
-    expect(DEFAULT_TREASURY_POLICY.requireConfirmationAboveCents).toBe(1000);
+    expect(DEFAULT_TREASURY_POLICY.maxTransfersPerTurn).toBe(1);
+    expect(DEFAULT_TREASURY_POLICY.maxInferenceDailyCents).toBe(500);
+    expect(DEFAULT_TREASURY_POLICY.requireConfirmationAboveCents).toBe(100);
   });
 
   it("all default values are positive", () => {

@@ -16,7 +16,21 @@ import os from "os";
 import fs from "fs";
 import { SpendTracker } from "../agent/spend-tracker.js";
 import type { TreasuryPolicy, LimitCheckResult } from "../types.js";
-import { DEFAULT_TREASURY_POLICY } from "../types.js";
+
+// Fixed test policy (upstream Conway values) so limit-math tests don't
+// depend on the fork's DEFAULT_TREASURY_POLICY.
+const UPSTREAM_TEST_POLICY: TreasuryPolicy = {
+  maxSingleTransferCents: 5000,
+  maxHourlyTransferCents: 10000,
+  maxDailyTransferCents: 25000,
+  minimumReserveCents: 1000,
+  maxX402PaymentCents: 100,
+  x402AllowedDomains: ["conway.tech"],
+  transferCooldownMs: 0,
+  maxTransfersPerTurn: 2,
+  maxInferenceDailyCents: 50000,
+  requireConfirmationAboveCents: 1000,
+};
 
 // ─── Test Helpers ───────────────────────────────────────────────
 
@@ -196,7 +210,7 @@ describe("SpendTracker", () => {
 
   describe("checkLimit", () => {
     it("returns allowed=true when within limits", () => {
-      const result = tracker.checkLimit(100, "transfer", DEFAULT_TREASURY_POLICY);
+      const result = tracker.checkLimit(100, "transfer", UPSTREAM_TEST_POLICY);
       expect(result.allowed).toBe(true);
       expect(result.currentHourlySpend).toBe(0);
       expect(result.currentDailySpend).toBe(0);
@@ -211,7 +225,7 @@ describe("SpendTracker", () => {
       });
 
       // Try to add more that would exceed 10000 hourly cap
-      const result = tracker.checkLimit(600, "transfer", DEFAULT_TREASURY_POLICY);
+      const result = tracker.checkLimit(600, "transfer", UPSTREAM_TEST_POLICY);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("Hourly");
       expect(result.currentHourlySpend).toBe(9500);
@@ -220,7 +234,7 @@ describe("SpendTracker", () => {
     it("returns allowed=false when daily limit exceeded", () => {
       // Use custom policy with low hourly cap but test daily
       const policy: TreasuryPolicy = {
-        ...DEFAULT_TREASURY_POLICY,
+        ...UPSTREAM_TEST_POLICY,
         maxHourlyTransferCents: 100_000, // high hourly to not trigger
         maxDailyTransferCents: 5000,
       };
@@ -304,13 +318,13 @@ describe("SpendTracker", () => {
     it("uses a meaningful hourly cap less than the daily limit", () => {
       // maxInferenceDailyCents is 50000 ($500/day)
       // The hourly limit should be a fraction of the daily limit, NOT equal to it
-      const result = tracker.checkLimit(1, "inference", DEFAULT_TREASURY_POLICY);
+      const result = tracker.checkLimit(1, "inference", UPSTREAM_TEST_POLICY);
       expect(result.allowed).toBe(true);
       expect(result.limitHourly).toBeLessThan(result.limitDaily);
     });
 
     it("enforces hourly inference limit before daily is reached", () => {
-      const hourlyLimit = Math.ceil(DEFAULT_TREASURY_POLICY.maxInferenceDailyCents / 6);
+      const hourlyLimit = Math.ceil(UPSTREAM_TEST_POLICY.maxInferenceDailyCents / 6);
 
       // Spend up to just below hourly limit
       tracker.recordSpend({
@@ -320,7 +334,7 @@ describe("SpendTracker", () => {
       });
 
       // This should be denied because hourly limit would be exceeded
-      const result = tracker.checkLimit(2, "inference", DEFAULT_TREASURY_POLICY);
+      const result = tracker.checkLimit(2, "inference", UPSTREAM_TEST_POLICY);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("Hourly");
     });
@@ -338,12 +352,12 @@ describe("SpendTracker", () => {
 
       // maxX402PaymentCents is 100, so hourly = 100*10 = 1000
       // 900 + 200 = 1100 > 1000 should be denied
-      const result = tracker.checkLimit(200, "x402", DEFAULT_TREASURY_POLICY);
+      const result = tracker.checkLimit(200, "x402", UPSTREAM_TEST_POLICY);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain("Hourly");
 
       // But the same amount should be allowed for transfers (limit is 10000)
-      const transferResult = tracker.checkLimit(200, "transfer", DEFAULT_TREASURY_POLICY);
+      const transferResult = tracker.checkLimit(200, "transfer", UPSTREAM_TEST_POLICY);
       expect(transferResult.allowed).toBe(true);
     });
   });

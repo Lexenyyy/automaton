@@ -229,7 +229,12 @@ describe("agent/GeneralHarness", () => {
 
   it("tracks per-turn transfer count through wrapped tools so the third transfer is denied", async () => {
     const { harness, appDb } = await createHarness();
-    const policyEngine = new PolicyEngine(appDb.raw, createFinancialRules(DEFAULT_TREASURY_POLICY));
+    // Fixed test policy: this test checks per-turn counting with a limit of 2,
+    // independent of the fork's (stricter) DEFAULT_TREASURY_POLICY.
+    const policyEngine = new PolicyEngine(
+      appDb.raw,
+      createFinancialRules({ ...DEFAULT_TREASURY_POLICY, maxTransfersPerTurn: 2 }),
+    );
     (harness as any).context.policyEngine = policyEngine;
 
     const transferTool = harness.getToolDefs().find((tool) => tool.name === "transfer_credits");
