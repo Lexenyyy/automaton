@@ -282,3 +282,40 @@
     so they are Windows-only. Windows is unchanged: build passes, 1798 passed, 22 failed.
   - CLAUDE.md now uses the Linux run as the main baseline and keeps the Windows numbers as a secondary check.
   - Later (owner decision): an offline variant (`--network none`), together with the RPC mock item.
+- 2026-11-12: **Agent in Docker: runtime + sandbox containers (Phase 1).** Commits `34e383c` (step 1),
+  `e00c0d0` (step 2), `b5317a2` (steps 3–4). Owner-approved: two containers, sandbox without internet,
+  read-only config, agent code changes.
+  - Why: in local mode the agent's shell ran as the agent's own user with its full environment, so it
+    could read `wallet.json` and the API keys; only the regex blocklist stood in the way.
+  - **Sandbox container mode** (`"sandbox": { "mode": "container" }`): `exec`, `writeFile` and
+    `readFile` go to `src/sandbox/server.ts` over a Unix socket. The runtime never runs them itself and
+    never falls back to local on an error. `expose_port` is refused. Local mode is unchanged.
+  - **Design change (owner addition 1):** a Unix socket on a shared volume instead of an internal network.
+    The sandbox has `network_mode: none`, so it has no route to the runtime at all, and the runtime's
+    mount of the socket folder is read-only, so it cannot listen there.
+  - **Step 2 caller fixes (owner-approved after the audit):**
+    - Worker harnesses: the silent local fallbacks (exec and file ops retried in the runtime after any
+      Conway error) are removed in every mode; `list_dir` runs in the sandbox; workers edit only
+      `/workspace` in container mode.
+    - Skills loader: `which` replaced by a PATH check without a process; container mode skips
+      `requires.bins/env` (they describe the sandbox, and the env check could reveal which secrets the
+      runtime holds).
+    - Skills registry: `git clone`/`curl` run in the sandbox in container mode, every argument quoted.
+    - Upstream helper: `git` refused in container mode.
+    - Two tests that expected the local fallback now check that it does not happen. The
+      `command-injection` loader check now requires that no process is started (stricter).
+  - **Docker:** `docker/agent.Dockerfile` (targets `runtime`, `sandbox`), `docker/compose.agent.yml`,
+    entrypoint that refuses `AUTOMATON_MAINNET_APPROVED`, keys loaded from `AUTOMATON_SECRETS_DIR` into
+    the runtime only, config template `docker/automaton.testnet.json` mounted read-only.
+  - **`pnpm agent:verify`: 84 checks, all pass.** It runs in a throwaway project with a fake secret and
+    removes it afterwards. It includes owner addition 1 (no interfaces or route in the sandbox,
+    `ENETUNREACH` to the runtime IP, no runtime listeners except Docker's own DNS on 127.0.0.11) and
+    addition 2 (canary skill full of code: only `SKILL.md` is read, the code never runs).
+  - **Guard tests:** `sandbox-chokepoint` (child_process and listeners only in reviewed files),
+    `runtime-no-workspace-code` (no dynamic code loading; skills read as text only),
+    `container-mode-callers`, `sandbox/server`, `sandbox/client-container-mode`.
+  - Testnet wallet created with `pnpm agent:init` in the `automaton_automaton-home` volume (address only
+    printed). The agent was not started.
+  - Baselines: Linux 1865 passed, 0 failed. Windows 1835 passed, 22 known failures, 8 Linux-only skipped.
+  - Found, not fixed (ROADMAP): `--run` still needs a Conway API key; `update_genesis_prompt` and
+    `switch_model` fail with the read-only config.

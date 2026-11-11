@@ -31,6 +31,16 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   This is also the hard boundary for change 2: the shell pattern blocklist for start-up/env files is
   best-effort (obfuscated commands can get past regexes), so the agent's shell must not be able to
   write `automaton.json`, `.env`, pm2/systemd configs or start scripts at the OS level.
+  - [x] **Shell only inside Docker as non-root.** Done in `34e383c`, `e00c0d0`, `b5317a2`: two
+        containers (runtime + sandbox, see CLAUDE.md "Running the agent in Docker"). The agent's shell
+        and file tools run in a sandbox without network, secrets or host folders; config is read-only;
+        keys reach the runtime only. `pnpm agent:verify`: 84 checks pass.
+  - [ ] **`--run` needs a Conway API key** (`src/index.ts`, `run()` exits without `conwayApiKey`). The
+        agent cannot start without Conway yet. Needed before the first real run.
+  - [ ] **Mutable settings in a read-only config.** `update_genesis_prompt` and `switch_model` call
+        `saveConfig` and now fail in Docker. Option: store these two settings in the database.
+  - [ ] **Working kill command** (rest of this bullet; the hard daily spend cap exists since change 1c).
+        `pnpm agent:down` stops both containers; a proper kill command belongs to Phase 2 (creator CLI).
 - Found in Phase 0 review, to fix in this phase:
   - [x] **HIGH PRIORITY: the tokenizer could freeze the agent loop.** Fixed in `f560a96`.
         `estimateTokens` ran every turn through `js-tiktoken`, which is quadratic on long strings with

@@ -20,7 +20,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
    spending limits, or injection defenses. Changes there need the owner's explicit approval.
 5. **Never expose secrets.** Never print, log, commit or read the wallet private key,
    `~/.automaton/wallet.json`, API keys or `.env` files.
-6. **Do not run `node dist/index.js --run`** (starts the real agent and setup wizard) unless the
+6. **Do not run `node dist/index.js --run` or `pnpm agent:run`** (starts the real agent) unless the
    owner asks for it.
 7. **Reusable base:** keep job-specific code in `src/services/<job>/` and in genesis prompt, skills and
    config, never mixed into core code. Prefer settings over hardcoded values (name, prices, models,
@@ -32,13 +32,36 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline at commit e15a727: 1820 passed,
+  `pnpm build` and the full suite in a Linux container. Baseline at commit b5317a2: 1865 passed,
   0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1798 passed and 22 failed. The 22 are
-  Windows-only path failures that pass on Linux: `skills-hardening` (12), `command-injection` (5),
-  `tools-security` (3), `path-protection` (1), `orchestration/local-worker-harness` (1). Any other
-  Windows failure is a regression.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1835 passed, 22 failed and 8 skipped.
+  The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
+  `command-injection` (5), `tools-security` (3), `path-protection` (1),
+  `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
+  sockets, `/bin/sh`). Any other Windows failure is a regression.
+- After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
+  harnesses, skills, `docker/`): `pnpm agent:verify` must also pass (84 checks at b5317a2).
+
+## Running the agent in Docker (Phase 1)
+Two containers from `docker/compose.agent.yml`, testnet only:
+- **runtime:** agent loop, policy engine, wallet and keys. Non-root (uid 10001), read-only root,
+  no published ports, no npm/git/curl. With `"sandbox": { "mode": "container" }` it starts no
+  processes; shell and file tools go to the sandbox.
+- **sandbox:** runs the agent's shell and file tools. Non-root (uid 10002), `network_mode: none`
+  (no internet, no route to the runtime), no secrets, no host folders. Writes only `/workspace`
+  (read-only in the runtime; skills are read there as text only) and its own home.
+- They talk only over a Unix socket created by the sandbox; the runtime's mount of it is read-only.
+- **Secrets:** API keys are files in a folder outside the repo, set with
+  `$env:AUTOMATON_SECRETS_DIR` (names: `openai_api_key`, `anthropic_api_key`, `groq_api_key`,
+  `together_api_key`). Mounted read-only into the runtime only. Never read that folder.
+- **Wallet:** in the `automaton_automaton-home` Docker volume, created with `pnpm agent:init`.
+  `docker compose ... down -v` would delete it; `pnpm agent:down` keeps volumes.
+- Commands: `pnpm agent:build`, `agent:init`, `agent:verify`, `agent:run` (owner only, rule 6),
+  `agent:down`. Config template: `docker/automaton.testnet.json` (mounted read-only).
+- Known limits: `--run` still needs a Conway API key (see ROADMAP); `update_genesis_prompt` and
+  `switch_model` fail because the config is read-only; `install_skill` and `expose_port` fail
+  because the sandbox has no network.
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
