@@ -64,6 +64,8 @@ import { HarnessRegistry } from "./harness-registry.js";
 import { createWorkerInferenceBridge } from "./worker-inference-bridge.js";
 import { ProviderRegistry } from "../inference/provider-registry.js";
 import { UnifiedInferenceClient } from "../inference/inference-client.js";
+import { MeteredInferenceClient } from "../inference/metered-client.js";
+import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool } from "./idle-only-tools.js";
 
 const logger = createLogger("loop");
@@ -173,7 +175,23 @@ export async function runAgentLoop(
         registry.overrideBaseUrl("openai", process.env.OPENAI_BASE_URL);
       }
 
-      const unifiedInference = new UnifiedInferenceClient(registry);
+      // Every orchestrator/worker model call goes through the same budget
+      // tracker as the main loop (caps + ledger). The raw client is never
+      // handed out.
+      const rawUnifiedInference = new UnifiedInferenceClient(registry);
+      const getSessionId = () => db.getKV("session_id") || "default";
+      const orchestratorInference = new MeteredInferenceClient(
+        rawUnifiedInference,
+        registry,
+        budgetTracker,
+        { source: "orchestrator", taskType: "planning", getSessionId },
+      );
+      const workerMeteredInference = new MeteredInferenceClient(
+        rawUnifiedInference,
+        registry,
+        budgetTracker,
+        { source: "worker", taskType: "agent_turn", getSessionId },
+      );
       const agentTracker = new SimpleAgentTracker(db);
       const funding = new SimpleFundingProtocol(conway, identity, db);
       const messaging = new ColonyMessaging(
@@ -185,7 +203,7 @@ export async function runAgentLoop(
 
       // Adapter: local workers use the unified inference path so planner-backed
       // harnesses can preserve tier + responseFormat contracts.
-      const workerInference = createWorkerInferenceBridge(unifiedInference);
+      const workerInference = createWorkerInferenceBridge(workerMeteredInference);
 
       // Local worker pool: runs inference-driven agents in-process
       // as async tasks. Falls back from Conway sandbox spawning.
@@ -209,7 +227,7 @@ export async function runAgentLoop(
         agentTracker,
         funding,
         messaging,
-        inference: unifiedInference,
+        inference: orchestratorInference,
         identity,
         isWorkerAlive: (address: string) => {
           if (address.startsWith("local://")) {
@@ -637,9 +655,9 @@ export async function runAgentLoop(
         if (claimedMessages.length > 0) {
           resetInboxToReceived(db.raw, claimedMessages.map((m) => m.id));
         }
-        const nextHour = new Date();
-        nextHour.setUTCMinutes(60, 0, 0);
-        const wakeAt = Math.max(nextHour.getTime(), Date.now() + 5 * 60_000);
+        // Pause orchestration and workers until the same window.
+        pauseForBudget(db.raw, routerResult.content);
+        const wakeAt = nextBudgetWindow();
         db.setKV("sleep_until", new Date(wakeAt).toISOString());
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");

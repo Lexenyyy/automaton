@@ -2,6 +2,7 @@ import { createLogger } from "../../observability/logger.js";
 import type { ChatMessage, InferenceToolCall } from "../../types.js";
 import type { TaskNode, TaskResult } from "../../orchestration/task-graph.js";
 import { LoopDetector } from "../loop-detector.js";
+import { isInferenceBudgetExceededError } from "../../inference/metered-client.js";
 import type {
   AgentHarness,
   HarnessContext,
@@ -121,6 +122,8 @@ export abstract class BaseHarness implements AgentHarness {
         });
         consecutiveInferenceErrors = 0;
       } catch (error) {
+        // Budget refusal: stop now so the worker pauses; retrying can't help.
+        if (isInferenceBudgetExceededError(error)) throw error;
         consecutiveInferenceErrors++;
         const message = error instanceof Error ? error.message : String(error);
         logger.error(
@@ -207,6 +210,9 @@ export abstract class BaseHarness implements AgentHarness {
                 };
               }
             } catch (error) {
+              // A tool that made a refused inference call (e.g. plan refresh)
+              // must pause the worker, not become a tool error.
+              if (isInferenceBudgetExceededError(error)) throw error;
               output = `Error executing ${toolCall.function.name}: ${error instanceof Error ? error.message : String(error)}`;
               logger.error(`[${this.id}] Tool error: ${output}`);
             }

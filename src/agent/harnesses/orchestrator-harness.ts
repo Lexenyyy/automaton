@@ -21,6 +21,7 @@ import {
   normalizeTaskResult,
 } from "../../orchestration/task-graph.js";
 import { BaseHarness } from "./base-harness.js";
+import { isInferenceBudgetExceededError } from "../../inference/metered-client.js";
 import type { HarnessTool } from "../harness-types.js";
 
 const MAX_FIX_CYCLES = 3;
@@ -49,6 +50,7 @@ export class OrchestratorHarness extends BaseHarness {
         this.planTaskIdByIndex = buildPlanTaskIndexMap(this.currentPlan, this.getManagedTasks());
       }
     } catch (error) {
+      if (isInferenceBudgetExceededError(error)) throw error; // pause the worker
       this.plannerError = error instanceof Error ? error.message : String(error);
     }
 
@@ -159,6 +161,7 @@ You follow a strict planner-backed plan → execute → verify → fix cycle:
               formatPlanSummary(result.plan),
             ].join("\n\n");
           } catch (error) {
+            if (isInferenceBudgetExceededError(error)) throw error; // pause the worker
             const message = error instanceof Error ? error.message : String(error);
             this.plannerError = message;
             return `Failed to refresh plan: ${message}`;
@@ -363,6 +366,7 @@ You follow a strict planner-backed plan → execute → verify → fix cycle:
               });
               replanNote = ` Planner-backed replan prepared (v${refreshed.version}); inspect it with refresh_plan before delegating fixes.`;
             } catch (error) {
+              if (isInferenceBudgetExceededError(error)) throw error; // pause, don't replan
               this.plannerError = error instanceof Error ? error.message : String(error);
             }
           }

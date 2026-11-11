@@ -24,7 +24,11 @@ import {
 } from "./planner.js";
 import { ColonyMessaging, type AgentMessage } from "./messaging.js";
 import { generateTodoMd } from "./attention.js";
-import { UnifiedInferenceClient } from "../inference/inference-client.js";
+import {
+  isInferenceBudgetExceededError,
+  type MeteredInference,
+} from "../inference/metered-client.js";
+import { getBudgetPauseUntil, pauseForBudget } from "../inference/budget-pause.js";
 import { reviewPlan } from "./plan-mode.js";
 import { buildPlannerContext, getNextPlannerVersion, persistPlannerArtifacts } from "./planner-context.js";
 import { AgentWorkspace } from "./workspace.js";
@@ -98,7 +102,7 @@ export class Orchestrator {
     agentTracker: AgentTracker;
     funding: FundingProtocol;
     messaging: ColonyMessaging;
-    inference: UnifiedInferenceClient;
+    inference: MeteredInference;
     identity: AutomatonIdentity;
     config: any;
     /** Check if a worker agent is still alive. Used to recover stale tasks. */
@@ -113,6 +117,17 @@ export class Orchestrator {
     };
 
     let state = this.loadState();
+
+    // Budget pause: do nothing (no planning, no new workers) until the next
+    // budget window. Tasks and goals keep their current status.
+    const pausedUntil = getBudgetPauseUntil(this.params.db);
+    if (pausedUntil !== null) {
+      logger.info("Orchestrator paused by inference budget", {
+        until: new Date(pausedUntil).toISOString(),
+        phase: state.phase,
+      });
+      return this.buildTickResult(state, counters);
+    }
 
     try {
       switch (state.phase) {
@@ -162,26 +177,42 @@ export class Orchestrator {
         }
       }
     } catch (error) {
-      const err = normalizeError(error);
-      logger.error("Orchestrator tick failed", err, {
-        phase: state.phase,
-        goalId: state.goalId,
-      });
+      if (isInferenceBudgetExceededError(error)) {
+        // Budget refusal: pause, keep the phase so the same step runs again
+        // after the pause. Never fail the goal or replan because of it.
+        const wakeAt = pauseForBudget(this.params.db, error.message);
+        logger.warn("Inference budget reached, orchestrator paused", {
+          phase: state.phase,
+          goalId: state.goalId,
+          until: new Date(wakeAt).toISOString(),
+          reason: error.message,
+        });
+      } else {
+        const err = normalizeError(error);
+        logger.error("Orchestrator tick failed", err, {
+          phase: state.phase,
+          goalId: state.goalId,
+        });
 
-      if (state.goalId) {
-        updateGoalStatus(this.params.db, state.goalId, "failed");
+        if (state.goalId) {
+          updateGoalStatus(this.params.db, state.goalId, "failed");
+        }
+
+        state = {
+          ...state,
+          phase: "failed",
+          failedError: err.message,
+        };
       }
-
-      state = {
-        ...state,
-        phase: "failed",
-        failedError: err.message,
-      };
     }
 
     this.saveState(state);
     this.persistTodo();
 
+    return this.buildTickResult(state, counters);
+  }
+
+  private buildTickResult(state: OrchestratorState, counters: TickCounters): OrchestratorTickResult {
     return {
       phase: state.phase,
       tasksAssigned: counters.tasksAssigned,
@@ -413,6 +444,7 @@ export class Orchestrator {
         this.params.inference,
       );
     } catch (error) {
+      if (isInferenceBudgetExceededError(error)) throw error; // pause, don't fall back
       const err = normalizeError(error);
       logger.warn("Planner inference failed, falling back to single-task plan", {
         goalId: goal.id,
@@ -587,6 +619,7 @@ export class Orchestrator {
         this.params.agentTracker.updateStatus(assignment.agentAddress, "running");
         counters.tasksAssigned += 1;
       } catch (error) {
+        if (isInferenceBudgetExceededError(error)) throw error; // pause, don't fail the task
         const err = normalizeError(error);
 
         // If no agent is available, skip this task — it stays pending and will
@@ -714,6 +747,7 @@ export class Orchestrator {
         this.params.inference,
       );
     } catch (error) {
+      if (isInferenceBudgetExceededError(error)) throw error; // pause, don't fall back
       const err = normalizeError(error);
       logger.warn("Replanner inference failed, falling back to single-task plan", {
         goalId: goal.id,
@@ -836,7 +870,8 @@ export class Orchestrator {
         estimatedSteps,
         requiresPlanMode: estimatedSteps > 3,
       };
-    } catch {
+    } catch (error) {
+      if (isInferenceBudgetExceededError(error)) throw error; // pause, don't guess
       const estimatedSteps = heuristicStepEstimate(goal);
       return {
         estimatedSteps,

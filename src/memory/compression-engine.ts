@@ -10,7 +10,7 @@ import { ulid } from "ulid";
 import type { ContextManager, ContextUtilization } from "./context-manager.js";
 import { EventStream, estimateTokens, type EventType, type StreamEvent } from "./event-stream.js";
 import { KnowledgeStore } from "./knowledge-store.js";
-import { UnifiedInferenceClient } from "../inference/inference-client.js";
+import type { MeteredInference } from "../inference/metered-client.js";
 
 const STAGE_1_THRESHOLD = 70;
 const STAGE_2_THRESHOLD = 80;
@@ -108,7 +108,7 @@ export class CompressionEngine {
     private readonly contextManager: ContextManager,
     private readonly eventStream: EventStream,
     private readonly knowledgeStore: KnowledgeStore,
-    private readonly inference: UnifiedInferenceClient,
+    private readonly inference: Pick<MeteredInference, "chat">,
   ) {}
 
   async evaluate(utilization: ContextUtilization): Promise<CompressionPlan> {

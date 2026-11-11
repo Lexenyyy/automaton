@@ -1,10 +1,11 @@
-import type { UnifiedInferenceClient } from "../inference/inference-client.js";
+import type { MeteredInference } from "../inference/metered-client.js";
 import type { ModelTier } from "../inference/provider-registry.js";
 import type { InferenceToolCall } from "../types.js";
 import type { WorkerInferenceClient } from "./harness-types.js";
 
+/** Workers must only get metered inference (budget caps + ledger). */
 export function createWorkerInferenceBridge(
-  inference: Pick<UnifiedInferenceClient, "chat">,
+  inference: Pick<MeteredInference, "chat">,
 ): WorkerInferenceClient {
   return {
     chat: async (params) => {

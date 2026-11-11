@@ -1,5 +1,8 @@
 import type { Goal, TaskNode } from "./task-graph.js";
-import { UnifiedInferenceClient } from "../inference/inference-client.js";
+import type { MeteredInference } from "../inference/metered-client.js";
+
+/** Planner calls must be metered (budget caps + ledger). */
+type PlannerInference = Pick<MeteredInference, "chat">;
 import type { ModelTier } from "../inference/provider-registry.js";
 
 export interface PlannerOutput {
@@ -83,7 +86,7 @@ const MODEL_TIERS: readonly ModelTier[] = ["reasoning", "fast", "cheap"];
 export async function planGoal(
   goal: PlannerGoalInput,
   context: PlannerContext,
-  inference: UnifiedInferenceClient,
+  inference: PlannerInference,
 ): Promise<PlannerOutput> {
   return runPlannerInference({
     mode: "plan_goal",
@@ -97,7 +100,7 @@ export async function replanAfterFailure(
   goal: PlannerGoalInput,
   failedTask: PlannerFailureInput,
   context: PlannerContext,
-  inference: UnifiedInferenceClient,
+  inference: PlannerInference,
 ): Promise<PlannerOutput> {
   return runPlannerInference({
     mode: "replan_after_failure",
@@ -113,7 +116,7 @@ function runPlannerInference(params: {
   goal: PlannerGoalInput;
   failedTask?: PlannerFailureInput;
   context: PlannerContext;
-  inference: UnifiedInferenceClient;
+  inference: PlannerInference;
 }): Promise<PlannerOutput> {
   const systemPrompt = buildPlannerPrompt(params.context);
   const userPrompt = buildPlannerUserPrompt({

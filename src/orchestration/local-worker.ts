@@ -14,6 +14,8 @@ import { HarnessRegistry } from "../agent/harness-registry.js";
 import { completeTask, failTask } from "./task-graph.js";
 import type { TaskNode } from "./task-graph.js";
 import { AgentWorkspace } from "./workspace.js";
+import { isInferenceBudgetExceededError } from "../inference/metered-client.js";
+import { pauseForBudget, requeueTaskForBudget } from "../inference/budget-pause.js";
 import type {
   AutomatonConfig,
   AutomatonIdentity,
@@ -58,6 +60,10 @@ export class LocalWorkerPool {
 
     const workerPromise = this.runWorker(workerId, task, abortController.signal)
       .catch((error) => {
+        if (isInferenceBudgetExceededError(error)) {
+          this.pauseTaskForBudget(workerId, task, error.message);
+          return;
+        }
         logger.error("Local worker crashed", error instanceof Error ? error : new Error(String(error)), {
           workerId,
           taskId: task.id,
@@ -165,9 +171,33 @@ export class LocalWorkerPool {
         });
       }
     } catch (error) {
+      if (isInferenceBudgetExceededError(error)) {
+        this.pauseTaskForBudget(workerId, task, error.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       logger.error(`[WORKER ${workerId}] Harness execution failed: ${message}`);
       failTask(this.config.db, task.id, message, true);
+    }
+  }
+
+  /**
+   * Budget refusal: the task goes back to pending (not failed, no replan)
+   * and orchestration pauses until the next budget window.
+   */
+  private pauseTaskForBudget(workerId: string, task: TaskNode, reason: string): void {
+    try {
+      requeueTaskForBudget(this.config.db, task.id);
+      const wakeAt = pauseForBudget(this.config.db, reason);
+      logger.warn(`[WORKER ${workerId}] Inference budget reached; task requeued, paused until ${new Date(wakeAt).toISOString()}`, {
+        taskId: task.id,
+        reason,
+      });
+    } catch (error) {
+      logger.error("Failed to pause task for budget", error instanceof Error ? error : new Error(String(error)), {
+        workerId,
+        taskId: task.id,
+      });
     }
   }
 }

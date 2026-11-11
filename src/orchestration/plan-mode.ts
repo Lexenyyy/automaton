@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { UnifiedInferenceClient } from "../inference/inference-client.js";
+import type { MeteredInference } from "../inference/metered-client.js";
 import type { PlannerOutput } from "./planner.js";
 import { validatePlannerOutput } from "./planner.js";
 
@@ -135,7 +135,7 @@ export async function classifyComplexity(
     agentRole: string;
     availableTools: string[];
   },
-  inference: UnifiedInferenceClient,
+  inference: Pick<MeteredInference, "chat">,
 ): Promise<{
   requiresPlanMode: boolean;
   estimatedSteps: number;
