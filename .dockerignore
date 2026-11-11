@@ -12,6 +12,8 @@
 !vitest.config.ts
 !constitution.md
 !scripts/
+!docker/runtime-entrypoint.sh
+!docker/load-secrets.sh
 
 **/node_modules
 **/dist

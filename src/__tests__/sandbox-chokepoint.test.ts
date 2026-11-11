@@ -68,6 +68,30 @@ describe("process choke point (sandbox container mode)", () => {
     );
   });
 
+  // Owner addition 1: only runtime -> sandbox calls. The runtime opens no
+  // listening socket; the only server is the sandbox server.
+  it("listens only in the sandbox server (the runtime opens no port or socket)", () => {
+    const count = (re: RegExp) => {
+      const out: Record<string, number> = {};
+      for (const { rel, text } of FILES) {
+        const n = (text.match(new RegExp(re.source, "g")) ?? []).length;
+        if (n > 0) out[rel] = n;
+      }
+      return out;
+    };
+    expect(count(/\.listen\s*\(/)).toEqual({
+      "sandbox/server.ts": 1,
+      // Text of /tmp/agent-card-server.js, written to and run in the sandbox.
+      "registry/agent-card.ts": 1,
+    });
+    expect(count(/\bcreateServer\s*\(/)).toEqual({
+      "sandbox/server.ts": 1,
+      "registry/agent-card.ts": 1,
+    });
+    // No raw UDP sockets either.
+    expect(count(/["'](node:)?dgram["']/)).toEqual({});
+  });
+
   it("uses no other way to start a process (worker threads, cluster)", () => {
     expect(filesMatching(/["'](node:)?(worker_threads|cluster)["']/)).toEqual([]);
   });

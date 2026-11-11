@@ -51,6 +51,11 @@
     "test:financial": "vitest run --grep 'financial|spend|treasury'",
     "test:ci": "vitest run --reporter=verbose",
     "test:linux": "docker build -f docker/test.Dockerfile -t automaton-test . && docker run --rm automaton-test",
+    "agent:build": "docker compose -f docker/compose.agent.yml build",
+    "agent:init": "docker compose -f docker/compose.agent.yml run --rm runtime --init",
+    "agent:verify": "node docker/verify-agent.mjs",
+    "agent:run": "docker compose -f docker/compose.agent.yml run --rm runtime --run",
+    "agent:down": "docker compose -f docker/compose.agent.yml down",
     "clean": "rm -rf dist && pnpm -r clean"
   },
   "dependencies": {

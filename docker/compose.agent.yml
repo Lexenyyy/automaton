@@ -1,0 +1,72 @@
+# Agent in Docker (fork, Phase 1). Testnet only.
+#
+#   pnpm agent:build    build both images
+#   pnpm agent:init     create the testnet wallet in the automaton-home volume
+#   pnpm agent:verify   isolation checks (separate throwaway project and volumes)
+#   pnpm agent:run      start the agent (owner only)
+#   pnpm agent:down     stop everything (volumes are kept)
+#
+# API keys: one file per key in a folder outside the repo, for example
+#   $env:AUTOMATON_SECRETS_DIR = "$env:USERPROFILE\.automaton-secrets"
+# File names: openai_api_key, anthropic_api_key, groq_api_key, together_api_key.
+# The folder is mounted read-only into the runtime only.
+
+name: automaton
+
+services:
+  sandbox:
+    build:
+      context: ..
+      dockerfile: docker/agent.Dockerfile
+      target: sandbox
+    image: automaton-sandbox:local
+    network_mode: none            # no internet, no route to the runtime
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    restart: "no"
+    volumes:
+      - sandbox-socket:/run/automaton-sandbox
+      - agent-workspace:/workspace
+      - sandbox-home:/home/agent
+
+  runtime:
+    build:
+      context: ..
+      dockerfile: docker/agent.Dockerfile
+      target: runtime
+    image: automaton-runtime:local
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    networks: [egress]            # model APIs and Base Sepolia RPC; no ports published
+    group_add: ["10100"]          # sandboxsock: may connect to the sandbox socket (read-only mount)
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    restart: "no"
+    volumes:
+      - automaton-home:/home/automaton/.automaton
+      - ./automaton.testnet.json:/home/automaton/.automaton/automaton.json:ro
+      - agent-workspace:/workspace:ro
+      - sandbox-socket:/run/automaton-sandbox:ro
+      - ${AUTOMATON_SECRETS_DIR:-./no-secrets}:/run/secrets/automaton:ro
+
+networks:
+  egress: {}
+
+volumes:
+  automaton-home: {}
+  agent-workspace: {}
+  sandbox-socket: {}
+  sandbox-home: {}

@@ -1,0 +1,17 @@
+{
+  "name": "automaton-testnet",
+  "genesisPrompt": "Placeholder. The owner writes the real genesis prompt (Phase 0 open item).",
+  "creatorAddress": "0x0000000000000000000000000000000000000000",
+  "sandboxId": "",
+  "network": "testnet",
+  "balanceSource": "own",
+  "dbPath": "~/.automaton/state.db",
+  "heartbeatConfigPath": "~/.automaton/heartbeat.yml",
+  "skillsDir": "/workspace/skills",
+  "logLevel": "info",
+  "sandbox": {
+    "mode": "container",
+    "socketPath": "/run/automaton-sandbox/sandbox.sock",
+    "workspaceDir": "/workspace"
+  }
+}
