@@ -13,6 +13,69 @@ const COMPRESSION_HEADROOM_RATIO = 0.1;
 const MAX_EVENT_CONTENT_CHARS = 220;
 const MAX_TOOL_RESULT_CHARS = 10_000;
 
+/**
+ * Tokenizer cost bounds. js-tiktoken's BPE merge is quadratic in the length of
+ * a single pre-tokenized piece, so long runs without whitespace (base64, hashes,
+ * minified code) can block the event loop for minutes. Runs longer than
+ * MAX_RUN_CHARS are encoded in slices of that size (near-exact, slight
+ * overcount). Text longer than MAX_TOKENIZE_CHARS is estimated by counting its
+ * first MAX_TOKENIZE_CHARS characters and scaling by length.
+ * Measured worst case (plain letters): ~3.4 ms per 1,000 chars, ~170 ms at the limit.
+ */
+export const MAX_RUN_CHARS = 64;
+export const MAX_TOKENIZE_CHARS = 50_000;
+/** Texts longer than this are counted but not cached (the cache key is the full text). */
+const MAX_CACHED_TEXT_CHARS = 10_000;
+
+const LONG_RUN_PATTERN = new RegExp(`\\S{${MAX_RUN_CHARS + 1},}`, "g");
+
+/** Move a cut index off the middle of a UTF-16 surrogate pair. */
+function safeCut(text: string, index: number): number {
+  if (index <= 0 || index >= text.length) return index;
+  const code = text.charCodeAt(index);
+  return code >= 0xdc00 && code <= 0xdfff ? index - 1 : index;
+}
+
+/**
+ * Count tokens with bounded cost: whitespace-free runs longer than
+ * MAX_RUN_CHARS are encoded slice by slice.
+ */
+function countSliced(encoder: Tiktoken, text: string): number {
+  let total = 0;
+  let last = 0;
+  LONG_RUN_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = LONG_RUN_PATTERN.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (start > last) total += encoder.encode(text.slice(last, start)).length;
+    let pos = start;
+    while (pos < end) {
+      let next = Math.min(end, pos + MAX_RUN_CHARS);
+      next = next < end ? safeCut(text, next) : next;
+      if (next <= pos) next = Math.min(end, pos + MAX_RUN_CHARS + 1);
+      total += encoder.encode(text.slice(pos, next)).length;
+      pos = next;
+    }
+    last = end;
+  }
+  if (last < text.length) total += encoder.encode(text.slice(last)).length;
+  return total;
+}
+
+/**
+ * Bounded-cost token count. Above MAX_TOKENIZE_CHARS, the first
+ * MAX_TOKENIZE_CHARS characters are counted and the result is scaled by length.
+ */
+export function countTokensBounded(encoder: Tiktoken, text: string): number {
+  if (text.length <= MAX_TOKENIZE_CHARS) {
+    return countSliced(encoder, text);
+  }
+  const cut = safeCut(text, MAX_TOKENIZE_CHARS);
+  const sampleTokens = countSliced(encoder, text.slice(0, cut));
+  return Math.ceil(sampleTokens * (text.length / cut));
+}
+
 export interface ContextBudget {
   totalTokens: number;
   reserveTokens: number;
@@ -140,19 +203,22 @@ export function createTokenCounter(): TokenCounter {
 
   const countTokens = (text: string, model?: string): number => {
     const normalizedText = text ?? "";
+    const cacheable = normalizedText.length <= MAX_CACHED_TEXT_CHARS;
     const key = formatCacheKey(normalizedText, model);
 
-    const cached = cache.get(key);
-    if (cached !== undefined) {
-      cache.delete(key);
-      cache.set(key, cached);
-      return cached;
+    if (cacheable) {
+      const cached = cache.get(key);
+      if (cached !== undefined) {
+        cache.delete(key);
+        cache.set(key, cached);
+        return cached;
+      }
     }
 
     let count: number;
     if (encoder) {
       try {
-        count = encoder.encode(normalizedText).length;
+        count = countTokensBounded(encoder, normalizedText);
       } catch {
         count = Math.ceil(normalizedText.length / 3.5);
       }
@@ -160,8 +226,10 @@ export function createTokenCounter(): TokenCounter {
       count = Math.ceil(normalizedText.length / 3.5);
     }
 
-    cache.set(key, count);
-    enforceLruLimit(cache);
+    if (cacheable) {
+      cache.set(key, count);
+      enforceLruLimit(cache);
+    }
     return count;
   };
 
