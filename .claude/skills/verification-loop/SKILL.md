@@ -10,7 +10,7 @@ metadata:
 CLAUDE.md wins on any conflict. In this project, do not follow these parts:
 - Environment is Windows + PowerShell: translate the bash examples (`tail`, `sed`, `set -o pipefail`, `grep`).
 - Use `pnpm`, not `npm`. There's no lint script yet, so skip Phase 3 unless one is added.
-- Phase 4: use the test baseline in CLAUDE.md (full suite; the 25 known failures listed there are expected), not `npm run test -- --coverage` on the full suite. There's no 80% coverage gate.
+- Phase 4: use the test baseline in CLAUDE.md (full suite; the 22 known Windows failures listed there are expected), not `npm run test -- --coverage` on the full suite. There's no 80% coverage gate.
 - The `/verify` command and ECC hooks are not installed.
 
 # Verification Loop Skill

@@ -41,10 +41,9 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         counts the full tool result, but the context sends only the first 10k chars
         (`truncateToolResult`). Turns with huge results look more expensive than they are, so they get
         summarized sooner. Fixing this changes which turns are summarized, so it needs the owner's approval.
-  - [ ] **3 stale status-block tests in `context-hardening.test.ts`.** They were hidden while the file
-        hung. They still expect `Credits: $50.00` and the old tiers (`normal`, `low_compute`, `dead`).
-        Since change 3, the status block shows `Balance: ...` with the own balance source. They fail on
-        unchanged code too. Decide whether to update the tests or the prompt.
+  - [x] **3 stale status-block tests in `context-hardening.test.ts`.** They were hidden while the file
+        hung and still expected the upstream `Credits:` line and tiers. Fixed in `ddc79b9`: the tests
+        now match the change 3 `Balance:` block and `getSurvivalTier` (the prompt was correct).
   - [ ] **Run the test suite in a Linux Docker container.** The VPS will run Linux. This should clear
         the 22 Windows-only path failures and give a true baseline. After that, replace the temporary
         Windows baseline in CLAUDE.md.

@@ -265,3 +265,9 @@
     25 failed; the exclusion was removed from CLAUDE.md.
   - Not changed (owner decision): `estimateTurnTokens` still counts the full tool result. This is now
     a separate ROADMAP item.
+  - Owner decision: the `length/4` floor stays in `estimateTokens`, not in the counter.
+- 2026-11-11: **Updated the 3 stale status-block tests** (`context-hardening.test.ts`, commit `ddc79b9`).
+  The prompt was correct; the tests were outdated (owner decision). They now expect `Balance: $50.00`
+  and the `getSurvivalTier` tiers: 5000 cents is `high`, 0 is `critical`, a negative balance is `dead`.
+  A `normal` case (100 cents) was added. Baseline is back to the 22 Windows failures only:
+  1798 passed, 22 failed.
