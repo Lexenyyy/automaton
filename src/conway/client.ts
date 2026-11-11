@@ -30,6 +30,7 @@ import { randomUUID } from "crypto";
 import type { ChainType, ChainIdentity } from "../identity/chain.js";
 import type { SandboxConfig } from "../types.js";
 import { createSandboxTransport, resolveSandboxSocket } from "../sandbox/transport.js";
+import { setContainerSandboxActive } from "../sandbox/mode.js";
 
 interface ConwayClientOptions {
   apiUrl: string;
@@ -47,6 +48,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   // Fork: container mode. Throws on an invalid setting (refuse to start).
   const sandboxSocket = resolveSandboxSocket(options.sandbox, sandboxId);
   const containerSandbox = sandboxSocket ? createSandboxTransport(sandboxSocket) : null;
+  if (containerSandbox) setContainerSandboxActive();
   const httpClient = new ResilientHttpClient();
 
   async function request(

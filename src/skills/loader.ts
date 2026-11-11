@@ -6,7 +6,6 @@
  * YAML frontmatter + Markdown instructions.
  */
 
-import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import type { Skill, AutomatonDatabase } from "../types.js";
@@ -38,9 +37,19 @@ const SUSPICIOUS_INSTRUCTION_PATTERNS: { pattern: RegExp; label: string }[] = [
  * Scan the skills directory and load all valid SKILL.md files.
  * Returns loaded skills and syncs them to the database.
  */
+export interface LoadSkillsOptions {
+  /**
+   * Fork: true in sandbox container mode. Skill requirements (bins, env)
+   * describe the sandbox, not the runtime, so they are not checked here; the
+   * env check would also let a skill probe which secrets the runtime holds.
+   */
+  containerSandbox?: boolean;
+}
+
 export function loadSkills(
   skillsDir: string,
   db: AutomatonDatabase,
+  options: LoadSkillsOptions = {},
 ): Skill[] {
   const resolvedDir = resolveHome(skillsDir);
 
@@ -62,8 +71,8 @@ export function loadSkills(
       const skill = parseSkillMd(content, skillMdPath);
       if (!skill) continue;
 
-      // Check requirements
-      if (!checkRequirements(skill)) {
+      // Check requirements (local mode only, see LoadSkillsOptions)
+      if (!options.containerSandbox && !checkRequirements(skill)) {
         continue;
       }
 
@@ -91,8 +100,32 @@ export function loadSkills(
 const BIN_NAME_RE = /^[a-zA-Z0-9._-]+$/;
 
 /**
- * Check if a skill's requirements are met.
- * Uses execFileSync with argument arrays to prevent shell injection.
+ * Fork: find an executable on PATH without starting a process
+ * (replaces `which`).
+ */
+export function isOnPath(bin: string, envPath = process.env.PATH ?? ""): boolean {
+  if (!BIN_NAME_RE.test(bin)) return false;
+  const exts = process.platform === "win32"
+    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean)
+    : [""];
+  for (const dir of envPath.split(path.delimiter)) {
+    if (!dir || !path.isAbsolute(dir)) continue;
+    for (const ext of exts) {
+      try {
+        const candidate = path.join(dir, bin + ext);
+        if (!fs.statSync(candidate).isFile()) continue;
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return true;
+      } catch {
+        // not here
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if a skill's requirements are met. Starts no process.
  */
 function checkRequirements(skill: Skill): boolean {
   if (!skill.requires) return true;
@@ -100,13 +133,7 @@ function checkRequirements(skill: Skill): boolean {
   // Check required binaries
   if (skill.requires.bins) {
     for (const bin of skill.requires.bins) {
-      // Validate binary name to prevent injection
-      if (!BIN_NAME_RE.test(bin)) {
-        return false;
-      }
-      try {
-        execFileSync("which", [bin], { stdio: "ignore" });
-      } catch {
+      if (!isOnPath(bin)) {
         return false;
       }
     }

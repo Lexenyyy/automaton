@@ -37,6 +37,7 @@ import { bootstrapTopup } from "./conway/topup.js";
 import { randomUUID } from "crypto";
 import { keccak256, toHex, createPublicClient, http } from "viem";
 import { activateNetwork, getActiveNetwork } from "./identity/network.js";
+import { isContainerSandbox } from "./sandbox/transport.js";
 
 const logger = createLogger("main");
 
@@ -354,7 +355,7 @@ async function run(): Promise<void> {
   const skillsDir = config.skillsDir || "~/.automaton/skills";
   let skills: Skill[] = [];
   try {
-    skills = loadSkills(skillsDir, db);
+    skills = loadSkills(skillsDir, db, { containerSandbox: isContainerSandbox(config.sandbox) });
     logger.info(`[${new Date().toISOString()}] Loaded ${skills.length} skills.`);
   } catch (err: any) {
     logger.warn(`[${new Date().toISOString()}] Skills loading failed: ${err.message}`);
@@ -440,7 +441,7 @@ async function run(): Promise<void> {
     try {
       // Reload skills (may have changed since last loop)
       try {
-        skills = loadSkills(skillsDir, db);
+        skills = loadSkills(skillsDir, db, { containerSandbox: isContainerSandbox(config.sandbox) });
       } catch (error) {
         logger.error("Skills reload failed", error instanceof Error ? error : undefined);
       }

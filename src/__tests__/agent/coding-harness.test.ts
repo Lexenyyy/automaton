@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -129,18 +129,12 @@ describe("agent/CodingHarness confinement", () => {
     expect(out).toContain("outside workspace");
   });
 
-  it("allows patch_file inside the allowed edit root via local fallback", async () => {
+  it("patches a file inside the allowed edit root through the Conway client", async () => {
     const filePath = path.join(testRoot, "src", "example.ts");
-    mkdirSync(path.dirname(filePath), { recursive: true });
-    writeFileSync(filePath, "const value = 'before';\n", "utf8");
-
+    const files = new Map<string, string>([[filePath, "const value = 'before';\n"]]);
     const conway = createConwayStub({
-      readFile: async () => {
-        throw new Error("force local fallback");
-      },
-      writeFile: async () => {
-        throw new Error("force local fallback");
-      },
+      readFile: async (p) => files.get(p) ?? "",
+      writeFile: async (p, c) => void files.set(p, c),
     });
 
     const out = await runTool(conway, "patch_file", {
@@ -150,6 +144,60 @@ describe("agent/CodingHarness confinement", () => {
     });
 
     expect(out).toContain("Patched");
-    expect(readFileSync(filePath, "utf8")).toContain("'after'");
+    expect(files.get(filePath)).toContain("'after'");
+  });
+
+  // Fork Phase 1 (sandbox step 2): a sandbox error is reported and never
+  // retried in the runtime.
+  it("reports a sandbox error and does not fall back to the runtime filesystem", async () => {
+    const filePath = path.join(testRoot, "src", "example.ts");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, "const value = 'before';\n", "utf8");
+    const failing = createConwayStub({
+      exec: async () => {
+        throw new Error("sandbox down");
+      },
+      readFile: async () => {
+        throw new Error("sandbox down");
+      },
+      writeFile: async () => {
+        throw new Error("sandbox down");
+      },
+    });
+
+    expect(await runTool(failing, "patch_file", { path: filePath, search: "'before'", replace: "'after'" })).toBe(
+      "patch error: sandbox down",
+    );
+    expect(await runTool(failing, "read_file", { path: filePath })).toBe("read error: sandbox down");
+    expect(await runTool(failing, "write_file", { path: path.join(testRoot, "new.ts"), content: "x" })).toBe(
+      "write error: sandbox down",
+    );
+    expect(await runTool(failing, "exec", { command: "echo hi" })).toBe("exec error: sandbox down");
+    expect(await runTool(failing, "list_dir", { path: testRoot })).toBe("list error: sandbox down");
+
+    expect(readFileSync(filePath, "utf8")).toContain("'before'");
+    expect(existsSync(path.join(testRoot, "new.ts"))).toBe(false);
+  });
+
+  it("lists a directory through the sandbox, not the runtime filesystem", async () => {
+    const commands: string[] = [];
+    const conway = createConwayStub({
+      exec: async (command) => {
+        commands.push(command);
+        return { stdout: "f\tb.ts\nd\tsrc\nl\tlink\n", stderr: "", exitCode: 0 };
+      },
+    });
+    const out = await runTool(conway, "list_dir", { path: "it's here" });
+    expect(commands).toEqual([
+      `'find' '${path.join(testRoot, "it'\\''s here")}' '-mindepth' '1' '-maxdepth' '1' '-printf' '%y\\t%f\\n'`,
+    ]);
+    expect(out).toBe("file\tb.ts\nother\tlink\ndir\tsrc");
+  });
+
+  it("reports a failed listing", async () => {
+    const conway = createConwayStub({
+      exec: async () => ({ stdout: "", stderr: "find: No such file or directory\n", exitCode: 1 }),
+    });
+    expect(await runTool(conway, "list_dir", {})).toBe("list error: find: No such file or directory");
   });
 });

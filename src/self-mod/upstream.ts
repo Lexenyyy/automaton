@@ -7,13 +7,18 @@
  */
 
 import { execFileSync } from "child_process";
+import { isContainerSandboxActive } from "../sandbox/mode.js";
 
 const REPO_ROOT = process.cwd();
 
 /**
  * Run a git command using execFileSync with argument array (no shell interpolation).
+ * Fork: refused in sandbox container mode; the runtime starts no process.
  */
 function git(args: string[]): string {
+  if (isContainerSandboxActive()) {
+    throw new Error("Upstream checks are not available in sandbox container mode.");
+  }
   return execFileSync("git", args, {
     cwd: REPO_ROOT,
     encoding: "utf-8",

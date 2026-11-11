@@ -21,6 +21,12 @@ import type {
   ConwayClient,
 } from "../types.js";
 import { parseSkillMd } from "./format.js";
+import { shellCommand } from "../sandbox/protocol.js";
+
+/** Fork: in sandbox container mode installs run in the sandbox, not here. */
+export interface InstallSkillOptions {
+  containerSandbox?: boolean;
+}
 
 // Validation patterns to prevent injection via path/URL arguments
 const SKILL_NAME_RE = /^[a-zA-Z0-9-]+$/;
@@ -52,7 +58,8 @@ export async function installSkillFromGit(
   name: string,
   skillsDir: string,
   db: AutomatonDatabase,
-  _conway: ConwayClient,
+  conway: ConwayClient,
+  options: InstallSkillOptions = {},
 ): Promise<Skill | null> {
   // Validate inputs to prevent injection
   if (!SKILL_NAME_RE.test(name)) {
@@ -64,6 +71,19 @@ export async function installSkillFromGit(
 
   const resolvedDir = resolveHome(skillsDir);
   const targetDir = validateSkillPath(resolvedDir, name);
+
+  if (options.containerSandbox) {
+    // Fork: clone in the sandbox; the runtime starts no process and only
+    // reads SKILL.md back as text.
+    const result = await conway.exec(
+      shellCommand(["git", "clone", "--depth", "1", "--", repoUrl, targetDir]),
+      60_000,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to clone skill repo: ${(result.stderr || result.stdout).trim() || `exit code ${result.exitCode}`}`);
+    }
+    return saveSkillFromSandbox(path.join(targetDir, "SKILL.md"), "git", db, conway);
+  }
 
   // Clone using execFileSync with argument array (no shell interpolation)
   try {
@@ -100,7 +120,8 @@ export async function installSkillFromUrl(
   name: string,
   skillsDir: string,
   db: AutomatonDatabase,
-  _conway: ConwayClient,
+  conway: ConwayClient,
+  options: InstallSkillOptions = {},
 ): Promise<Skill | null> {
   // Validate inputs to prevent injection
   if (!SKILL_NAME_RE.test(name)) {
@@ -113,6 +134,18 @@ export async function installSkillFromUrl(
   const resolvedDir = resolveHome(skillsDir);
   const targetDir = validateSkillPath(resolvedDir, name);
   const skillMdPath = path.join(targetDir, "SKILL.md");
+
+  if (options.containerSandbox) {
+    // Fork: fetch in the sandbox; --url keeps the URL from being read as an option.
+    const mkdir = await conway.exec(shellCommand(["mkdir", "-p", "--", targetDir]), 10_000);
+    const result = mkdir.exitCode !== 0
+      ? mkdir
+      : await conway.exec(shellCommand(["curl", "-fsSL", "-o", skillMdPath, "--url", url]), 30_000);
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to fetch SKILL.md from URL: ${(result.stderr || result.stdout).trim() || `exit code ${result.exitCode}`}`);
+    }
+    return saveSkillFromSandbox(skillMdPath, "url", db, conway);
+  }
 
   // Create directory using fs (no shell needed)
   fs.mkdirSync(targetDir, { recursive: true });
@@ -134,6 +167,27 @@ export async function installSkillFromUrl(
     throw new Error("Failed to parse fetched SKILL.md");
   }
 
+  db.upsertSkill(skill);
+  return skill;
+}
+
+/** Container mode: read SKILL.md from the sandbox as text, parse, store. */
+async function saveSkillFromSandbox(
+  skillMdPath: string,
+  source: SkillSource,
+  db: AutomatonDatabase,
+  conway: ConwayClient,
+): Promise<Skill> {
+  let content: string;
+  try {
+    content = await conway.readFile(skillMdPath);
+  } catch (err: any) {
+    throw new Error(`No SKILL.md found at ${skillMdPath}: ${err?.message ?? err}`);
+  }
+  const skill = parseSkillMd(content, skillMdPath, source);
+  if (!skill) {
+    throw new Error("Failed to parse SKILL.md");
+  }
   db.upsertSkill(skill);
   return skill;
 }

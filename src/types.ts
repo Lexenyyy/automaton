@@ -99,9 +99,12 @@ export interface SandboxConfig {
   mode: "local" | "container";
   /** Unix socket of the sandbox server. Container mode only. */
   socketPath?: string;
+  /** Shared workspace folder (sandbox: read-write, runtime: read-only). Container mode only. */
+  workspaceDir?: string;
 }
 
 export const DEFAULT_SANDBOX_SOCKET = "/run/automaton-sandbox/sandbox.sock";
+export const DEFAULT_SANDBOX_WORKSPACE = "/workspace";
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
   conwayApiUrl: "https://api.conway.tech",

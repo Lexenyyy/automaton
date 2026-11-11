@@ -35,6 +35,19 @@ export interface ReadFileRequest {
   path: string;
 }
 
+/** Single-quote a value for /bin/sh (commands sent to the sandbox). */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Build a sandbox command from an argument list, quoting every argument
+ * (the shell equivalent of execFileSync with an argument array).
+ */
+export function shellCommand(args: string[]): string {
+  return args.map(shellQuote).join(" ");
+}
+
 export function clampTimeout(timeoutMs: unknown): number {
   if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return DEFAULT_EXEC_TIMEOUT_MS;

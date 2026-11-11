@@ -589,8 +589,11 @@ describe("Source code injection safety", () => {
     );
     // Should NOT have: execSync(`which ${bin}`)
     expect(source).not.toMatch(/execSync\s*\(\s*`which/);
-    // Should have: execFileSync("which", [bin])
-    expect(source).toMatch(/execFileSync\s*\(\s*"which"/);
+    // Fork Phase 1 (sandbox step 2): stricter than execFileSync("which", [bin]):
+    // the loader starts no process at all; isOnPath() checks PATH with fs.
+    expect(source).not.toMatch(/\bexec(File)?Sync\s*\(/);
+    expect(source).not.toMatch(/child_process/);
+    expect(source).toMatch(/isOnPath\(bin\)/);
   });
 
   it("tools.ts pull_upstream uses conway.exec not host execSync", async () => {

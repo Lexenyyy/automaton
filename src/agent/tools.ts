@@ -1126,6 +1126,8 @@ Model: ${ctx.inference.getDefaultModel()}
             await import("../skills/registry.js");
           const url = args.url as string;
           if (!url) return "URL is required for git/url source";
+          // Fork: in sandbox container mode the install runs in the sandbox.
+          const installOptions = { containerSandbox: ctx.config.sandbox?.mode === "container" };
 
           const skill =
             source === "git"
@@ -1135,6 +1137,7 @@ Model: ${ctx.inference.getDefaultModel()}
                   skillsDir,
                   ctx.db,
                   ctx.conway,
+                  installOptions,
                 )
               : await installSkillFromUrl(
                   url,
@@ -1142,6 +1145,7 @@ Model: ${ctx.inference.getDefaultModel()}
                   skillsDir,
                   ctx.db,
                   ctx.conway,
+                  installOptions,
                 );
 
           return skill

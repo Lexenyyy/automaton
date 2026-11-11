@@ -49,6 +49,7 @@ import { ulid } from "ulid";
 import { ModelRegistry } from "../inference/registry.js";
 import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
 import { InferenceRouter } from "../inference/router.js";
+import { workerEditRoot } from "../sandbox/transport.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
 import { DEFAULT_MEMORY_BUDGET } from "../types.js";
@@ -214,7 +215,8 @@ export async function runAgentLoop(
         harnessRegistry,
         identity,
         config,
-        allowedEditRoot: process.cwd(),
+        // Fork: in sandbox container mode workers edit only the shared workspace.
+        allowedEditRoot: workerEditRoot(config.sandbox, process.cwd()),
         tools,
         toolContext,
         policyEngine,

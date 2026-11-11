@@ -12,7 +12,7 @@
 import http from "node:http";
 import path from "node:path";
 import type { ExecResult, SandboxConfig } from "../types.js";
-import { DEFAULT_SANDBOX_SOCKET } from "../types.js";
+import { DEFAULT_SANDBOX_SOCKET, DEFAULT_SANDBOX_WORKSPACE } from "../types.js";
 import { MAX_BODY_BYTES, clampTimeout } from "./protocol.js";
 
 export interface SandboxTransport {
@@ -59,6 +59,24 @@ export function resolveSandboxSocket(
     throw new Error(`Invalid sandbox.socketPath: must be an absolute path`);
   }
   return socketPath;
+}
+
+/** True when the agent's tools run in the sandbox container. */
+export function isContainerSandbox(sandbox: SandboxConfig | undefined): boolean {
+  return sandbox?.mode === "container";
+}
+
+/**
+ * Folder that orchestrator workers may edit. Container mode: the shared
+ * workspace (inside the sandbox). Local mode: the current directory (upstream).
+ */
+export function workerEditRoot(sandbox: SandboxConfig | undefined, cwd: string): string {
+  if (!isContainerSandbox(sandbox)) return cwd;
+  const dir = sandbox?.workspaceDir ?? DEFAULT_SANDBOX_WORKSPACE;
+  if (typeof dir !== "string" || !path.posix.isAbsolute(dir)) {
+    throw new Error(`Invalid sandbox.workspaceDir: must be an absolute path`);
+  }
+  return dir;
 }
 
 export function createSandboxTransport(socketPath: string): SandboxTransport {

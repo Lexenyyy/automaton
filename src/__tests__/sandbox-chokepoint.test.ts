@@ -6,10 +6,10 @@
  * test lists every source file that imports child_process. A new import
  * fails the test until it is reviewed.
  *
- * PENDING (step 2, owner decision): five runtime call sites still start
- * processes outside the conway.exec choke point. They are listed below so the
- * list cannot grow silently; each must be routed through the sandbox (or
- * removed) before container mode is used for real.
+ * Step 2 (owner-approved) routed the remaining runtime call sites: the worker
+ * harnesses no longer import child_process, the skills loader no longer
+ * starts `which`, and the skills registry and upstream helper start a process
+ * only in local mode (container-mode-callers.test.ts proves it).
  */
 
 import fs from "node:fs";
@@ -50,15 +50,10 @@ const ALLOWED = {
   "conway/client.ts": "local mode only",
   // Runs inside the sandbox container, never in the runtime.
   "sandbox/server.ts": "sandbox container only",
-};
-
-/** NOT yet routed through the sandbox. Step 2 of the Docker plan. */
-const PENDING_STEP_2 = {
-  "agent/harnesses/coding-harness.ts": "orchestrator worker shell (exec)",
-  "agent/harnesses/general-harness.ts": "orchestrator worker shell (exec)",
-  "self-mod/upstream.ts": "git on the agent's own repo",
-  "skills/loader.ts": "`which` for skill requires.bins",
-  "skills/registry.ts": "git clone / curl to install skills",
+  // git clone / curl: local mode only; container mode runs them in the sandbox.
+  "skills/registry.ts": "local mode only",
+  // git on the agent's own repo: refused in container mode (sandbox/mode.ts).
+  "self-mod/upstream.ts": "local mode only",
 };
 
 describe("process choke point (sandbox container mode)", () => {
@@ -69,7 +64,7 @@ describe("process choke point (sandbox container mode)", () => {
 
   it("imports child_process only in reviewed files", () => {
     expect(filesMatching(/from\s+["'](node:)?child_process["']|import\(\s*["'](node:)?child_process["']\s*\)/)).toEqual(
-      Object.keys({ ...ALLOWED, ...PENDING_STEP_2 }).sort(),
+      Object.keys(ALLOWED).sort(),
     );
   });
 
@@ -84,5 +79,20 @@ describe("process choke point (sandbox container mode)", () => {
     const localCall = execFn.indexOf("execLocal(command");
     expect(containerCheck).toBeGreaterThan(-1);
     expect(localCall).toBeGreaterThan(containerCheck);
+  });
+
+  it("keeps the container-mode guards in front of the remaining local-only spawns", () => {
+    const registry = FILES.find((f) => f.rel === "skills/registry.ts")!.text;
+    for (const fn of ["installSkillFromGit", "installSkillFromUrl"]) {
+      const body = registry.slice(registry.indexOf(`export async function ${fn}`));
+      expect(body.indexOf("if (options.containerSandbox)")).toBeGreaterThan(-1);
+      expect(body.indexOf("execFileSync(")).toBeGreaterThan(body.indexOf("if (options.containerSandbox)"));
+    }
+    const upstream = FILES.find((f) => f.rel === "self-mod/upstream.ts")!.text;
+    const gitFn = upstream.slice(upstream.indexOf("function git("));
+    expect(gitFn.indexOf("isContainerSandboxActive()")).toBeGreaterThan(-1);
+    expect(gitFn.indexOf("execFileSync(")).toBeGreaterThan(gitFn.indexOf("isContainerSandboxActive()"));
+    // Every execFileSync in upstream.ts goes through git().
+    expect((upstream.match(/execFileSync\(/g) ?? []).length).toBe(1);
   });
 });

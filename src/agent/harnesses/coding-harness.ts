@@ -1,5 +1,3 @@
-import { exec as execCb } from "node:child_process";
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { TaskResult } from "../../orchestration/task-graph.js";
 import { isProtectedFile } from "../../self-mod/code.js";
@@ -7,6 +5,7 @@ import { BaseHarness } from "./base-harness.js";
 import type { HarnessTool } from "../harness-types.js";
 import { getForbiddenCommandMatch, isForbiddenCommand } from "../policy-rules/command-safety.js";
 import { isSensitiveFile } from "../policy-rules/path-protection.js";
+import { shellCommand } from "../../sandbox/protocol.js";
 
 const MAX_EXEC_TIMEOUT_MS = 60_000;
 const MAX_READ_SIZE = 20_000;
@@ -80,11 +79,13 @@ When calling task_done, provide:
           if (forbidden || isForbiddenCommand(command)) {
             return `Blocked: ${forbidden?.description ?? "Forbidden command pattern"}`;
           }
+          // Fork: no local fallback. A sandbox error is reported, never retried
+          // in the runtime (it holds the wallet and keys).
           try {
             const result = await this.context.conway.exec(command, timeoutMs);
             return formatExecResult(result.stdout ?? "", result.stderr ?? "");
-          } catch {
-            return localExec(command, timeoutMs);
+          } catch (error) {
+            return `exec error: ${errorMessage(error)}`;
           }
         },
       },
@@ -112,14 +113,8 @@ When calling task_done, provide:
           try {
             await this.context.conway.writeFile(confined, content);
             return `Wrote ${content.length} bytes to ${confined}`;
-          } catch {
-            try {
-              await fs.mkdir(path.dirname(confined), { recursive: true });
-              await fs.writeFile(confined, content, "utf8");
-              return `Wrote ${content.length} bytes to ${confined} (local)`;
-            } catch (error) {
-              return `write error: ${error instanceof Error ? error.message : String(error)}`;
-            }
+          } catch (error) {
+            return `write error: ${errorMessage(error)}`;
           }
         },
       },
@@ -147,19 +142,14 @@ When calling task_done, provide:
           const offset = typeof args.offset === "number" ? args.offset : 0;
           const limit = typeof args.limit === "number" ? Math.min(args.limit, MAX_READ_SIZE) : MAX_READ_SIZE;
           try {
-            let content: string;
-            try {
-              content = await this.context.conway.readFile(confined);
-            } catch {
-              content = await fs.readFile(confined, "utf8");
-            }
+            const content = await this.context.conway.readFile(confined);
             const slice = content.slice(offset, offset + limit);
             if (content.length > offset + limit) {
               return slice + `\n[TRUNCATED: ${content.length - offset - limit} more chars. Use offset=${offset + limit} to continue.]`;
             }
             return slice || "(empty file)";
           } catch (error) {
-            return `read error: ${error instanceof Error ? error.message : String(error)}`;
+            return `read error: ${errorMessage(error)}`;
           }
         },
       },
@@ -187,24 +177,15 @@ When calling task_done, provide:
             return `Blocked: protected file "${filePath}"`;
           }
           try {
-            let content: string;
-            try {
-              content = await this.context.conway.readFile(confined);
-            } catch {
-              content = await fs.readFile(confined, "utf8");
-            }
+            const content = await this.context.conway.readFile(confined);
             if (!content.includes(search)) {
               return `Error: search string not found in ${filePath}. Make sure the search text matches exactly, including whitespace and newlines.`;
             }
             const patched = content.replace(search, replace);
-            try {
-              await this.context.conway.writeFile(confined, patched);
-            } catch {
-              await fs.writeFile(confined, patched, "utf8");
-            }
+            await this.context.conway.writeFile(confined, patched);
             return `Patched ${filePath}: replaced ${search.length} chars with ${replace.length} chars`;
           } catch (error) {
-            return `patch error: ${error instanceof Error ? error.message : String(error)}`;
+            return `patch error: ${errorMessage(error)}`;
           }
         },
       },
@@ -224,11 +205,19 @@ When calling task_done, provide:
           if (typeof confined !== "string") {
             return confined.error;
           }
+          // Fork: listed where the files are (the sandbox), not in the runtime.
           try {
-            const entries = await fs.readdir(confined, { withFileTypes: true });
-            return entries.map((entry) => `${entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other"}\t${entry.name}`).join("\n") || "(empty directory)";
+            const result = await this.context.conway.exec(
+              // find expands \t and \n in -printf itself.
+              shellCommand(["find", confined, "-mindepth", "1", "-maxdepth", "1", "-printf", "%y\\t%f\\n"]),
+              10_000,
+            );
+            if (result.exitCode !== 0) {
+              return `list error: ${(result.stderr || "").trim() || `exit code ${result.exitCode}`}`;
+            }
+            return formatDirListing(result.stdout ?? "");
           } catch (error) {
-            return `list error: ${error instanceof Error ? error.message : String(error)}`;
+            return `list error: ${errorMessage(error)}`;
           }
         },
       },
@@ -304,14 +293,21 @@ function formatExecResult(stdout: string, stderr: string): string {
   return err ? `stdout:\n${out}\nstderr:\n${err}` : out || "(no output)";
 }
 
-function localExec(command: string, timeoutMs: number): Promise<string> {
-  return new Promise((resolve) => {
-    execCb(command, { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error && !stdout && !stderr) {
-        resolve(`exec error: ${error.message}`);
-        return;
-      }
-      resolve(formatExecResult(stdout ?? "", stderr ?? ""));
-    });
-  });
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Turn `find -printf '%y\t%f\n'` output into the list_dir format. */
+export function formatDirListing(stdout: string): string {
+  const lines = stdout
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const tab = line.indexOf("\t");
+      const kind = line.slice(0, tab);
+      const name = line.slice(tab + 1);
+      return `${kind === "d" ? "dir" : kind === "f" ? "file" : "other"}\t${name}`;
+    })
+    .sort((a, b) => a.slice(a.indexOf("\t") + 1).localeCompare(b.slice(b.indexOf("\t") + 1)));
+  return lines.join("\n") || "(empty directory)";
 }

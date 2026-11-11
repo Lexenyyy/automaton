@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GeneralHarness } from "../../agent/harnesses/general-harness.js";
@@ -154,29 +154,51 @@ describe("agent/general-harness security", () => {
 
   it("allows normal read_file paths inside the allowed edit root", async () => {
     const filePath = path.join(testRoot, "notes.txt");
-    mkdirSync(path.dirname(filePath), { recursive: true });
-    writeFileSync(filePath, "hello", "utf8");
-
+    const reads: string[] = [];
     const conway = createConwayStub({
-      readFile: async () => {
-        throw new Error("force local fallback");
+      readFile: async (p: string) => {
+        reads.push(p);
+        return "hello";
       },
     });
 
     const out = await runTool(conway, "read_file", { path: filePath });
     expect(out).toBe("hello");
+    expect(reads).toEqual([filePath]);
   });
 
   it("allows normal write_file paths inside the allowed edit root", async () => {
     const filePath = path.join(testRoot, "out", "data.txt");
+    const writes: [string, string][] = [];
     const conway = createConwayStub({
-      writeFile: async () => {
-        throw new Error("force local fallback");
+      writeFile: async (p: string, c: string) => {
+        writes.push([p, c]);
       },
     });
 
     const out = await runTool(conway, "write_file", { path: filePath, content: "ok" });
     expect(out).toContain("Wrote 2 bytes");
-    expect(readFileSync(filePath, "utf8")).toBe("ok");
+    expect(writes).toEqual([[filePath, "ok"]]);
+  });
+
+  // Fork Phase 1 (sandbox step 2): no silent retry in the runtime.
+  it("reports a Conway/sandbox error instead of falling back to the runtime filesystem", async () => {
+    const filePath = path.join(testRoot, "notes.txt");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, "hello", "utf8");
+    const conway = createConwayStub({
+      readFile: async () => {
+        throw new Error("sandbox down");
+      },
+      writeFile: async () => {
+        throw new Error("sandbox down");
+      },
+    });
+
+    expect(await runTool(conway, "read_file", { path: filePath })).toBe("read error: sandbox down");
+    const newFile = path.join(testRoot, "out", "data.txt");
+    expect(await runTool(conway, "write_file", { path: newFile, content: "ok" })).toBe("write error: sandbox down");
+    expect(existsSync(newFile)).toBe(false);
+    expect(readFileSync(filePath, "utf8")).toBe("hello");
   });
 });
