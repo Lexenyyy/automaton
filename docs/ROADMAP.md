@@ -10,8 +10,15 @@ Estimates assume one developer, part-time. Total: about 4 to 6 months.
 - [x] Docker installed and working
 - [ ] Write our own genesis prompt and review `constitution.md`
 - [ ] Decide the ONE service the agent will sell (blocks Phase 5b)
-- [x] Apply planned changes 1–2 from CLAUDE.md (tighter treasury limits, testnet mode)
+- [x] Apply planned changes 1–3 from CLAUDE.md. All Phase 0 code changes are done:
+  - change 1: tighter treasury limits
+  - change 1b: cheap default models
+  - change 1c: $1/day inference cap
+  - change 2: Base Sepolia testnet mode
+  - change 3: own balance source, ledger, lifetime inference cap, shell blocked from ledger/DB
+  Change 4 (replace `exposePort`) needs the VPS and is scheduled in Phase 5a.
 Done when: build passes, every `src/` folder is understood, sandbox is isolated.
+(Remaining open items are non-code: genesis prompt/constitution review and choosing the service.)
 
 ## Phase 1 — Core agent loop (2 weeks)
 Goal: Think → Act → Observe loop running safe tools, remembering what happened.
