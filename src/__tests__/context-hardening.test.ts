@@ -407,7 +407,7 @@ describe("buildSystemPrompt status block", () => {
     expect(statusBlock).not.toContain("Sandbox:");
   });
 
-  it("keeps credit balance in status block", () => {
+  it("keeps balance in status block", () => {
     const identity = createTestIdentity();
     const config = createTestConfig();
 
@@ -425,7 +425,9 @@ describe("buildSystemPrompt status block", () => {
     const statusEnd = prompt.indexOf("--- END STATUS ---");
     const statusBlock = prompt.slice(statusStart, statusEnd);
 
-    expect(statusBlock).toContain("Credits: $50.00");
+    // Fork change 3: own balance source, shown as "Balance: <total> (wallet ... + ledger ...)"
+    expect(statusBlock).toContain("Balance: $50.00");
+    expect(statusBlock).not.toContain("Credits:");
   });
 
   it("includes survival tier in status block", () => {
@@ -446,15 +448,29 @@ describe("buildSystemPrompt status block", () => {
     const statusEnd = prompt.indexOf("--- END STATUS ---");
     const statusBlock = prompt.slice(statusStart, statusEnd);
 
-    expect(statusBlock).toContain("Survival tier: normal");
+    // 5000 cents is above SURVIVAL_THRESHOLDS.high (500)
+    expect(statusBlock).toContain("Survival tier: high");
   });
 
   it("computes correct survival tiers", () => {
     const identity = createTestIdentity();
     const config = createTestConfig();
 
-    // Low compute tier (10 < credits <= 50)
+    // Tiers from getSurvivalTier / SURVIVAL_THRESHOLDS (src/types.ts)
+    // Normal tier (50 < balance <= 500)
     let prompt = buildSystemPrompt({
+      identity,
+      config,
+      financial: { creditsCents: 100, usdcBalance: 0, lastChecked: new Date().toISOString() },
+      state: "running",
+      db,
+      tools: [],
+      isFirstRun: false,
+    });
+    expect(prompt).toContain("Survival tier: normal");
+
+    // Low compute tier (10 < balance <= 50)
+    prompt = buildSystemPrompt({
       identity,
       config,
       financial: { creditsCents: 30, usdcBalance: 0, lastChecked: new Date().toISOString() },
@@ -465,7 +481,7 @@ describe("buildSystemPrompt status block", () => {
     });
     expect(prompt).toContain("Survival tier: low_compute");
 
-    // Critical tier (0 < credits <= 10)
+    // Critical tier (0 <= balance <= 10)
     prompt = buildSystemPrompt({
       identity,
       config,
@@ -477,11 +493,23 @@ describe("buildSystemPrompt status block", () => {
     });
     expect(prompt).toContain("Survival tier: critical");
 
-    // Dead tier (credits = 0)
+    // Zero balance is still critical: the agent stays alive
     prompt = buildSystemPrompt({
       identity,
       config,
       financial: { creditsCents: 0, usdcBalance: 0, lastChecked: new Date().toISOString() },
+      state: "running",
+      db,
+      tools: [],
+      isFirstRun: false,
+    });
+    expect(prompt).toContain("Survival tier: critical");
+
+    // Dead tier (negative balance)
+    prompt = buildSystemPrompt({
+      identity,
+      config,
+      financial: { creditsCents: -1, usdcBalance: 0, lastChecked: new Date().toISOString() },
       state: "running",
       db,
       tools: [],
