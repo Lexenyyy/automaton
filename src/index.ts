@@ -274,6 +274,7 @@ async function run(): Promise<void> {
     apiUrl: config.conwayApiUrl,
     apiKey,
     sandboxId: config.sandboxId,
+    sandbox: config.sandbox,
   });
 
   // Register automaton identity (one-time, immutable)

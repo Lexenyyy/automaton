@@ -86,7 +86,22 @@ export interface AutomatonConfig {
    * + local ledger; "conway" = Conway compute credits (upstream behavior).
    */
   balanceSource?: "own" | "conway";
+  /**
+   * Where the agent's shell and file tools run (fork, Phase 1).
+   * Absent or mode "local": in this process, as this user (upstream behavior).
+   * Mode "container": in a separate sandbox container reached over a Unix
+   * socket; this process never runs them itself (see src/sandbox/).
+   */
+  sandbox?: SandboxConfig;
 }
+
+export interface SandboxConfig {
+  mode: "local" | "container";
+  /** Unix socket of the sandbox server. Container mode only. */
+  socketPath?: string;
+}
+
+export const DEFAULT_SANDBOX_SOCKET = "/run/automaton-sandbox/sandbox.sock";
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
   conwayApiUrl: "https://api.conway.tech",

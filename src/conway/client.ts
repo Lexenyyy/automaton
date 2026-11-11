@@ -28,11 +28,15 @@ import { keccak256, toHex } from "viem";
 import type { Address, PrivateKeyAccount } from "viem";
 import { randomUUID } from "crypto";
 import type { ChainType, ChainIdentity } from "../identity/chain.js";
+import type { SandboxConfig } from "../types.js";
+import { createSandboxTransport, resolveSandboxSocket } from "../sandbox/transport.js";
 
 interface ConwayClientOptions {
   apiUrl: string;
   apiKey: string;
   sandboxId: string;
+  /** Fork: run shell/file tools in a separate sandbox container (see src/sandbox/). */
+  sandbox?: SandboxConfig;
 }
 
 export function createConwayClient(options: ConwayClientOptions): ConwayClient {
@@ -40,6 +44,9 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   // Normalize sandbox ID defensively so values like whitespace/"undefined"/"null"
   // never produce malformed API paths such as /v1/sandboxes//exec.
   const sandboxId = normalizeSandboxId(options.sandboxId);
+  // Fork: container mode. Throws on an invalid setting (refuse to start).
+  const sandboxSocket = resolveSandboxSocket(options.sandbox, sandboxId);
+  const containerSandbox = sandboxSocket ? createSandboxTransport(sandboxSocket) : null;
   const httpClient = new ResilientHttpClient();
 
   async function request(
@@ -130,6 +137,8 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
     command: string,
     timeout?: number,
   ): Promise<ExecResult> => {
+    // Fork: container mode never runs the command in this process.
+    if (containerSandbox) return containerSandbox.exec(command, timeout);
     if (isLocal) return execLocal(command, timeout);
 
     // Remote sandboxes default to / as cwd. Wrap commands to run from /root
@@ -172,6 +181,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
     filePath: string,
     content: string,
   ): Promise<void> => {
+    if (containerSandbox) return containerSandbox.writeFile(filePath, content);
     if (isLocal) {
       const resolved = resolveLocalPath(filePath);
       const dir = nodePath.dirname(resolved);
@@ -199,6 +209,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   };
 
   const readFile = async (filePath: string): Promise<string> => {
+    if (containerSandbox) return containerSandbox.readFile(filePath);
     if (isLocal) {
       return fs.readFileSync(resolveLocalPath(filePath), "utf-8");
     }
@@ -223,6 +234,10 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   };
 
   const exposePort = async (port: number): Promise<PortInfo> => {
+    if (containerSandbox) {
+      // The sandbox has no network; a localhost URL would be false.
+      throw new Error("expose_port is not available in sandbox container mode (no network).");
+    }
     if (isLocal) {
       return {
         port,
