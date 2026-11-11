@@ -105,7 +105,10 @@ export class InferenceBudgetTracker {
   /**
    * Record a completed inference cost.
    */
-  recordCost(cost: Omit<InferenceCostRow, "id" | "createdAt">): void {
+  recordCost(
+    cost: Omit<InferenceCostRow, "id" | "createdAt">,
+    source = "inference_router",
+  ): void {
     // Cost row + ledger debit in one transaction (fork change 3). Inference is
     // always paid with real money, so the debit is livemode = 1 on any network.
     this.db.transaction(() => {
@@ -115,7 +118,7 @@ export class InferenceBudgetTracker {
           kind: "inference_cost",
           amountCents: -cost.costCents,
           livemode: true,
-          source: "inference_router",
+          source,
           externalId: id,
           memo: `${cost.model} ${cost.taskType}`,
         });

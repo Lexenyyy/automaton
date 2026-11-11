@@ -240,6 +240,39 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+/**
+ * Built-in price ($ per 1M tokens) for a model id, from the shipped defaults.
+ * Used as a price floor, so a config file can't make a remote model look cheaper.
+ */
+export function getBuiltinModelPrice(
+  modelId: string,
+): { input: number; output: number } | undefined {
+  let found: { input: number; output: number } | undefined;
+  for (const provider of DEFAULT_PROVIDERS) {
+    for (const model of provider.models) {
+      if (model.id !== modelId) continue;
+      found = {
+        input: Math.max(found?.input ?? 0, model.costPerInputToken),
+        output: Math.max(found?.output ?? 0, model.costPerOutputToken),
+      };
+    }
+  }
+  return found;
+}
+
+/** Highest built-in price over all shipped models; used for unknown models. */
+export function getHighestBuiltinPrice(): { input: number; output: number } {
+  let input = 0;
+  let output = 0;
+  for (const provider of DEFAULT_PROVIDERS) {
+    for (const model of provider.models) {
+      input = Math.max(input, model.costPerInputToken);
+      output = Math.max(output, model.costPerOutputToken);
+    }
+  }
+  return { input, output };
+}
+
 export class ProviderRegistry {
   private readonly providers: ProviderConfig[];
   private readonly tierDefaults: Record<ModelTier, TierDefault>;

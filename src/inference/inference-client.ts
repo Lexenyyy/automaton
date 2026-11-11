@@ -35,7 +35,7 @@ export interface UnifiedInferenceResult {
   };
 }
 
-interface SharedChatParams {
+export interface SharedChatParams {
   messages: ChatMessage[];
   temperature?: number;
   maxTokens?: number;
@@ -45,11 +45,11 @@ interface SharedChatParams {
   stream?: boolean;
 }
 
-interface UnifiedChatParams extends SharedChatParams {
+export interface UnifiedChatParams extends SharedChatParams {
   tier: ModelTier;
 }
 
-interface UnifiedChatDirectParams extends SharedChatParams {
+export interface UnifiedChatDirectParams extends SharedChatParams {
   providerId: string;
   modelId: string;
 }
