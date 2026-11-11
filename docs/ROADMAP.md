@@ -44,14 +44,13 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **3 stale status-block tests in `context-hardening.test.ts`.** They were hidden while the file
         hung and still expected the upstream `Credits:` line and tiers. Fixed in `ddc79b9`: the tests
         now match the change 3 `Balance:` block and `getSurvivalTier` (the prompt was correct).
-  - [ ] **Run the test suite in a Linux Docker container.** The VPS will run Linux. This should clear
-        the 22 Windows-only path failures and give a true baseline. After that, replace the temporary
-        Windows baseline in CLAUDE.md.
+  - [x] **Run the test suite in a Linux Docker container.** Done in `e15a727`: `pnpm test:linux`.
+        Linux baseline: 1820 passed, 0 failed. CLAUDE.md now uses it as the main baseline.
   - [ ] **Windows test failures that already existed (22).** Test helpers build paths in a way that
         produces `C:\C:\...` and use POSIX paths like `/root/...`:
         `skills-hardening` (12), `command-injection` (5), `tools-security` (3), `path-protection` (1),
-        `orchestration/local-worker-harness` (1). Check them again after the Linux run, and fix only
-        those that also fail on Linux, or that matter for running on Windows.
+        `orchestration/local-worker-harness` (1). The Linux run showed that all 22 pass on Linux, so they
+        are Windows-only. Fix them only if running on Windows matters; the VPS runs Linux. Low priority.
   - [ ] **Enforce the minimum reserve in code.** `financial.minimum_reserve` (`src/agent/policy-rules/financial.ts`)
         only states the limit and always returns `null`. The only real guard is "max half the balance" inside
         `transfer_credits`. Needs the balance source from change 3. This is a policy-engine change, so it needs
@@ -62,6 +61,8 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         default, or clamp it to the default.
   - [ ] **Some loop tests call the public Base RPC.** ERC-8004 discovery in `loop.test.ts` reaches
         `sepolia.base.org` (before change 2: mainnet). Mock it so tests don't depend on the network.
+        Then add an offline variant of `pnpm test:linux` (`docker run --network none`) to prove that
+        no test needs the network.
   - [ ] **Rename `turnToolCallCount` to `turnTransferCount`.** I checked `loop.ts` and `general-harness.ts`: both
         count only `transfer_credits` calls, so `maxTransfersPerTurn` works correctly. The name suggests it counts
         all tool calls, which is misleading. This is cleanup only.

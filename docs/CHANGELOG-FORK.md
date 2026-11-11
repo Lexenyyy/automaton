@@ -271,3 +271,14 @@
   and the `getSurvivalTier` tiers: 5000 cents is `high`, 0 is `critical`, a negative balance is `dead`.
   A `normal` case (100 cents) was added. Baseline is back to the 22 Windows failures only:
   1798 passed, 22 failed.
+- 2026-11-11: **Linux test run in Docker (Phase 1), commit `e15a727`.** No agent code changed.
+  - `pnpm test:linux` builds `docker/test.Dockerfile` (`node:22.21.1-bookworm-slim`, pnpm 10.28.1,
+    non-root `node` user) and runs `pnpm build` plus the full vitest suite. The exit code is passed through.
+  - `.dockerignore` is an allowlist (src, packages, package/lock/workspace files, tsconfig, vitest config,
+    constitution, scripts). `.env`, `.automaton/`, wallet and db files, `.git`, `.claude/` and the Windows
+    `node_modules` never enter the image (checked inside the image). No bind mounts and no env vars, so
+    the run cannot touch the host or spend money. The container has network access, as on Windows.
+  - **Linux baseline: 1820 passed, 0 failed (75 files).** All 22 Windows path failures pass on Linux,
+    so they are Windows-only. Windows is unchanged: build passes, 1798 passed, 22 failed.
+  - CLAUDE.md now uses the Linux run as the main baseline and keeps the Windows numbers as a secondary check.
+  - Later (owner decision): an offline variant (`--network none`), together with the RPC mock item.

@@ -31,12 +31,14 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Explain the plan first for anything non-trivial; the owner approves edits manually.
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
-  **Temporary Windows baseline (2026-11-11, until the Linux Docker test run exists):** `pnpm build`
-  passes, and the only test failures are 22 known Windows path failures that were already there
-  before our changes. These are in `skills-hardening` (12), `command-injection` (5),
-  `tools-security` (3), `path-protection` (1) and `orchestration/local-worker-harness` (1).
-  Run the full suite: `npx vitest run --exclude "**/node_modules/**"`.
-  Baseline at commit ddc79b9 is 1798 passed and 22 failed. Any other failure is a regression.
+  **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
+  `pnpm build` and the full suite in a Linux container. Baseline at commit e15a727: 1820 passed,
+  0 failed. Any failure there is a regression.
+  **Secondary check: Windows.** `pnpm build` passes, and the full suite
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1798 passed and 22 failed. The 22 are
+  Windows-only path failures that pass on Linux: `skills-hardening` (12), `command-injection` (5),
+  `tools-security` (3), `path-protection` (1), `orchestration/local-worker-harness` (1). Any other
+  Windows failure is a regression.
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
