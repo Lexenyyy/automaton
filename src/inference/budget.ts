@@ -15,6 +15,7 @@ import {
   inferenceGetHourlyCost,
   inferenceGetModelCosts,
 } from "../state/database.js";
+import { insertLedgerEntry } from "../state/ledger.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -93,7 +94,21 @@ export class InferenceBudgetTracker {
    * Record a completed inference cost.
    */
   recordCost(cost: Omit<InferenceCostRow, "id" | "createdAt">): void {
-    inferenceInsertCost(this.db, cost);
+    // Cost row + ledger debit in one transaction (fork change 3). Inference is
+    // always paid with real money, so the debit is livemode = 1 on any network.
+    this.db.transaction(() => {
+      const id = inferenceInsertCost(this.db, cost);
+      if (cost.costCents > 0) {
+        insertLedgerEntry(this.db, {
+          kind: "inference_cost",
+          amountCents: -cost.costCents,
+          livemode: true,
+          source: "inference_router",
+          externalId: id,
+          memo: `${cost.model} ${cost.taskType}`,
+        });
+      }
+    })();
   }
 
   /**

@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import type BetterSqlite3 from "better-sqlite3";
-import { MIGRATION_V6 } from "../state/schema.js";
+import { MIGRATION_V6, MIGRATION_V12 } from "../state/schema.js";
 import {
   inferenceInsertCost,
   inferenceGetSessionCosts,
@@ -41,6 +41,7 @@ function createTestDb(): BetterSqlite3.Database {
   testDb.pragma("journal_mode = WAL");
   testDb.pragma("foreign_keys = ON");
   testDb.exec(MIGRATION_V6);
+  testDb.exec(MIGRATION_V12); // ledger (fork change 3): recordCost also writes a ledger debit
   return testDb;
 }
 

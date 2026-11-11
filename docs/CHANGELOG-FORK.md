@@ -149,3 +149,18 @@
     and ordinary files and commands still allowed.
   - Known gap: the ERC-8004 testnet contract addresses equal the mainnet ones in `erc8004.ts`, and
     we couldn't verify them. On testnet a wrong address only wastes test ETH. Re-check in Phase 8.
+- 2026-11-11: **Change 3, part 1: local ledger.** A new append-only `ledger_entries` table
+  (migration V12) records off-chain money in USD cents. On-chain USDC is never entered here, so
+  nothing is double counted.
+  - Kinds: owner grant/withdrawal, inference cost, hosting cost, and Stripe revenue/fee/refund
+    (Stripe is planned in for Phase 5a, not built). Corrections are `adjustment` entries.
+  - The schema enforces the sign for each kind and whole cents. Triggers block UPDATE and DELETE.
+    `UNIQUE(source, external_id)` makes webhook replays and double records no-ops.
+  - Each entry has a `livemode` flag. Testnet counts every entry; mainnet counts only real money.
+    Only USD is counted; other currencies are kept but flagged.
+  - `InferenceBudgetTracker.recordCost` writes the cost row and a real-money `inference_cost` debit in
+    one transaction, so the ledger keeps it when `inference_costs` is pruned. The migration backfills
+    earlier inference costs.
+  - The agent has no tool that writes to the ledger. The owner uses the new
+    `automaton-cli ledger [show | grant <amount> | adjust <±amount> --memo]`.
+  - Tests: `ledger.test.ts`.

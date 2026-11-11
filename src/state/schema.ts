@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -656,6 +656,44 @@ export const MIGRATION_V11 = `
   -- Schema version: 11
   -- Add chain_type column to children table for multi-chain support
   ALTER TABLE children ADD COLUMN chain_type TEXT DEFAULT 'evm';
+`;
+
+// === Fork change 3: local ledger (off-chain money only) ===
+// Append-only. On-chain USDC is read live from the wallet and is never also
+// entered here, so nothing is counted twice. Corrections are new 'adjustment' rows.
+export const MIGRATION_V12 = `
+  -- Schema version: 12
+  CREATE TABLE IF NOT EXISTS ledger_entries (
+    id TEXT PRIMARY KEY,
+    occurred_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    kind TEXT NOT NULL CHECK(kind IN ('owner_grant','owner_withdrawal','inference_cost','hosting_cost',
+                                      'stripe_revenue','stripe_fee','stripe_refund','adjustment')),
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    livemode INTEGER NOT NULL CHECK(livemode IN (0,1)),
+    source TEXT NOT NULL,
+    external_id TEXT,
+    memo TEXT NOT NULL DEFAULT '',
+    UNIQUE(source, external_id),
+    CHECK( (kind IN ('owner_grant','stripe_revenue') AND amount_cents > 0)
+        OR (kind IN ('owner_withdrawal','inference_cost','hosting_cost','stripe_fee','stripe_refund') AND amount_cents < 0)
+        OR (kind = 'adjustment' AND amount_cents <> 0) )
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_ledger_kind ON ledger_entries(kind);
+
+  CREATE TRIGGER IF NOT EXISTS ledger_no_update BEFORE UPDATE ON ledger_entries
+  BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
+
+  CREATE TRIGGER IF NOT EXISTS ledger_no_delete BEFORE DELETE ON ledger_entries
+  BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
+
+  -- Backfill: inference costs recorded before the ledger existed were real money.
+  INSERT OR IGNORE INTO ledger_entries (id, occurred_at, kind, amount_cents, currency, livemode, source, external_id, memo)
+    SELECT 'backfill-' || id, created_at, 'inference_cost', -cost_cents, 'USD', 1, 'inference_router', id,
+           model || ' ' || task_type || ' (backfilled)'
+    FROM inference_costs WHERE cost_cents > 0;
 `;
 
 export const MIGRATION_V10 = `

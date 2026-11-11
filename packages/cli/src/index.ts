@@ -23,6 +23,9 @@ async function main(): Promise<void> {
     case "send":
       await import("./commands/send.js");
       break;
+    case "ledger":
+      await import("./commands/ledger.js");
+      break;
     default:
       console.log(`
 Conway Automaton CLI - Creator Tools
@@ -32,6 +35,9 @@ Usage:
   automaton-cli logs [--tail N]     View automaton logs
   automaton-cli fund <amount> [--to 0x...]  Transfer Conway credits
   automaton-cli send <to-address> <message> Send a social message
+  automaton-cli ledger [show]       Show the agent's ledger and balance
+  automaton-cli ledger grant <amount> [--memo "..."]   Add an owner grant (dollars)
+  automaton-cli ledger adjust <±amount> --memo "..."  Correct the ledger (memo required)
 `);
   }
 }
