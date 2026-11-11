@@ -81,6 +81,11 @@ export interface AutomatonConfig {
    * environment (see src/identity/network.ts).
    */
   network?: "testnet" | "mainnet";
+  /**
+   * Survival balance source: "own" (default) = wallet USDC on the active network
+   * + local ledger; "conway" = Conway compute credits (upstream behavior).
+   */
+  balanceSource?: "own" | "conway";
 }
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
@@ -97,6 +102,7 @@ export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
   childSandboxMemoryMb: 1024,
   socialRelayUrl: "https://social.conway.tech",
   network: "testnet",
+  balanceSource: "own",
 };
 
 // ─── Agent State ─────────────────────────────────────────────────
@@ -228,9 +234,17 @@ export interface HeartbeatPingPayload {
 // ─── Financial ───────────────────────────────────────────────────
 
 export interface FinancialState {
+  /** Deprecated name: since fork change 3 this is the total survival balance (same as balanceCents). */
   creditsCents: number;
   usdcBalance: number;
   lastChecked: string;
+  // Fork change 3 (see src/survival/balance.ts)
+  balanceCents?: number;
+  walletUsdcCents?: number | null;
+  ledgerCents?: number;
+  balanceStatus?: "live" | "cached" | "unavailable";
+  balanceSource?: "own" | "conway";
+  network?: string;
 }
 
 export type SurvivalTier = "dead" | "critical" | "low_compute" | "normal" | "high";
@@ -893,7 +907,8 @@ export const DEFAULT_TOKEN_BUDGET: TokenBudget = {
 export interface TickContext {
   tickId: string;                    // ULID, unique per tick
   startedAt: Date;
-  creditBalance: number;             // fetched once per tick (cents)
+  creditBalance: number;             // survival balance, fetched once per tick (cents)
+  balanceStatus?: "live" | "cached" | "unavailable"; // fork change 3
   usdcBalance: number;               // fetched once per tick
   survivalTier: SurvivalTier;
   lowComputeMultiplier: number;      // from config

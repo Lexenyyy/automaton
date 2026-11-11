@@ -36,7 +36,7 @@ import {
 } from "./tools.js";
 import { sanitizeInput } from "./injection-defense.js";
 import { getSurvivalTier } from "../conway/credits.js";
-import { getUsdcBalance } from "../conway/x402.js";
+import { createBalanceSource, toFinancialState, formatBalance } from "../survival/balance.js";
 import {
   claimInboxMessages,
   markInboxProcessed,
@@ -48,7 +48,6 @@ import type { InboxMessageRow } from "../state/database.js";
 import { ulid } from "ulid";
 import { ModelRegistry } from "../inference/registry.js";
 import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
-import { getActiveNetwork } from "../identity/network.js";
 import { InferenceRouter } from "../inference/router.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
@@ -362,8 +361,19 @@ export async function runAgentLoop(
   db.setAgentState("waking");
   onStateChange?.("waking");
 
+  // Survival balance source (fork change 3): wallet USDC + ledger by default,
+  // Conway credits only when config.balanceSource === "conway".
+  const balanceSource = createBalanceSource({
+    config,
+    db: db.raw,
+    conway,
+    address: identity.address,
+    chainType: config.chainType || identity.chainType || "evm",
+  });
+  const readFinancial = async (): Promise<FinancialState> => toFinancialState(await balanceSource.read());
+
   // Get financial state
-  let financial = await getFinancialState(conway, identity.address, db, config.chainType || identity.chainType || "evm");
+  let financial = await readFinancial();
 
   // Check if this is the first run
   const isFirstRun = db.getTurnCount() === 0;
@@ -380,7 +390,7 @@ export async function runAgentLoop(
   db.setAgentState("running");
   onStateChange?.("running");
 
-  log(config, `[WAKE UP] ${config.name} is alive. Credits: $${(financial.creditsCents / 100).toFixed(2)}`);
+  log(config, `[WAKE UP] ${config.name} is alive. Balance: ${formatBalance(financial)}`);
 
   // ─── The Loop ──────────────────────────────────────────────
 
@@ -431,22 +441,22 @@ export async function runAgentLoop(
       }
 
       // Refresh financial state periodically
-      financial = await getFinancialState(conway, identity.address, db, config.chainType || identity.chainType || "evm");
+      financial = await readFinancial();
 
       // Check survival tier
-      // api_unreachable: creditsCents === -1 means API failed with no cache.
-      // Do NOT kill the agent; continue in low-compute mode and retry next tick.
-      if (financial.creditsCents === -1) {
-        log(config, "[API_UNREACHABLE] Balance API unreachable, continuing in low-compute mode.");
+      // Balance unavailable (wallet read failed, no cached value): this says
+      // nothing about funds. Do NOT change tier; continue in low-compute mode
+      // and retry next turn.
+      if (financial.balanceStatus === "unavailable") {
+        log(config, "[BALANCE_UNAVAILABLE] Balance could not be read, continuing in low-compute mode.");
         inference.setLowComputeMode(true);
       } else {
         const tier = getSurvivalTier(financial.creditsCents);
 
-        // Inline auto-topup: if credits are critically low and USDC is
-        // available, buy credits NOW — before attempting inference.
-        // This prevents the agent from dying mid-loop while waiting for
-        // the heartbeat to fire. Uses a 60s cooldown to avoid hammering.
-        if ((tier === "critical" || tier === "low_compute") && financial.usdcBalance >= 5) {
+        // Inline auto-topup (Conway balance only): if credits are critically
+        // low and USDC is available, buy Conway credits NOW. With the own
+        // balance source, wallet USDC already counts, so there is nothing to buy.
+        if (balanceSource.kind === "conway" && (tier === "critical" || tier === "low_compute") && financial.usdcBalance >= 5) {
           const INLINE_TOPUP_COOLDOWN_MS = 60_000;
           const lastInlineTopup = db.getKV("last_inline_topup_attempt");
           const cooldownExpired = !lastInlineTopup ||
@@ -466,7 +476,7 @@ export async function runAgentLoop(
                 log(config, `[AUTO-TOPUP] Bought $${topupResult.amountUsd} credits from USDC mid-loop`);
                 // Re-fetch financial state after topup so the rest of
                 // the turn sees the updated balance.
-                financial = await getFinancialState(conway, identity.address, db, config.chainType || identity.chainType || "evm");
+                financial = await readFinancial();
               }
             } catch (err: any) {
               logger.warn(`Inline auto-topup failed: ${err.message}`);
@@ -962,78 +972,7 @@ export async function runAgentLoop(
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
-
-// Cache last known good balances so transient API failures don't
-// cause the automaton to believe it has $0 and kill itself.
-let _lastKnownCredits = 0;
-let _lastKnownUsdc = 0;
-
-async function getFinancialState(
-  conway: ConwayClient,
-  address: string,
-  db?: AutomatonDatabase,
-  chainType?: string,
-): Promise<FinancialState> {
-  let creditsCents = _lastKnownCredits;
-  let usdcBalance = _lastKnownUsdc;
-
-  try {
-    creditsCents = await conway.getCreditsBalance();
-    if (creditsCents > 0) _lastKnownCredits = creditsCents;
-  } catch (error) {
-    logger.error("Credits balance fetch failed", error instanceof Error ? error : undefined);
-    // Use last known balance from KV, not zero
-    if (db) {
-      const cached = db.getKV("last_known_balance");
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          logger.warn("Balance API failed, using cached balance");
-          return {
-            creditsCents: parsed.creditsCents ?? 0,
-            usdcBalance: parsed.usdcBalance ?? 0,
-            lastChecked: new Date().toISOString(),
-          };
-        } catch (parseError) {
-          logger.error("Failed to parse cached balance", parseError instanceof Error ? parseError : undefined);
-        }
-      }
-    }
-    // No cache available -- return conservative non-zero sentinel
-    logger.error("Balance API failed, no cache available");
-    return {
-      creditsCents: -1,
-      usdcBalance: -1,
-      lastChecked: new Date().toISOString(),
-    };
-  }
-
-  try {
-    const network = chainType === "solana" ? "solana:mainnet" : getActiveNetwork().caip2;
-    usdcBalance = await getUsdcBalance(address, network, chainType as any);
-    if (usdcBalance > 0) _lastKnownUsdc = usdcBalance;
-  } catch (error) {
-    logger.error("USDC balance fetch failed", error instanceof Error ? error : undefined);
-  }
-
-  // Cache successful balance reads
-  if (db) {
-    try {
-      db.setKV(
-        "last_known_balance",
-        JSON.stringify({ creditsCents, usdcBalance }),
-      );
-    } catch (error) {
-      logger.error("Failed to cache balance", error instanceof Error ? error : undefined);
-    }
-  }
-
-  return {
-    creditsCents,
-    usdcBalance,
-    lastChecked: new Date().toISOString(),
-  };
-}
+// (Balance reading moved to src/survival/balance.ts in fork change 3.)
 
 function log(_config: AutomatonConfig, message: string): void {
   logger.info(message);

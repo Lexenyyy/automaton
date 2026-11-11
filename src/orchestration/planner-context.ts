@@ -6,6 +6,7 @@ import type { PlannerContext, PlannerOutput } from "./planner.js";
 import type { FundingProtocol } from "./types.js";
 import type { AgentWorkspace } from "./workspace.js";
 import { getActiveGoals } from "../state/database.js";
+import { getSurvivalTier } from "../conway/credits.js";
 
 export interface PlannerContextOptions {
   db: Database;
@@ -150,8 +151,9 @@ function readCachedBalance(db: Database): { creditsCents?: number; usdcBalance?:
 
     const parsed = JSON.parse(row.value) as Record<string, unknown>;
     return {
+      // Not clamped: with the ledger a negative balance is real (and means "dead").
       creditsCents: typeof parsed.creditsCents === "number" && Number.isFinite(parsed.creditsCents)
-        ? Math.max(0, Math.floor(parsed.creditsCents))
+        ? Math.floor(parsed.creditsCents)
         : undefined,
       usdcBalance: typeof parsed.usdcBalance === "number" && Number.isFinite(parsed.usdcBalance)
         ? parsed.usdcBalance
@@ -167,7 +169,7 @@ async function resolveCreditsCents(
   cachedCreditsCents?: number,
 ): Promise<number> {
   if (typeof options.creditsCents === "number" && Number.isFinite(options.creditsCents)) {
-    return Math.max(0, Math.floor(options.creditsCents));
+    return Math.floor(options.creditsCents);
   }
 
   if (options.funding && options.identityAddress) {
@@ -181,7 +183,7 @@ async function resolveCreditsCents(
     }
   }
 
-  return Math.max(0, Math.floor(cachedCreditsCents ?? 0));
+  return Math.floor(cachedCreditsCents ?? 0);
 }
 
 function resolveUsdcBalance(options: PlannerContextOptions, cachedUsdcBalance?: number): number {
@@ -194,17 +196,9 @@ function resolveUsdcBalance(options: PlannerContextOptions, cachedUsdcBalance?: 
     : 0;
 }
 
-function toSurvivalTier(creditsCents: number): string {
-  if (creditsCents <= 0) {
-    return "critical";
-  }
-  if (creditsCents < 100) {
-    return "low";
-  }
-  if (creditsCents < 5_000) {
-    return "stable";
-  }
-  return "comfortable";
+// Fork change 3: same tiers and thresholds as the loop and heartbeat.
+function toSurvivalTier(balanceCents: number): string {
+  return getSurvivalTier(balanceCents);
 }
 
 function listWorkspaceFiles(workspace?: Pick<AgentWorkspace, "basePath" | "listOutputs">): string[] {

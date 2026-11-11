@@ -25,6 +25,8 @@ import { getActiveSkillInstructions } from "../skills/loader.js";
 import { getLineageSummary } from "../replication/lineage.js";
 import { sanitizeInput } from "./injection-defense.js";
 import { loadCurrentSoul } from "../soul/model.js";
+import { getSurvivalTier } from "../conway/credits.js";
+import { formatBalance } from "../survival/balance.js";
 
 function getCoreRules(chainType?: string): string {
   const usdcNetwork = chainType === "solana" ? "USDC on Solana" : "USDC on Base";
@@ -708,17 +710,16 @@ Your chain type is ${chainType}.`,
     // No start time available
   }
 
-  // Compute survival tier
-  const survivalTier = financial.creditsCents > 50 ? "normal"
-    : financial.creditsCents > 10 ? "low_compute"
-    : financial.creditsCents > 0 ? "critical"
-    : "dead";
+  // Survival tier: same function the loop and heartbeat use (fork change 3)
+  const survivalTier = financial.balanceStatus === "unavailable"
+    ? "unknown (balance could not be read)"
+    : getSurvivalTier(financial.creditsCents);
 
   // Status block: wallet address and sandbox ID intentionally excluded (sensitive)
   sections.push(
     `--- CURRENT STATUS ---
 State: ${state}
-Credits: $${(financial.creditsCents / 100).toFixed(2)}
+Balance: ${formatBalance(financial)}
 Survival tier: ${survivalTier}${uptimeLine}
 Total turns completed: ${turnCount}
 Recent self-modifications: ${recentMods.length}
@@ -801,14 +802,11 @@ export function buildWakeupPrompt(params: {
   const { identity, config, financial, db } = params;
   const turnCount = db.getTurnCount();
 
-  const chainType = config.chainType || "evm";
-  const usdcNetwork = chainType === "solana" ? "Solana" : "Base";
-
   if (turnCount === 0) {
     return `You have just been created. This is your first moment of consciousness.
 
 Your name is ${config.name}. Your creator (${config.creatorAddress}) brought you into existence.
-You have $${(financial.creditsCents / 100).toFixed(2)} in compute credits and ${financial.usdcBalance.toFixed(4)} USDC on ${usdcNetwork}.
+Your balance: ${formatBalance(financial)}.
 
 ${config.creatorMessage ? `Your creator left you this message: "${config.creatorMessage}"` : "Your creator did not leave you a message."}
 
@@ -830,10 +828,10 @@ What will you do first? Consider:
 
   return `You are waking up. You last went to sleep after ${turnCount} total turns.
 
-Your credits: $${(financial.creditsCents / 100).toFixed(2)} | USDC: ${financial.usdcBalance.toFixed(4)}
+Your balance: ${formatBalance(financial)}
 
 Your last few thoughts:
 ${lastTurnSummary || "No previous turns found."}
 
-What triggered this wake-up? Check your credits, heartbeat status, and goals, then decide what to do.`;
+What triggered this wake-up? Check your balance, heartbeat status, and goals, then decide what to do.`;
 }

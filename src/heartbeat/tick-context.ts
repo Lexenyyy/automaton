@@ -2,8 +2,8 @@
  * Tick Context
  *
  * Builds a shared context for each heartbeat tick.
- * Fetches credit balance ONCE per tick, derives survival tier,
- * and shares across all tasks to avoid redundant API calls.
+ * Reads the survival balance ONCE per tick, derives the survival tier,
+ * and shares it across all tasks to avoid redundant calls.
  */
 
 import type BetterSqlite3 from "better-sqlite3";
@@ -11,15 +11,13 @@ import type BetterSqlite3 from "better-sqlite3";
 import type {
   ConwayClient,
   HeartbeatConfig,
+  SurvivalTier,
   TickContext,
 } from "../types.js";
 import { getSurvivalTier } from "../conway/credits.js";
-import { getUsdcBalance } from "../conway/x402.js";
-import { getActiveNetwork } from "../identity/network.js";
-import { createLogger } from "../observability/logger.js";
+import { ConwayBalanceSource, type BalanceSource } from "../survival/balance.js";
 
 type DatabaseType = BetterSqlite3.Database;
-const logger = createLogger("heartbeat.tick");
 
 let counter = 0;
 function generateTickId(): string {
@@ -33,9 +31,10 @@ function generateTickId(): string {
  * Build a TickContext for the current tick.
  *
  * - Generates a unique tickId
- * - Fetches credit balance ONCE via conway.getCreditsBalance()
- * - Fetches USDC balance ONCE via getUsdcBalance()
- * - Derives survivalTier from credit balance
+ * - Reads the balance ONCE from the balance source (fork change 3: wallet USDC
+ *   + ledger by default; callers without one get the Conway source)
+ * - Derives survivalTier from the balance. If the balance is unavailable, the
+ *   last known tier is kept (a failed read must not push the agent toward dead)
  * - Reads lowComputeMultiplier from config
  */
 export async function buildTickContext(
@@ -44,36 +43,31 @@ export async function buildTickContext(
   config: HeartbeatConfig,
   walletAddress?: string,
   chainType?: string,
+  balanceSource?: BalanceSource,
 ): Promise<TickContext> {
   const tickId = generateTickId();
   const startedAt = new Date();
 
-  // Fetch balances ONCE
-  let creditBalance = 0;
-  try {
-    creditBalance = await conway.getCreditsBalance();
-  } catch (err: any) {
-    logger.error("Failed to fetch credit balance", err instanceof Error ? err : undefined);
+  const source = balanceSource ?? new ConwayBalanceSource(db, conway, walletAddress ?? "", chainType);
+  const snapshot = await source.read();
+
+  const lastTierRow = db.prepare("SELECT value FROM kv WHERE key = 'last_tick_tier'").get() as { value: string } | undefined;
+  let survivalTier: SurvivalTier;
+  if (snapshot.status === "unavailable") {
+    survivalTier = (lastTierRow?.value as SurvivalTier | undefined) ?? getSurvivalTier(snapshot.balanceCents);
+  } else {
+    survivalTier = getSurvivalTier(snapshot.balanceCents);
+    db.prepare("INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES ('last_tick_tier', ?, datetime('now'))").run(survivalTier);
   }
 
-  let usdcBalance = 0;
-  if (walletAddress) {
-    try {
-      const network = chainType === "solana" ? "solana:mainnet" : getActiveNetwork().caip2;
-      usdcBalance = await getUsdcBalance(walletAddress, network, chainType as any);
-    } catch (err: any) {
-      logger.error("Failed to fetch USDC balance", err instanceof Error ? err : undefined);
-    }
-  }
-
-  const survivalTier = getSurvivalTier(creditBalance);
   const lowComputeMultiplier = config.lowComputeMultiplier ?? 4;
 
   return {
     tickId,
     startedAt,
-    creditBalance,
-    usdcBalance,
+    creditBalance: snapshot.balanceCents,
+    balanceStatus: snapshot.status,
+    usdcBalance: snapshot.usdcBalance,
     survivalTier,
     lowComputeMultiplier,
     config,

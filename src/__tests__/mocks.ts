@@ -357,6 +357,9 @@ export function createTestConfig(
     maxChildren: 3,
     maxTurnsPerCycle: 25,
     socialRelayUrl: "https://social.conway.tech",
+    // These fixtures model a Conway-hosted agent (credits from MockConwayClient).
+    // Own-balance (wallet + ledger) behavior is tested explicitly in balance.test.ts.
+    balanceSource: "conway",
     ...overrides,
   };
 }

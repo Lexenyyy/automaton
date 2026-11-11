@@ -49,6 +49,8 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         `~/.automaton/automaton.json`, and `loadConfig` lets saved values win. A config created before the
         tightened defaults keeps the old, looser limits. Options: warn when a saved limit is looser than the
         default, or clamp it to the default.
+  - [ ] **Some loop tests call the public Base RPC.** ERC-8004 discovery in `loop.test.ts` reaches
+        `sepolia.base.org` (before change 2: mainnet). Mock it so tests don't depend on the network.
   - [ ] **Rename `turnToolCallCount` to `turnTransferCount`.** I checked `loop.ts` and `general-harness.ts`: both
         count only `transfer_credits` calls, so `maxTransfersPerTurn` works correctly. The name suggests it counts
         all tool calls, which is misleading. This is cleanup only.
@@ -72,8 +74,11 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
 - Base Sepolia only; fund with faucet test USDC
 - Balance visible to the agent each turn
 - Payment tool with code-enforced limits: per transaction, per day, recipient allowlist
-- Our own balance source replacing Conway-only `getCreditsBalance()`. The balance/ledger must count
-  both USDC and Stripe revenue (Stripe arrives in Phase 5a; design the ledger for both from the start)
+- [x] Our own balance source replacing Conway-only `getCreditsBalance()`. The balance/ledger must count
+  both USDC and Stripe revenue (Stripe arrives in Phase 5a; design the ledger for both from the start).
+  Done in change 3: `src/survival/balance.ts` (wallet USDC + `ledger_entries`), owner CLI
+  `automaton-cli ledger`, lifetime real-money inference cap
+- [x] Creator fund command for the own balance: `automaton-cli ledger grant <amount>`
 - Creator `fund` command
 Done when: testnet payment works within limits; over-limit payments are blocked by code; key never leaks.
 
@@ -89,6 +94,10 @@ Done when: draining the testnet balance moves through all tiers correctly.
   only, the agent never sees card data; confirm payments via signed webhooks. Stripe account is owned
   by the owner. Use Stripe test mode until Phase 8. The Stripe secret key and webhook signing secret
   fall under CLAUDE.md rule 5 (never printed, logged or committed).
+- Stripe in Cyprus likely settles in EUR; decide conversion rule or EUR ledger. (The ledger counts
+  only USD entries for now; others are stored but not counted.) Stripe webhook writes
+  `stripe_revenue` / `stripe_fee` / `stripe_refund` ledger entries, idempotent on the event id,
+  with `livemode` from the event.
 - Own VPS + domain + HTTPS; replace `exposePort` (reverse proxy, e.g. Caddy) to get a public URL
 - Revenue vs cost tracking (general plumbing)
 Done when: a placeholder endpoint is reachable at the public HTTPS URL and accepts a testnet payment

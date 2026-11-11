@@ -50,9 +50,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 ## Phase 0 findings (the codebase as forked)
 - Much safety already exists: policy engine (6 rule categories), treasury limits, path
   protection, injection defense, inference budget tracker. See ARCHITECTURE.md "Security Model".
-- **Balance depends on Conway:** `getCreditsBalance()` in `src/conway/client.ts` always calls
-  Conway's API. Without Conway it returns 0, so the agent wrongly believes it is broke.
-  Needs our own balance source (wallet USDC + local ledger).
+- ~~**Balance depends on Conway**~~ Resolved in change 3: survival tiers use `src/survival/balance.ts`
+  (default `balanceSource: "own"` = wallet USDC on the active network + append-only `ledger_entries`).
+  Conway credits only with `balanceSource: "conway"`. A lifetime real-money inference cap
+  (`modelStrategy.lifetimeBudgetCents`, default 500) is enforced from the ledger.
 - ~~**Mainnet is hardcoded**~~ Resolved in change 2: `src/identity/network.ts` makes Base Sepolia the
   default. Mainnet needs `"network": "mainnet"` in `automaton.json` AND
   `AUTOMATON_MAINNET_APPROVED=<wallet address>` set by the owner (Phase 8 only). The remaining

@@ -17,6 +17,7 @@ import type {
   TickContext,
 } from "../types.js";
 import { buildTickContext } from "./tick-context.js";
+import { createBalanceSource, type BalanceSource } from "../survival/balance.js";
 import {
   getHeartbeatSchedule,
   updateHeartbeatSchedule,
@@ -78,6 +79,18 @@ export class DurableScheduler {
     this.ownerId = `scheduler-${Date.now().toString(36)}`;
   }
 
+  /** Survival balance source from the agent config (fork change 3). */
+  balanceSource(): BalanceSource {
+    const { config, conway, identity } = this.legacyContext;
+    return createBalanceSource({
+      config,
+      db: this.db,
+      conway,
+      address: identity.address,
+      chainType: config.chainType || identity.chainType,
+    });
+  }
+
   /**
    * Called on interval -- guards against overlap.
    */
@@ -96,6 +109,7 @@ export class DurableScheduler {
         this.config,
         this.legacyContext.identity.address,
         this.legacyContext.identity.chainType,
+        this.balanceSource(),
       );
 
       // Get tasks that are due

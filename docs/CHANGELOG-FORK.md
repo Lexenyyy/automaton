@@ -175,3 +175,34 @@
     saved configs without the field get the 500¢ default. `configure` asks for it.
   - Tests: `inference-lifetime-cap.test.ts`. The "no limits" test in `inference-router.test.ts`
     now sets the lifetime cap to 0 as well.
+- 2026-11-11: **Change 3, part 3: own balance source and survival tiers.**
+  - New `src/survival/balance.ts`. The default `balanceSource: "own"` is wallet USDC on the active
+    network plus the ledger. `"conway"` keeps upstream Conway credits.
+  - A failed wallet read is never counted as 0. It falls back to the last good value for the same
+    network and wallet ("cached"), or reports "unavailable". USDC is rounded down to whole cents.
+  - Owner decisions: testnet USDC counts toward survival in testnet mode, there is no automatic grant
+    (`automaton-cli ledger grant`), and a negative balance means dead right away.
+  - **The loop**, using the balance source:
+    - The `-1` "API unreachable" sentinel is replaced by `balanceStatus: "unavailable"`, which means
+      low-compute mode with no tier change.
+    - The inline Conway top-up only runs in Conway mode, as does the startup bootstrap top-up in
+      `index.ts`.
+  - **The heartbeat**:
+    - The tick context reads the configured source. On "unavailable" it keeps the last tier.
+    - `check_credits` doesn't start the dead timer on "unavailable".
+    - The auto top-up only runs in Conway mode, and the funding hints point to USDC or
+      `automaton-cli ledger grant`.
+  - **The monitor and funding strategies** read the balance source.
+  - **One tier calculation:** `system-prompt.ts` (was 50/10/0¢) and `planner-context.ts` (was
+    5000/100/0¢, labels low/stable/comfortable, negatives clamped to 0) now use `getSurvivalTier`.
+  - `FinancialState` gains `balanceCents`, `walletUsdcCents`, `ledgerCents`, `balanceStatus`,
+    `balanceSource` and `network`. `creditsCents` stays as a deprecated alias for the total.
+  - New read-only tool `check_balance`. `heartbeat_ping` and `distress_signal` use the balance source.
+    Conway tools (`check_credits`, `transfer_credits`, `fund_child`, top-ups) are unchanged.
+  - Bug found by a test and fixed before commit: the wallet cache is keyed by network and address.
+  - Tests: new `balance.test.ts`. It covers rounding, live/cached/unavailable, per-network and
+    per-wallet cache, testnet vs mainnet ledger, a tier walk from high to dead, the heartbeat,
+    planner and prompt tiers, `check_balance`, and the loop (unavailable means low-compute, no
+    Conway top-up). The shared `createTestConfig` fixture now sets `balanceSource: "conway"`, because
+    the upstream tests model a Conway-hosted agent with mock credits.
+  - ROADMAP 5a note: Stripe in Cyprus likely settles in EUR; decide a conversion rule or an EUR ledger.

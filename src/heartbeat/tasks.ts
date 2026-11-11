@@ -75,8 +75,9 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
         name: taskCtx.config.name,
         address: taskCtx.identity.address,
         creditsCents: credits,
-        fundingHint:
-          "Use credit transfer API from a creator runtime to top this wallet up.",
+        fundingHint: taskCtx.config.balanceSource === "conway"
+          ? "Use credit transfer API from a creator runtime to top this wallet up."
+          : "Send USDC to this wallet on the active network, or add an owner grant: automaton-cli ledger grant <amount>.",
         timestamp: new Date().toISOString(),
       };
       taskCtx.db.setKV("last_distress", JSON.stringify(distressPayload));
@@ -110,7 +111,12 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
     // transition to dead. This gives the agent time to receive funding before dying.
     // USDC can't go negative, so dead is only reached via this timeout.
     const DEAD_GRACE_PERIOD_MS = 3_600_000; // 1 hour
-    if (tier === "critical" && credits === 0) {
+    // Fork change 3: an unavailable balance read says nothing about funds.
+    // Don't start or advance the dead timer on it.
+    if (ctx.balanceStatus === "unavailable") {
+      return { shouldWake: false };
+    }
+    if (tier === "critical" && credits <= 0) {
       const zeroSince = taskCtx.db.getKV("zero_credits_since");
       if (!zeroSince) {
         // First time seeing zero — start the grace period
@@ -157,7 +163,9 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
     }));
 
     const MIN_TOPUP_USD = 5;
-    if (balance >= MIN_TOPUP_USD && (ctx.survivalTier === "critical" || ctx.survivalTier === "dead")) {
+    // Conway credit top-ups only make sense when Conway credits are the balance (fork change 3).
+    const conwayBalance = taskCtx.config.balanceSource === "conway";
+    if (conwayBalance && balance >= MIN_TOPUP_USD && (ctx.survivalTier === "critical" || ctx.survivalTier === "dead")) {
       // Cooldown: don't attempt more than once every 5 minutes to avoid
       // hammering the payment endpoint on repeated ticks.
       const AUTO_TOPUP_COOLDOWN_MS = 5 * 60 * 1000;

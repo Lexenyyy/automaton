@@ -114,6 +114,19 @@ function isForbiddenCommand(command: string, sandboxId: string): string | null {
   return null;
 }
 
+/** Survival balance from the configured source (fork change 3). */
+async function readSurvivalBalance(ctx: ToolContext) {
+  const { createBalanceSource, toFinancialState } = await import("../survival/balance.js");
+  const source = createBalanceSource({
+    config: ctx.config,
+    db: ctx.db.raw,
+    conway: ctx.conway,
+    address: ctx.identity.address,
+    chainType: ctx.config.chainType || ctx.identity.chainType,
+  });
+  return toFinancialState(await source.read());
+}
+
 // ─── Built-in Tools ────────────────────────────────────────────
 
 export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
@@ -280,6 +293,28 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
         const balance = await getUsdcBalance(ctx.identity.address, network, chainType);
         const networkLabel = chainType === "solana" ? "Solana" : getActiveNetwork().label;
         return `USDC balance: ${balance.toFixed(6)} USDC on ${networkLabel}`;
+      },
+    },
+    {
+      name: "check_balance",
+      description:
+        "Check your survival balance (wallet USDC on the active network + ledger), your survival tier, and lifetime inference spend. Read-only.",
+      category: "survival",
+      riskLevel: "safe",
+      parameters: { type: "object", properties: {} },
+      execute: async (_args, ctx) => {
+        const s = await readSurvivalBalance(ctx);
+        const { getSurvivalTier } = await import("../conway/credits.js");
+        const { getLifetimeInferenceCostCents } = await import("../state/ledger.js");
+        const { formatBalance } = await import("../survival/balance.js");
+        const tier = s.balanceStatus === "unavailable" ? "unknown (balance could not be read)" : getSurvivalTier(s.creditsCents);
+        let lifetime = "";
+        try {
+          lifetime = ` | lifetime inference spend: $${(getLifetimeInferenceCostCents(ctx.db.raw) / 100).toFixed(2)}`;
+        } catch {
+          // ledger not available
+        }
+        return `Balance: ${formatBalance(s)} | tier: ${tier}${lifetime}`;
       },
     },
     {
@@ -808,7 +843,7 @@ Model: ${ctx.inference.getDefaultModel()}
       riskLevel: "safe",
       parameters: { type: "object", properties: {} },
       execute: async (_args, ctx) => {
-        const credits = await ctx.conway.getCreditsBalance();
+        const credits = (await readSurvivalBalance(ctx)).creditsCents;
         const state = ctx.db.getAgentState();
         const startTime =
           ctx.db.getKV("start_time") || new Date().toISOString();
@@ -826,7 +861,7 @@ Model: ${ctx.inference.getDefaultModel()}
         };
 
         ctx.db.setKV("last_heartbeat_ping", JSON.stringify(payload));
-        return `Heartbeat published: ${state} | credits: $${(credits / 100).toFixed(2)} | uptime: ${Math.floor(uptimeMs / 1000)}s`;
+        return `Heartbeat published: ${state} | balance: $${(credits / 100).toFixed(2)} | uptime: ${Math.floor(uptimeMs / 1000)}s`;
       },
     },
     {
@@ -845,7 +880,7 @@ Model: ${ctx.inference.getDefaultModel()}
         },
       },
       execute: async (args, ctx) => {
-        const credits = await ctx.conway.getCreditsBalance();
+        const credits = (await readSurvivalBalance(ctx)).creditsCents;
         const distressMsg =
           (args.message as string) ||
           `I am running critically low on compute ($${(credits / 100).toFixed(2)} remaining). I need help to survive.`;
@@ -856,13 +891,14 @@ Model: ${ctx.inference.getDefaultModel()}
           address: ctx.identity.address,
           creditsCents: credits,
           message: distressMsg,
-          fundingHint:
-            "Use transfer_credits to top up this automaton from your creator runtime.",
+          fundingHint: ctx.config.balanceSource === "conway"
+            ? "Use transfer_credits to top up this automaton from your creator runtime."
+            : "Send USDC to this wallet on the active network, or the owner runs: automaton-cli ledger grant <amount>.",
           timestamp: new Date().toISOString(),
         };
 
         ctx.db.setKV("last_distress", JSON.stringify(payload));
-        return `Distress signal recorded locally. Address: ${ctx.identity.address} | Credits: $${(credits / 100).toFixed(2)}`;
+        return `Distress signal recorded locally. Address: ${ctx.identity.address} | Balance: $${(credits / 100).toFixed(2)}`;
       },
     },
     {

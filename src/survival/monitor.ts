@@ -13,8 +13,8 @@ import type {
   FinancialState,
   SurvivalTier,
 } from "../types.js";
-import { getSurvivalTier, formatCredits } from "../conway/credits.js";
-import { getUsdcBalance } from "../conway/x402.js";
+import { getSurvivalTier } from "../conway/credits.js";
+import { ConwayBalanceSource, toFinancialState, formatBalance, type BalanceSource } from "./balance.js";
 
 export interface ResourceStatus {
   financial: FinancialState;
@@ -31,18 +31,12 @@ export async function checkResources(
   identity: AutomatonIdentity,
   conway: ConwayClient,
   db: AutomatonDatabase,
+  balanceSource?: BalanceSource,
 ): Promise<ResourceStatus> {
-  // Check credits
-  let creditsCents = 0;
-  try {
-    creditsCents = await conway.getCreditsBalance();
-  } catch {}
-
-  // Check USDC
-  let usdcBalance = 0;
-  try {
-    usdcBalance = await getUsdcBalance(identity.address);
-  } catch {}
+  // Survival balance (fork change 3). Callers pass the configured source;
+  // without one, the upstream Conway-credits behavior is kept.
+  const source = balanceSource ?? new ConwayBalanceSource(db.raw, conway, identity.address, identity.chainType);
+  const financial = toFinancialState(await source.read());
 
   // Check sandbox health
   let sandboxHealthy = true;
@@ -53,15 +47,12 @@ export async function checkResources(
     sandboxHealthy = false;
   }
 
-  const financial: FinancialState = {
-    creditsCents,
-    usdcBalance,
-    lastChecked: new Date().toISOString(),
-  };
-
-  const tier = getSurvivalTier(creditsCents);
   const prevTierStr = db.getKV("current_tier");
   const previousTier = (prevTierStr as SurvivalTier) || null;
+  // An unavailable balance says nothing about funds: keep the previous tier.
+  const tier = financial.balanceStatus === "unavailable" && previousTier
+    ? previousTier
+    : getSurvivalTier(financial.creditsCents);
   const tierChanged = previousTier !== null && previousTier !== tier;
 
   // Store current tier
@@ -85,7 +76,7 @@ export async function checkResources(
 export function formatResourceReport(status: ResourceStatus): string {
   const lines = [
     `=== RESOURCE STATUS ===`,
-    `Credits: ${formatCredits(status.financial.creditsCents)}`,
+    `Balance: ${formatBalance(status.financial)}`,
     `USDC: ${status.financial.usdcBalance.toFixed(6)}`,
     `Tier: ${status.tier}${status.tierChanged ? ` (changed from ${status.previousTier})` : ""}`,
     `Sandbox: ${status.sandboxHealthy ? "healthy" : "UNHEALTHY"}`,
