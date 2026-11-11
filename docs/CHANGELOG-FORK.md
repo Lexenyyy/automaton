@@ -206,3 +206,9 @@
     Conway top-up). The shared `createTestConfig` fixture now sets `balanceSource: "conway"`, because
     the upstream tests model a Conway-hosted agent with mock credits.
   - ROADMAP 5a note: Stripe in Cyprus likely settles in EUR; decide a conversion rule or an EUR ledger.
+- 2026-11-11: **Change 3, part 4: stricter shell rules for the ledger** (owner-approved policy change,
+  stricter only). `command.forbidden_patterns` now blocks any shell command that mentions
+  `ledger_entries`, opens `state.db` with sqlite, or references `state.db` at all. The `exec` inline
+  guard picks these up through the shared list. Without this, the agent could insert a fake
+  `owner_grant` from the shell. Other databases (e.g. an app's own `data.db`) are still allowed.
+  Tests: `command-safety-ledger.test.ts`.

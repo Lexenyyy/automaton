@@ -98,6 +98,12 @@ const FORBIDDEN_COMMAND_PATTERNS: { pattern: RegExp; description: string }[] = [
   { pattern: /\bsystemctl\b.*\b(edit|set-environment|unset-environment|import-environment|link|daemon-reload|revert|enable|preset|set-property)\b/, description: "Change systemd service config" },
   { pattern: /\blaunchctl\s+(setenv|load|bootstrap)\b/, description: "Change launchd config" },
   { pattern: /\bcrontab\b/, description: "Change scheduled jobs" },
+  // ── Fork change 3: the agent must not write its own ledger or database from the shell ──
+  // (File tools already can't write state.db; ledger UPDATE/DELETE are blocked by triggers.
+  // These stop e.g. inserting a fake owner_grant via sqlite3.)
+  { pattern: /ledger_entries/i, description: "Access the ledger table" },
+  { pattern: /\bsqlite3?\b[^\n]*state\.db/i, description: "Open the agent database with sqlite" },
+  { pattern: /state\.db/i, description: "Access the agent database file" },
   // Persistent environment on Windows
   { pattern: /\bsetx\b/i, description: "Set persistent Windows environment variable" },
   { pattern: /SetEnvironmentVariable/i, description: "Set persistent Windows environment variable" },
