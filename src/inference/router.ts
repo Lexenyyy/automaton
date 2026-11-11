@@ -74,10 +74,13 @@ export class InferenceRouter {
       maxTokens / 1000 * model.costPer1kOutput / 100,
     );
 
-    const budgetCheck = this.budget.checkBudget(estimatedCostCents, model.modelId);
-    if (!budgetCheck.allowed) {
+    // 3. Check every cap (incl. session) and reserve the estimate until the
+    //    cost is recorded, so parallel calls can't overspend together.
+    const reservation = this.budget.tryReserve(estimatedCostCents, model.modelId, request.sessionId);
+    if (!reservation.allowed) {
+      const reason = reservation.reason;
       return {
-        content: `Budget exceeded: ${budgetCheck.reason}`,
+        content: reason.startsWith("Session budget") ? reason : `Budget exceeded: ${reason}`,
         model: model.modelId,
         provider: model.provider,
         inputTokens: 0,
@@ -88,22 +91,20 @@ export class InferenceRouter {
       };
     }
 
-    // 3. Check session budget
-    if (request.sessionId && this.budget.config.sessionBudgetCents > 0) {
-      const sessionCost = this.budget.getSessionCost(request.sessionId);
-      if (sessionCost + estimatedCostCents > this.budget.config.sessionBudgetCents) {
-        return {
-          content: `Session budget exceeded: ${sessionCost}c spent + ${estimatedCostCents}c estimated > ${this.budget.config.sessionBudgetCents}c limit`,
-          model: model.modelId,
-          provider: model.provider,
-          inputTokens: 0,
-          outputTokens: 0,
-          costCents: 0,
-          latencyMs: 0,
-          finishReason: "budget_exceeded",
-        };
-      }
+    try {
+      return await this.callAndRecord(request, model, maxTokens, inferenceChat);
+    } finally {
+      reservation.release();
     }
+  }
+
+  private async callAndRecord(
+    request: InferenceRequest,
+    model: ModelEntry,
+    maxTokens: number,
+    inferenceChat: (messages: any[], options: any) => Promise<any>,
+  ): Promise<InferenceResult> {
+    const { messages, taskType, tier, sessionId, turnId, tools } = request;
 
     // 4. Transform messages for provider
     const transformedMessages = this.transformMessagesForProvider(messages, model.provider);

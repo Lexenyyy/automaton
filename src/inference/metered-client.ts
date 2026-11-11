@@ -89,9 +89,13 @@ export class MeteredInferenceClient implements MeteredInference {
   async chat(params: UnifiedChatParams): Promise<UnifiedInferenceResult> {
     const plan = this.planForCandidates(this.candidatesForTier(params.tier));
     const bounded = this.admit(params, plan, `tier:${params.tier}`);
-    const result = await this.inner.chat(bounded.params);
-    this.record(result, params.tier, bounded.estimateCents);
-    return result;
+    try {
+      const result = await this.inner.chat(bounded.params);
+      this.record(result, params.tier, bounded.estimateCents);
+      return result;
+    } finally {
+      bounded.release();
+    }
   }
 
   async chatDirect(params: UnifiedChatDirectParams): Promise<UnifiedInferenceResult> {
@@ -100,20 +104,25 @@ export class MeteredInferenceClient implements MeteredInference {
       ? this.planForCandidates([found])
       : { price: getHighestBuiltinPrice(), free: false, maxOutputTokens: undefined };
     const bounded = this.admit(params, plan, params.modelId);
-    const result = await this.inner.chatDirect(bounded.params);
-    this.record(result, found?.model.tier ?? "unknown", bounded.estimateCents);
-    return result;
+    try {
+      const result = await this.inner.chatDirect(bounded.params);
+      this.record(result, found?.model.tier ?? "unknown", bounded.estimateCents);
+      return result;
+    } finally {
+      bounded.release();
+    }
   }
 
   /**
-   * Estimate the worst-case cost, apply the default output cap, and check
-   * every budget. Throws InferenceBudgetExceededError if any cap refuses.
+   * Estimate the worst-case cost, apply the default output cap, check every
+   * budget and reserve the estimate. Throws InferenceBudgetExceededError if
+   * any cap refuses. The caller must call release() when done.
    */
   private admit<P extends UnifiedChatParams | UnifiedChatDirectParams>(
     params: P,
     plan: CallPlan,
     modelLabel: string,
-  ): { params: P; estimateCents: number } {
+  ): { params: P; estimateCents: number; release: () => void } {
     const inputTokens = estimateInputTokens(params);
     const inCents = centsPerToken(plan.price.input);
     const outCents = centsPerToken(plan.price.output);
@@ -127,22 +136,12 @@ export class MeteredInferenceClient implements MeteredInference {
       ? 0
       : Math.ceil(inputTokens * inCents + maxTokens * outCents);
 
-    const check = this.budget.checkBudget(estimateCents, modelLabel);
-    if (!check.allowed) {
-      throw new InferenceBudgetExceededError(check.reason ?? "budget cap reached");
+    const reservation = this.budget.tryReserve(estimateCents, modelLabel, this.sessionId());
+    if (!reservation.allowed) {
+      throw new InferenceBudgetExceededError(reservation.reason);
     }
 
-    const sessionLimit = this.budget.config.sessionBudgetCents;
-    if (sessionLimit > 0 && estimateCents > 0) {
-      const spent = this.budget.getSessionCost(this.sessionId());
-      if (spent + estimateCents > sessionLimit) {
-        throw new InferenceBudgetExceededError(
-          `Session budget exceeded: ${spent}c spent + ${estimateCents}c estimated > ${sessionLimit}c limit`,
-        );
-      }
-    }
-
-    return { params: { ...params, maxTokens }, estimateCents };
+    return { params: { ...params, maxTokens }, estimateCents, release: reservation.release };
   }
 
   /**
