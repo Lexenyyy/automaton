@@ -250,6 +250,10 @@ async function configureModelStrategy(config: AutomatonConfig): Promise<void> {
     "Daily inference budget (cents, 0 = unlimited)",
     s.dailyBudgetCents,
   );
+  s.lifetimeBudgetCents = await askNumber(
+    "Lifetime real-money inference cap (cents, 0 = unlimited)",
+    s.lifetimeBudgetCents,
+  );
   s.hourlyBudgetCents = await askNumber(
     "Hourly inference budget (cents, 0 = unlimited)",
     s.hourlyBudgetCents,

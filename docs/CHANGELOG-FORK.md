@@ -164,3 +164,14 @@
   - The agent has no tool that writes to the ledger. The owner uses the new
     `automaton-cli ledger [show | grant <amount> | adjust <±amount> --memo]`.
   - Tests: `ledger.test.ts`.
+- 2026-11-11: **Change 3, part 2: lifetime real-money inference cap.** New setting
+  `modelStrategy.lifetimeBudgetCents` (default 500 = the $5 testing budget; 0 = no limit).
+  - Why: testnet USDC can keep the survival balance up while the agent spends real money on
+    inference. This cap stops paid inference once the all-time total reaches the limit, whatever
+    the balance.
+  - `checkBudget` blocks any paid call (estimate > 0) that would take the lifetime total past the
+    cap. Free/local models (estimate 0) still run.
+  - The total comes from the append-only ledger, so pruning `inference_costs` can't reset it. Old
+    saved configs without the field get the 500¢ default. `configure` asks for it.
+  - Tests: `inference-lifetime-cap.test.ts`. The "no limits" test in `inference-router.test.ts`
+    now sets the lifetime cap to 0 as well.

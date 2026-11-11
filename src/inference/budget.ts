@@ -15,7 +15,7 @@ import {
   inferenceGetHourlyCost,
   inferenceGetModelCosts,
 } from "../state/database.js";
-import { insertLedgerEntry } from "../state/ledger.js";
+import { insertLedgerEntry, getLifetimeInferenceCostCents } from "../state/ledger.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -57,6 +57,18 @@ export class InferenceBudgetTracker {
         allowed: false,
         reason: `Per-call cost ${estimatedCostCents}c exceeds ceiling of ${this.config.perCallCeilingCents}c`,
       };
+    }
+
+    // Lifetime real-money cap (fork change 3). Reads the append-only ledger, so
+    // pruning inference_costs can't reset it. Free/local calls (estimate 0) still run.
+    if (this.config.lifetimeBudgetCents > 0 && estimatedCostCents > 0) {
+      const lifetime = this.getLifetimeCost();
+      if (lifetime + estimatedCostCents > this.config.lifetimeBudgetCents) {
+        return {
+          allowed: false,
+          reason: `Lifetime inference budget exhausted: ${lifetime}c spent + ${estimatedCostCents}c estimated > ${this.config.lifetimeBudgetCents}c limit. Paid inference is blocked; the owner must raise modelStrategy.lifetimeBudgetCents.`,
+        };
+      }
     }
 
     // Hourly budget check
@@ -123,6 +135,13 @@ export class InferenceBudgetTracker {
    */
   getDailyCost(date?: string): number {
     return inferenceGetDailyCost(this.db, date);
+  }
+
+  /**
+   * Total real-money inference spend, all time (from the ledger).
+   */
+  getLifetimeCost(): number {
+    return getLifetimeInferenceCostCents(this.db);
   }
 
   /**

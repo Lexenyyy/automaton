@@ -1251,6 +1251,9 @@ export interface ModelStrategyConfig {
   /** Daily inference cap in cents (UTC day); 0 = no limit. The loop enforces the
    *  stricter of this and treasuryPolicy.maxInferenceDailyCents. */
   dailyBudgetCents: number; // fork default: 100 ($1/day)
+  /** All-time cap on real-money inference spend (ledger 'inference_cost' total); 0 = no limit.
+   *  Once reached, paid inference is blocked; free/local models still run. */
+  lifetimeBudgetCents: number; // fork default: 500 ($5 testing budget, CLAUDE.md rule 3)
   hourlyBudgetCents: number; // 0 = no limit; fork default: 25
   sessionBudgetCents: number; // default: 0 (no limit)
   perCallCeilingCents: number; // 0 = no limit; fork default: 5
@@ -1264,6 +1267,7 @@ export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   criticalModel: "gpt-4.1-nano",
   maxTokensPerTurn: 4096,
   dailyBudgetCents: 100,
+  lifetimeBudgetCents: 500,
   hourlyBudgetCents: 25,
   sessionBudgetCents: 0,
   perCallCeilingCents: 5,

@@ -597,6 +597,7 @@ describe("InferenceBudgetTracker", () => {
     const tracker = new InferenceBudgetTracker(db, {
       ...DEFAULT_MODEL_STRATEGY_CONFIG,
       dailyBudgetCents: 0,
+      lifetimeBudgetCents: 0,
       hourlyBudgetCents: 0,
       sessionBudgetCents: 0,
       perCallCeilingCents: 0,
@@ -991,6 +992,7 @@ describe("DEFAULT_MODEL_STRATEGY_CONFIG", () => {
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.enableModelFallback).toBe(true);
     // Fork budgets (change 1c): $1/day testing cap
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.dailyBudgetCents).toBe(100);
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.lifetimeBudgetCents).toBe(500);
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.hourlyBudgetCents).toBe(25);
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.sessionBudgetCents).toBe(0); // no limit
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.perCallCeilingCents).toBe(5);

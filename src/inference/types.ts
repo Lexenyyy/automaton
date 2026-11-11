@@ -185,6 +185,7 @@ export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   criticalModel: "gpt-4.1-nano",
   maxTokensPerTurn: 4096,
   dailyBudgetCents: 100,
+  lifetimeBudgetCents: 500,
   hourlyBudgetCents: 25,
   sessionBudgetCents: 0,
   perCallCeilingCents: 5,
