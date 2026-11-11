@@ -1,0 +1,22 @@
+# Allowlist: ignore everything, then re-include only what build and tests need.
+# Keeps .env, .automaton/, wallet files, *.db, .git, .claude/ and host node_modules
+# (Windows-native binaries) out of the image.
+*
+
+!src/
+!packages/
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!vitest.config.ts
+!constitution.md
+!scripts/
+
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.db
+**/*.db-*
+**/wallet.json
