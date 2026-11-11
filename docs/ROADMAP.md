@@ -32,14 +32,19 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   best-effort (obfuscated commands can get past regexes), so the agent's shell must not be able to
   write `automaton.json`, `.env`, pm2/systemd configs or start scripts at the OS level.
 - Found in Phase 0 review, to fix in this phase:
-  - [ ] **HIGH PRIORITY: fix this before the agent ever runs. The tokenizer can freeze the agent loop.**
-        `estimateTokens` (`src/agent/context.ts`) runs every turn through `js-tiktoken`, which gets very
-        slow on long strings with no spaces. Measured: 5k chars take 1 s, 10k take 4 s, 20k take 21 s,
-        while 50k chars of normal words take 6 ms. One large tool result (base64, minified code, a long
-        hash) would block the loop for minutes or hours. This is synchronous code, so timeouts can't
-        stop it. It also makes `src/__tests__/context-hardening.test.ts` hang (3 tests in
-        "buildContextMessages token budget"). Likely fix: above a size limit, skip the tokenizer and use
-        the length-based estimate. Show the plan to the owner first.
+  - [x] **HIGH PRIORITY: the tokenizer could freeze the agent loop.** Fixed in `f560a96`.
+        `estimateTokens` ran every turn through `js-tiktoken`, which is quadratic on long strings with
+        no spaces (5k chars took 1 s, 20k took 21 s). The counter (`src/memory/context-manager.ts`) now
+        encodes long whitespace-free runs in 64-char slices. Above 50k chars it counts the first 50k and
+        scales by length. Measured worst case: about 170 ms. `context-hardening.test.ts` no longer hangs.
+  - [ ] **Count tool results the way the model sees them.** `estimateTurnTokens` (`src/agent/context.ts`)
+        counts the full tool result, but the context sends only the first 10k chars
+        (`truncateToolResult`). Turns with huge results look more expensive than they are, so they get
+        summarized sooner. Fixing this changes which turns are summarized, so it needs the owner's approval.
+  - [ ] **3 stale status-block tests in `context-hardening.test.ts`.** They were hidden while the file
+        hung. They still expect `Credits: $50.00` and the old tiers (`normal`, `low_compute`, `dead`).
+        Since change 3, the status block shows `Balance: ...` with the own balance source. They fail on
+        unchanged code too. Decide whether to update the tests or the prompt.
   - [ ] **Run the test suite in a Linux Docker container.** The VPS will run Linux. This should clear
         the 22 Windows-only path failures and give a true baseline. After that, replace the temporary
         Windows baseline in CLAUDE.md.

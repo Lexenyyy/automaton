@@ -246,3 +246,22 @@
   - Not changed (owner decision): the policy rule `financial.inference_daily_cap`.
   - Tests: `metered-client`, `budget-reservation`, `orchestration/budget-pause`,
     `summarize-turns-routing`, `inference-chokepoint`. Full suite: 22 known Windows failures, nothing new.
+- 2026-11-11: **Fixed the tokenizer hang (Phase 1, HIGH PRIORITY), commit `f560a96`.**
+  - js-tiktoken is quadratic on long whitespace-free runs, so one large tool result could block the loop
+    for minutes. `createTokenCounter` (`src/memory/context-manager.ts`) now encodes runs longer than
+    64 chars in 64-char slices. Above 50k chars it counts the first 50k and scales by total length.
+    Texts over 10k chars are no longer cached.
+  - Measured worst case (plain letters): about 3.4 ms per 1,000 chars, 170 ms at the limit. The
+    previously approved values (512-char slices, 200k limit) were rejected after timing, because they
+    allowed about 5 s per call.
+  - Accuracy: exact for normal text; at most +0.5% on base64; within 10% above the limit.
+  - `estimateTokens` keeps its `length/4` floor, so loop estimates are never below length/4. The floor
+    is not applied inside the counter: plain letters (8 chars/token) and English (5 chars/token) would
+    be overcounted by up to 100%.
+  - Tests: `memory/token-counter-bounds` covers base64, plain letters and normal words above the limit,
+    plus surrogate pairs and caching.
+  - `context-hardening.test.ts` runs again. It showed 3 stale status-block tests, which also fail on
+    unchanged code, so they are now known failures and a ROADMAP item. New baseline: 1795 passed,
+    25 failed; the exclusion was removed from CLAUDE.md.
+  - Not changed (owner decision): `estimateTurnTokens` still counts the full tool result. This is now
+    a separate ROADMAP item.
