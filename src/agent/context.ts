@@ -13,7 +13,9 @@ import type {
   InferenceClient,
   TokenBudget,
   MemoryRetrievalResult,
+  SurvivalTier,
 } from "../types.js";
+import type { InferenceRouter } from "../inference/router.js";
 import { DEFAULT_TOKEN_BUDGET } from "../types.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 
@@ -298,12 +300,24 @@ export function formatMemoryBlock(memories: MemoryRetrievalResult): string {
 }
 
 /**
+ * How summarizeTurns makes its model call. It always goes through the
+ * InferenceRouter, so the budget caps, the routing matrix (critical tier:
+ * free models only) and the cost record/ledger apply.
+ */
+export interface SummaryInference {
+  router: Pick<InferenceRouter, "route">;
+  chat: InferenceClient["chat"];
+  tier: SurvivalTier;
+  sessionId?: string;
+}
+
+/**
  * Summarize old turns into a compact context entry.
  * Used when context grows too large.
  */
 export async function summarizeTurns(
   turns: AgentTurn[],
-  inference: InferenceClient,
+  inference: SummaryInference,
 ): Promise<string> {
   if (turns.length === 0) return "No previous activity.";
 
@@ -319,24 +333,37 @@ export async function summarizeTurns(
     return `Previous activity summary:\n${turnSummaries.join("\n")}`;
   }
 
-  // For many turns, use inference to create a summary
+  // For many turns, use inference to create a summary (routed and metered)
   try {
-    const response = await inference.chat([
+    const result = await inference.router.route(
       {
-        role: "system",
-        content:
-          "Summarize the following agent activity log into a concise paragraph. Focus on: what was accomplished, what failed, current goals, and important context for the next turn.",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Summarize the following agent activity log into a concise paragraph. Focus on: what was accomplished, what failed, current goals, and important context for the next turn.",
+          },
+          {
+            role: "user",
+            content: turnSummaries.join("\n"),
+          },
+        ],
+        taskType: "summarization",
+        tier: inference.tier,
+        sessionId: inference.sessionId || "default",
+        maxTokens: 500,
       },
-      {
-        role: "user",
-        content: turnSummaries.join("\n"),
-      },
-    ], {
-      maxTokens: 500,
-      temperature: 0,
-    });
+      (msgs, opts) => inference.chat(msgs, { ...opts, temperature: 0 }),
+    );
 
-    return `Previous activity summary:\n${response.message.content}`;
+    // Refused by a budget cap, no model for this tier, or timeout:
+    // nothing was spent; use the local summary below.
+    const refused = ["budget_exceeded", "error", "timeout"].includes(String(result.finishReason));
+    if (refused || !result.content) {
+      return `Previous activity summary:\n${turnSummaries.slice(-5).join("\n")}`;
+    }
+
+    return `Previous activity summary:\n${result.content}`;
   } catch {
     // Fallback: just use the raw summaries
     return `Previous activity summary:\n${turnSummaries.slice(-5).join("\n")}`;

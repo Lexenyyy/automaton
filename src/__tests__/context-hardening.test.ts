@@ -220,16 +220,30 @@ describe("buildContextMessages tool result truncation", () => {
 // ─── summarizeTurns is callable and works ──────────────────────
 
 describe("summarizeTurns", () => {
+  // Fork Phase 1: summarizeTurns calls through the router. This fake router
+  // just forwards to the mock client; real routing is tested in
+  // summarize-turns-routing.test.ts.
+  const routed = (inference: MockInferenceClient) => ({
+    router: {
+      route: async (req: any, chat: any) => {
+        const r = await chat(req.messages, { maxTokens: req.maxTokens });
+        return { content: r.message.content, finishReason: "stop" } as any;
+      },
+    },
+    chat: inference.chat.bind(inference),
+    tier: "normal" as const,
+  });
+
   it("returns summary for empty turns", async () => {
     const inference = new MockInferenceClient();
-    const result = await summarizeTurns([], inference);
+    const result = await summarizeTurns([], routed(inference));
     expect(result).toBe("No previous activity.");
   });
 
   it("returns direct summaries for <= 5 turns", async () => {
     const inference = new MockInferenceClient();
     const turns = Array.from({ length: 3 }, () => makeTurn());
-    const result = await summarizeTurns(turns, inference);
+    const result = await summarizeTurns(turns, routed(inference));
     expect(result).toContain("Previous activity summary:");
     expect(inference.calls.length).toBe(0); // Should not call inference
   });
@@ -239,7 +253,7 @@ describe("summarizeTurns", () => {
       noToolResponse("Summary of agent activity."),
     ]);
     const turns = Array.from({ length: 8 }, () => makeTurn());
-    const result = await summarizeTurns(turns, inference);
+    const result = await summarizeTurns(turns, routed(inference));
     expect(result).toContain("Previous activity summary:");
     expect(inference.calls.length).toBe(1);
   });
