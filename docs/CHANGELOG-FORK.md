@@ -212,3 +212,37 @@
   guard picks these up through the shared list. Without this, the agent could insert a fake
   `owner_grant` from the shell. Other databases (e.g. an app's own `data.db`) are still allowed.
   Tests: `command-safety-ledger.test.ts`.
+- 2026-11-11: **Phase 1: every model call goes through the budget tracker and the ledger.**
+  Before this, only the main loop's `InferenceRouter` checked the caps. The orchestrator, planner and local
+  workers called `UnifiedInferenceClient` directly: no cap, no cost record, no ledger debit.
+  - **Step 1, `MeteredInferenceClient`** (`src/inference/metered-client.ts`): wraps the unified client.
+    - Before each call, it checks the worst-case estimate over the tier's candidate models.
+    - After the call, it records the real cost with a ledger source (`orchestrator`, `worker`).
+    - A refusal throws `InferenceBudgetExceededError`, and the model is never called.
+    - If `maxTokens` is missing, the output cap keeps the call within the per-call ceiling (5¢) on the
+      tier's priciest model.
+    - Prices are $/1M tokens. A remote model is never priced below its built-in price, so editing
+      `inference-providers.json` can't lower it. A zero or unknown price is charged at the highest
+      built-in price. Only loopback providers are free.
+    - A paid call that reports no usage is charged at its estimate.
+    - Found by a test: `llama3.1:8b` ships priced at 0 as a local model, so a remote provider serving it
+      would have been free. Fixed before commit.
+  - **Step 2, reservations:** `InferenceBudgetTracker.tryReserve` checks every cap (incl. session) and
+    reserves the estimate until the cost is recorded, so parallel calls can't all pass first.
+    Both the router and the metered client use it.
+  - **Step 3, wiring and pause** (owner decision):
+    - `loop.ts` gives the orchestrator and the worker bridge metered clients that share the main
+      loop's tracker.
+    - On a budget refusal, the orchestrator keeps its phase and pauses until the next budget window
+      (next UTC hour, at least 5 min). It never fails the goal, falls back to a guessed plan or replans.
+    - Workers put the task back to pending and pause. Harnesses rethrow without retrying.
+    - The pause is stored in kv (`inference.budget_pause_until`) and survives a restart. The main loop
+      sets it too when the router refuses a turn.
+  - **Step 4:** `summarizeTurns` now calls `router.route` (taskType `summarization`; critical tier = free
+    models only). Not yet called in production.
+  - **Step 5:** `inference-chokepoint.test.ts` scans `src/`. It allows raw clients and direct model API
+    access only in the client layer, and every `.chat()` call site must be on a list with an exact count.
+    We checked that it catches a bypass.
+  - Not changed (owner decision): the policy rule `financial.inference_daily_cap`.
+  - Tests: `metered-client`, `budget-reservation`, `orchestration/budget-pause`,
+    `summarize-turns-routing`, `inference-chokepoint`. Full suite: 22 known Windows failures, nothing new.

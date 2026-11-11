@@ -61,12 +61,19 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [ ] **Rename `turnToolCallCount` to `turnTransferCount`.** I checked `loop.ts` and `general-harness.ts`: both
         count only `transfer_credits` calls, so `maxTransfersPerTurn` works correctly. The name suggests it counts
         all tool calls, which is misleading. This is cleanup only.
-  - [ ] **Route all inference through the budget tracker.** The main loop uses `InferenceRouter`, which checks
-        budgets, but compression, planner, orchestrator, plan-mode, context summarization and harnesses call
-        `inference.chat` directly. Those calls skip the budget checks and the cost record.
-        (Done in change 1c for the main loop: the router now enforces a $1/day cap, the stricter of
-        `modelStrategy.dailyBudgetCents` and `maxInferenceDailyCents`. The policy rule
-        `financial.inference_daily_cap` still sees no `inference` spend.)
+  - [x] **Route all inference through the budget tracker.** Done (Phase 1 steps 1–5):
+        - The main loop and `summarizeTurns` use `InferenceRouter`.
+        - The orchestrator, planner, plan-mode, compression engine and workers use `MeteredInferenceClient`.
+        - Both share one `InferenceBudgetTracker` and write every cost to `inference_costs` and the ledger.
+        - In-flight reservations stop parallel calls from overspending together.
+        - On a budget refusal, orchestration and workers pause until the next budget window; tasks are
+          not failed or replanned.
+        - `inference-chokepoint.test.ts` fails on any new unmetered call site.
+  - [ ] **Policy rule `financial.inference_daily_cap` sees no `inference` spend.** The tracker already enforces
+        the daily cap, so this would be a second guard, not a missing one. It is a policy-engine change and
+        needs the owner's approval (deferred by the owner on 2026-11-11).
+  - [ ] **The two price tables could disagree.** The router prices from `ModelRegistry`; the metered client
+        prices from `ProviderRegistry`, never below the built-in price. Merging them is cleanup.
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
