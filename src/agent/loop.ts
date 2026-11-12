@@ -50,6 +50,7 @@ import { ModelRegistry } from "../inference/registry.js";
 import { InferenceBudgetTracker, resolveDailyInferenceCap } from "../inference/budget.js";
 import { InferenceRouter } from "../inference/router.js";
 import { workerEditRoot } from "../sandbox/transport.js";
+import { filterToolsForConwayMode, isConwayHost } from "../conway/mode.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
 import { DEFAULT_MEMORY_BUDGET } from "../types.js";
@@ -101,7 +102,9 @@ export async function runAgentLoop(
 
   const builtinTools = createBuiltinTools(identity.sandboxId);
   const installedTools = loadInstalledTools(db);
-  const tools = [...builtinTools, ...installedTools];
+  // Fork: with Conway off, Conway-only tools are neither offered nor
+  // executable (executeTool looks tools up in this same list).
+  const tools = filterToolsForConwayMode([...builtinTools, ...installedTools], config.conway);
   const toolContext: ToolContext = {
     identity,
     config,
@@ -153,12 +156,15 @@ export async function runAgentLoop(
       // direct OpenAI key is available. The conwayApiKey is always present
       // (required for sandbox operations), so this ensures the orchestrator
       // can always make inference calls.
-      if (config.conwayApiKey && !process.env.CONWAY_API_KEY) {
+      // Fork: only with Conway on; with Conway off the Conway key is never
+      // used as a model key.
+      const conwayOn = config.conway !== "off";
+      if (conwayOn && config.conwayApiKey && !process.env.CONWAY_API_KEY) {
         process.env.CONWAY_API_KEY = config.conwayApiKey;
       }
       // If no OpenAI key is set but Conway key is available, use Conway as
       // the OpenAI provider (Conway Compute is OpenAI API-compatible).
-      if (!process.env.OPENAI_API_KEY && config.conwayApiKey) {
+      if (conwayOn && !process.env.OPENAI_API_KEY && config.conwayApiKey) {
         process.env.OPENAI_API_KEY = config.conwayApiKey;
         process.env.OPENAI_BASE_URL = `${config.conwayApiUrl}/v1`;
       }
@@ -172,7 +178,7 @@ export async function runAgentLoop(
 
       // If OPENAI_BASE_URL was set (Conway fallback), update the default
       // provider's baseUrl so the OpenAI client points to Conway Compute.
-      if (process.env.OPENAI_BASE_URL) {
+      if (process.env.OPENAI_BASE_URL && !(!conwayOn && isConwayHost(process.env.OPENAI_BASE_URL))) {
         registry.overrideBaseUrl("openai", process.env.OPENAI_BASE_URL);
       }
 

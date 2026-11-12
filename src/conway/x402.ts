@@ -16,6 +16,7 @@ import { base, baseSepolia } from "viem/chains";
 import { ResilientHttpClient } from "./http-client.js";
 import type { ChainType } from "../identity/chain.js";
 import { assertNetworkAllowed, getActiveNetwork } from "../identity/network.js";
+import { ConwayDisabledError, isConwayDisabled, isConwayHost } from "./mode.js";
 
 const x402HttpClient = new ResilientHttpClient();
 
@@ -327,6 +328,15 @@ export async function x402Fetch(
   maxPaymentCents?: number,
   chainType?: ChainType,
 ): Promise<X402PaymentResult> {
+  // Fork: with Conway off, nothing is sent to (or paid to) a Conway host.
+  // Covers credit top-ups, which go through this function.
+  if (isConwayDisabled() && isConwayHost(url)) {
+    return {
+      success: false,
+      error: new ConwayDisabledError("payment to a Conway host").message,
+    };
+  }
+
   // Solana wallets cannot sign EVM x402 payments
   if (chainType === "solana") {
     return {

@@ -5,6 +5,12 @@
   "sandboxId": "",
   "network": "testnet",
   "balanceSource": "own",
+  "conway": "off",
+  "socialRelayUrl": "",
+  "agentSettings": {
+    "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },
+    "model": { "allowAgentChanges": true, "allowedModels": ["gpt-4.1-mini", "gpt-4.1-nano"], "maxChangesPerDay": 4 }
+  },
   "dbPath": "~/.automaton/state.db",
   "heartbeatConfigPath": "~/.automaton/heartbeat.yml",
   "skillsDir": "/workspace/skills",

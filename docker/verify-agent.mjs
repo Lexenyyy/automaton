@@ -24,9 +24,11 @@ const COMPOSE = ["compose", "-f", path.join(ROOT, "docker", "compose.agent.yml")
 const PROBE = `${PROJECT}-runtime-probe`;
 
 const fakeSecret = `verify-fake-secret-${crypto.randomBytes(16).toString("hex")}`;
+const fakeOpenAiKey = `verify-fake-openai-${crypto.randomBytes(16).toString("hex")}`;
 const fakeSecretHash = crypto.createHash("sha256").update(fakeSecret).digest("hex");
 const secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "automaton-verify-secrets-"));
 fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
+fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 
 const env = { ...process.env, AUTOMATON_SECRETS_DIR: secretsDir };
 delete env.AUTOMATON_MAINNET_APPROVED;
@@ -292,6 +294,7 @@ try {
   cleanup();
   fs.mkdirSync(secretsDir, { recursive: true });
   fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
+fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 
   console.log("agent:verify: starting the sandbox ...");
   docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
@@ -305,6 +308,17 @@ try {
 
   const statusRun = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--status"]);
   check("entrypoint", "--status shows Base Sepolia (testnet)", statusRun.code === 0 && (statusRun.out + statusRun.err).includes("Base Sepolia (testnet)"), statusRun.code);
+
+  // --preflight: the real startup path without a Conway key (fake model key,
+  // no model call, agent not started; one read-only RPC call to Base Sepolia).
+  const pre = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--preflight"]);
+  const preOut = pre.out + pre.err;
+  check("entrypoint", "--preflight passes with no Conway key", pre.code === 0 && preOut.includes("PREFLIGHT PASSED"),
+    pre.code === 0 ? "" : preOut.split("\n").filter((l) => /FAIL|Error|error/.test(l)).join(" | ").slice(0, 500));
+  check("entrypoint", "--preflight: Conway off, sandbox reached as uid 10002, model key from secrets",
+    preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
+    preOut.includes("model gpt-4.1-mini: provider openai, key present"));
+  check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
 
   const settingsShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "show"]);
   check("entrypoint", "owner command --settings show works; agent genesis changes OFF by default",

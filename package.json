@@ -54,6 +54,7 @@
     "agent:build": "docker compose -f docker/compose.agent.yml build",
     "agent:init": "docker compose -f docker/compose.agent.yml run --rm runtime --init",
     "agent:verify": "node docker/verify-agent.mjs",
+    "agent:preflight": "docker compose -f docker/compose.agent.yml run --rm -T runtime --preflight",
     "agent:run": "docker compose -f docker/compose.agent.yml run --rm runtime --run",
     "agent:down": "docker compose -f docker/compose.agent.yml down",
     "agent:kill": "node docker/kill-agent.mjs",

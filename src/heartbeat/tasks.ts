@@ -282,6 +282,12 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
   },
 
   check_for_updates: async (_ctx: TickContext, taskCtx: HeartbeatLegacyContext) => {
+    // Fork: in sandbox container mode the runtime has no git and starts no
+    // processes; upstream checks are refused there, so skip quietly.
+    const { isContainerSandboxActive } = await import("../sandbox/mode.js");
+    if (isContainerSandboxActive()) {
+      return { shouldWake: false };
+    }
     try {
       const { checkUpstream, getRepoInfo } = await import("../self-mod/upstream.js");
       const repo = getRepoInfo();

@@ -67,10 +67,11 @@ describe("inference choke point", () => {
     expect(wrapped.length).toBe(2);
   });
 
-  it("creates the raw Conway/OpenAI/Anthropic inference client only in index.ts", () => {
-    // index.ts passes it to the main loop, which only calls it via router.route.
+  it("creates the raw Conway/OpenAI/Anthropic inference client only in the startup path", () => {
+    // runtime/prepare.ts (moved from index.ts in the Conway-off change) passes
+    // it to the main loop, which only calls it via router.route.
     expect(countMatches(/(?<!function\s)\bcreateInferenceClient\s*\(/)).toEqual({
-      "index.ts": 1,
+      "runtime/prepare.ts": 1,
     });
   });
 

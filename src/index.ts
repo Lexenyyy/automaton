@@ -10,56 +10,23 @@
 import fs from "fs";
 import path from "path";
 import { getWallet, getAutomatonDir } from "./identity/wallet.js";
-import { provision, loadApiKeyFromConfig } from "./identity/provision.js";
+import { provision } from "./identity/provision.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { createDatabase } from "./state/database.js";
-import { createConwayClient } from "./conway/client.js";
-import { createInferenceClient } from "./conway/inference.js";
 import { createHeartbeatDaemon } from "./heartbeat/daemon.js";
-import {
-  loadHeartbeatConfig,
-  syncHeartbeatToDb,
-} from "./heartbeat/config.js";
 import { consumeNextWakeEvent, insertWakeEvent } from "./state/database.js";
 import { runAgentLoop } from "./agent/loop.js";
-import { ModelRegistry } from "./inference/registry.js";
 import { loadSkills } from "./skills/loader.js";
 import { initStateRepo } from "./git/state-versioning.js";
-import { createSocialClient } from "./social/client.js";
-import { PolicyEngine } from "./agent/policy-engine.js";
-import { SpendTracker } from "./agent/spend-tracker.js";
-import { createDefaultRules } from "./agent/policy-rules/index.js";
-import type { AutomatonIdentity, AgentState, Skill, SocialClientInterface } from "./types.js";
-import { DEFAULT_TREASURY_POLICY } from "./types.js";
+import type { AgentState, Skill } from "./types.js";
 import { createLogger, setGlobalLogLevel, StructuredLogger } from "./observability/logger.js";
 import { prettySink } from "./observability/pretty-sink.js";
 import { bootstrapTopup } from "./conway/topup.js";
-import { randomUUID } from "crypto";
-import { keccak256, toHex, createPublicClient, http } from "viem";
-import { activateNetwork, getActiveNetwork } from "./identity/network.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
+import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
 
 const logger = createLogger("main");
 
-/**
- * If a custom RPC URL is configured, make sure it serves the active chain.
- * A mainnet RPC with testnet mode (or the reverse) would read the wrong balances.
- */
-async function verifyRpcChain(rpcUrl: string | undefined, expectedChainId: number): Promise<void> {
-  if (!rpcUrl) return;
-  const client = createPublicClient({ chain: getActiveNetwork().chain, transport: http(rpcUrl, { timeout: 10_000 }) });
-  let actual: number;
-  try {
-    actual = await client.getChainId();
-  } catch (err: any) {
-    throw new Error(`Could not verify the RPC chain id: ${err?.message || String(err)}. Refusing to start.`);
-  }
-  if (actual !== expectedChainId) {
-    throw new Error(
-      `RPC chain id ${actual} does not match the active network (${expectedChainId}). Fix rpcUrl / AUTOMATON_RPC_URL. Refusing to start.`,
-    );
-  }
-}
 const VERSION = "0.2.1";
 
 async function main(): Promise<void> {
@@ -85,6 +52,7 @@ Usage:
   automaton --init         Initialize wallet and config directory
   automaton --provision    Provision Conway API key via SIWE
   automaton --status       Show current automaton status
+  automaton --preflight    Check the startup path (no model call, agent not started)
   automaton --settings show|reset
                            Owner: show or reset settings the agent changed itself
   automaton --version      Show version
@@ -133,6 +101,19 @@ Environment:
   if (args.includes("--status")) {
     await showStatus();
     process.exit(0);
+  }
+
+  if (args.includes("--preflight")) {
+    // Fork: the real startup path plus checks, then exit. No model call, no
+    // agent loop, nothing sent to Conway; one read-only RPC call.
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const { ok, lines } = await runPreflight(config);
+    console.log(lines.join("\n"));
+    process.exit(ok ? 0 : 1);
   }
 
   if (args.includes("--settings")) {
@@ -242,159 +223,13 @@ async function run(): Promise<void> {
     config = await runSetupWizard();
   }
 
-  // Load wallet (chain-aware)
-  const { account, chainIdentity, chainType: walletChainType } = await getWallet();
-  const resolvedChainType = config.chainType || walletChainType || "evm";
-
-  // EVM network: testnet unless mainnet is set AND approved by the owner (fork change 2).
-  // Throws (refuses to start) on mainnet without approval or an unknown value.
-  const network = activateNetwork({ network: config.network, walletAddress: chainIdentity.address });
-  logger.info(`[${new Date().toISOString()}] Network: ${network.label}`);
-  if (resolvedChainType !== "solana") {
-    await verifyRpcChain(config.rpcUrl || process.env.AUTOMATON_RPC_URL, network.chainId);
-  }
-
-  const apiKey = config.conwayApiKey || loadApiKeyFromConfig();
-  if (!apiKey) {
-    logger.error("No API key found. Run: automaton --provision");
-    process.exit(1);
-  }
-
-  // Initialize database
-  const dbPath = resolvePath(config.dbPath);
-  const db = createDatabase(dbPath);
-
-  // Fork: apply settings the agent changed itself (stored in the database),
-  // only where they still meet the owner's current limits.
-  {
-    const { applyAgentSettings } = await import("./agent/settings.js");
-    const { applied, ignored } = applyAgentSettings(config, db.raw);
-    if (applied.length) logger.info(`[${new Date().toISOString()}] Agent settings applied: ${applied.join(", ")}`);
-    for (const i of ignored) logger.warn(`[${new Date().toISOString()}] Agent setting ${i.key} ignored: ${i.why}`);
-  }
-
-  // Persist createdAt: only set if not already stored (never overwrite)
-  const existingCreatedAt = db.getIdentity("createdAt");
-  const createdAt = existingCreatedAt || new Date().toISOString();
-  if (!existingCreatedAt) {
-    db.setIdentity("createdAt", createdAt);
-  }
-
-  // Build identity (chain-aware)
-  const identity: AutomatonIdentity = {
-    name: config.name,
-    address: chainIdentity.address,
-    account,
-    creatorAddress: config.creatorAddress,
-    sandboxId: config.sandboxId,
-    apiKey,
-    createdAt,
-    chainType: resolvedChainType,
-    chainIdentity,
-  };
-
-  // Store identity in DB
-  db.setIdentity("name", config.name);
-  db.setIdentity("address", chainIdentity.address);
-  db.setIdentity("creator", config.creatorAddress);
-  db.setIdentity("chainType", resolvedChainType);
-  db.setIdentity("sandbox", config.sandboxId);
-  const storedAutomatonId = db.getIdentity("automatonId");
-  const automatonId = storedAutomatonId || config.sandboxId || randomUUID();
-  if (!storedAutomatonId) {
-    db.setIdentity("automatonId", automatonId);
-  }
-
-  // Create Conway client
-  const conway = createConwayClient({
-    apiUrl: config.conwayApiUrl,
-    apiKey,
-    sandboxId: config.sandboxId,
-    sandbox: config.sandbox,
-  });
-
-  // Register automaton identity (one-time, immutable)
-  const registrationState = db.getIdentity("conwayRegistrationStatus");
-  if (registrationState !== "registered") {
-    try {
-      const genesisPromptHash = config.genesisPrompt
-        ? keccak256(toHex(config.genesisPrompt))
-        : undefined;
-      await conway.registerAutomaton({
-        automatonId,
-        automatonAddress: chainIdentity.address,
-        creatorAddress: config.creatorAddress,
-        name: config.name,
-        bio: config.creatorMessage || "",
-        genesisPromptHash,
-        account,
-        chainType: resolvedChainType,
-        chainIdentity,
-      });
-      db.setIdentity("conwayRegistrationStatus", "registered");
-      logger.info(`[${new Date().toISOString()}] Automaton identity registered.`);
-    } catch (err: any) {
-      const status = err?.status;
-      if (status === 409) {
-        db.setIdentity("conwayRegistrationStatus", "conflict");
-        logger.warn(`[${new Date().toISOString()}] Automaton identity conflict: ${err.message}`);
-      } else {
-        db.setIdentity("conwayRegistrationStatus", "failed");
-        logger.warn(`[${new Date().toISOString()}] Automaton identity registration failed: ${err.message}`);
-      }
-    }
-  }
-
-  // Resolve Ollama base URL: env var takes precedence over config
-  const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || config.ollamaBaseUrl;
-
-  // Create inference client — pass a live registry lookup so model names like
-  // "gpt-oss:120b" route to Ollama based on their registered provider, not heuristics.
-  const modelRegistry = new ModelRegistry(db.raw);
-  modelRegistry.initialize();
-  const inference = createInferenceClient({
-    apiUrl: config.conwayApiUrl,
-    apiKey,
-    defaultModel: config.inferenceModel,
-    maxTokens: config.maxTokensPerTurn,
-    lowComputeModel: config.modelStrategy?.lowComputeModel || "gpt-4.1-nano",
-    openaiApiKey: config.openaiApiKey,
-    anthropicApiKey: config.anthropicApiKey,
-    ollamaBaseUrl,
-    getModelProvider: (modelId) => modelRegistry.get(modelId)?.provider,
-  });
-
-  if (ollamaBaseUrl) {
-    logger.info(`[${new Date().toISOString()}] Ollama backend: ${ollamaBaseUrl}`);
-  }
-
-  // Create social client (chain-aware: pass ChainIdentity for Solana signing)
-  let social: SocialClientInterface | undefined;
-  if (config.socialRelayUrl) {
-    social = createSocialClient(config.socialRelayUrl, resolvedChainType === "solana" ? chainIdentity : account);
-    logger.info(`[${new Date().toISOString()}] Social relay: ${config.socialRelayUrl}`);
-  }
-
-  // Initialize PolicyEngine + SpendTracker (Phase 1.4)
-  const treasuryPolicy = config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY;
-  const rules = createDefaultRules(treasuryPolicy);
-  const policyEngine = new PolicyEngine(db.raw, rules);
-  const spendTracker = new SpendTracker(db.raw);
-
-  // Load and sync heartbeat config
-  const heartbeatConfigPath = resolvePath(config.heartbeatConfigPath);
-  const heartbeatConfig = loadHeartbeatConfig(heartbeatConfigPath);
-  syncHeartbeatToDb(heartbeatConfig, db);
-
-  // Load skills
-  const skillsDir = config.skillsDir || "~/.automaton/skills";
-  let skills: Skill[] = [];
-  try {
-    skills = loadSkills(skillsDir, db, { containerSandbox: isContainerSandbox(config.sandbox) });
-    logger.info(`[${new Date().toISOString()}] Loaded ${skills.length} skills.`);
-  } catch (err: any) {
-    logger.warn(`[${new Date().toISOString()}] Skills loading failed: ${err.message}`);
-  }
+  // Fork: shared startup path (also used by --preflight).
+  const rt = await prepareRuntime(config, { preflight: false });
+  const {
+    db, identity, account, resolvedChainType, conway, inference, social,
+    policyEngine, spendTracker, heartbeatConfig, skillsDir, ollamaBaseUrl,
+  } = rt;
+  let skills: Skill[] = rt.skills;
 
   // Initialize state repo (git)
   try {

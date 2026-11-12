@@ -94,6 +94,12 @@ export interface AutomatonConfig {
    */
   sandbox?: SandboxConfig;
   /**
+   * Conway platform on/off (fork, Phase 1). Absent: "on" if a Conway API key
+   * exists, otherwise "off". "off" = own providers only; no request reaches
+   * Conway (see src/conway/mode.ts). Resolved at startup.
+   */
+  conway?: "on" | "off";
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

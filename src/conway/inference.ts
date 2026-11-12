@@ -29,6 +29,11 @@ interface InferenceClientOptions {
   ollamaBaseUrl?: string;
   /** Optional registry lookup — if provided, used before name heuristics */
   getModelProvider?: (modelId: string) => string | undefined;
+  /**
+   * Fork: false when Conway is off. A model that would go to the Conway
+   * backend then fails with a clear error and nothing is sent.
+   */
+  conwayEnabled?: boolean;
 }
 
 type InferenceBackend = "conway" | "openai" | "anthropic" | "ollama";
@@ -49,6 +54,7 @@ export function createInferenceClient(
   options: InferenceClientOptions,
 ): InferenceClient {
   const { apiUrl, apiKey, openaiApiKey, anthropicApiKey, ollamaBaseUrl, getModelProvider } = options;
+  const conwayEnabled = options.conwayEnabled !== false;
   const httpClient = new ResilientHttpClient({
     baseTimeout: INFERENCE_TIMEOUT_MS,
     retryableStatuses: [429, 500, 502, 503, 504],
@@ -69,6 +75,7 @@ export function createInferenceClient(
       anthropicApiKey,
       ollamaBaseUrl,
       getModelProvider,
+      conwayEnabled,
     });
 
     // Newer models (o-series, gpt-5.x, gpt-4.1) require max_completion_tokens.
@@ -174,30 +181,41 @@ function formatMessage(
  * When InferenceRouter is available, it uses the model registry's provider field.
  * This function is kept for backward compatibility with direct inference calls.
  */
-function resolveInferenceBackend(
+export function resolveInferenceBackend(
   model: string,
   keys: {
     openaiApiKey?: string;
     anthropicApiKey?: string;
     ollamaBaseUrl?: string;
     getModelProvider?: (modelId: string) => string | undefined;
+    /** Fork: false when Conway is off (see src/conway/mode.ts). */
+    conwayEnabled?: boolean;
   },
 ): InferenceBackend {
+  const conway = (): InferenceBackend => {
+    if (keys.conwayEnabled === false) {
+      throw new Error(
+        `No provider for model '${model}' with Conway off. Provide its key (OPENAI_API_KEY or ANTHROPIC_API_KEY) ` +
+          `or use an Ollama model. Nothing was sent.`,
+      );
+    }
+    return "conway";
+  };
+
   // Registry-based routing: most accurate, no name guessing
   if (keys.getModelProvider) {
     const provider = keys.getModelProvider(model);
     if (provider === "ollama" && keys.ollamaBaseUrl) return "ollama";
     if (provider === "anthropic" && keys.anthropicApiKey) return "anthropic";
     if (provider === "openai" && keys.openaiApiKey) return "openai";
-    if (provider === "conway") return "conway";
+    if (provider === "conway") return conway();
     // provider unknown or key not configured — fall through to heuristics
   }
 
   // Heuristic fallback (model not in registry yet)
   if (keys.anthropicApiKey && /^claude/i.test(model)) return "anthropic";
   if (keys.openaiApiKey && /^(gpt-[3-9]|gpt-4|gpt-5|o[1-9][-\s.]|o[1-9]$|chatgpt)/i.test(model)) return "openai";
-  return "conway";
-
+  return conway();
 }
 
 async function chatViaOpenAiCompatible(params: {

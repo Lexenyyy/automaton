@@ -31,6 +31,7 @@ import type { ChainType, ChainIdentity } from "../identity/chain.js";
 import type { SandboxConfig } from "../types.js";
 import { createSandboxTransport, resolveSandboxSocket } from "../sandbox/transport.js";
 import { setContainerSandboxActive } from "../sandbox/mode.js";
+import { ConwayDisabledError, isConwayDisabled } from "./mode.js";
 
 interface ConwayClientOptions {
   apiUrl: string;
@@ -38,6 +39,8 @@ interface ConwayClientOptions {
   sandboxId: string;
   /** Fork: run shell/file tools in a separate sandbox container (see src/sandbox/). */
   sandbox?: SandboxConfig;
+  /** Fork: false when Conway is off; every Conway API call is then refused. */
+  conwayEnabled?: boolean;
 }
 
 export function createConwayClient(options: ConwayClientOptions): ConwayClient {
@@ -50,6 +53,14 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   const containerSandbox = sandboxSocket ? createSandboxTransport(sandboxSocket) : null;
   if (containerSandbox) setContainerSandboxActive();
   const httpClient = new ResilientHttpClient();
+  // Fork: every Conway HTTP call goes through here. With Conway off, nothing is
+  // sent; the call fails with ConwayDisabledError.
+  const conwayHttp: typeof httpClient.request = (url, init) => {
+    if (options.conwayEnabled === false || isConwayDisabled()) {
+      return Promise.reject(new ConwayDisabledError("the Conway API"));
+    }
+    return httpClient.request(url, init);
+  };
 
   async function request(
     method: string,
@@ -62,7 +73,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
     // avoid tripping the circuit breaker on transient routing failures.
     const max404Retries = requestOptions?.retries404 ?? 3;
     for (let attempt = 0; attempt <= max404Retries; attempt++) {
-      const resp = await httpClient.request(`${apiUrl}${path}`, {
+      const resp = await conwayHttp(`${apiUrl}${path}`, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -344,7 +355,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
     let lastError = "Unknown transfer error";
 
     for (const path of paths) {
-      const resp = await httpClient.request(`${apiUrl}${path}`, {
+      const resp = await conwayHttp(`${apiUrl}${path}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -563,7 +574,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
     ];
     for (const url of urls) {
       try {
-        const resp = await httpClient.request(url, {
+        const resp = await conwayHttp(url, {
           headers: { Authorization: apiKey },
         });
         if (!resp.ok) continue;
@@ -593,7 +604,7 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   };
 
   const createScopedClient = (targetSandboxId: string): ConwayClient => {
-    return createConwayClient({ apiUrl, apiKey, sandboxId: targetSandboxId });
+    return createConwayClient({ apiUrl, apiKey, sandboxId: targetSandboxId, conwayEnabled: options.conwayEnabled });
   };
 
   const client: ConwayClient = {
