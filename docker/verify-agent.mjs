@@ -348,6 +348,28 @@ try {
     check("inside the runtime", r.name, r.ok, r.detail);
   }
 
+  // ─── kill command (pnpm agent:kill) ──────────────────────────
+  console.log("agent:verify: kill command ...");
+  const killScript = path.join(ROOT, "docker", "kill-agent.mjs");
+  const runningBefore = docker(["ps", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`]).out.trim().split(/\s+/).filter(Boolean);
+  check("kill command", "sandbox and runtime are running before the kill", runningBefore.length >= 2, `${runningBefore.length} running`);
+  const t0 = Date.now();
+  const kill = spawnSync(process.execPath, [killScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 60_000 });
+  const killMs = Date.now() - t0;
+  const runningAfter = docker(["ps", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`]).out.trim();
+  check("kill command", "exits 0", kill.status === 0, (kill.stderr || kill.stdout).trim());
+  check("kill command", "nothing of the project is running afterwards", runningAfter === "", runningAfter);
+  check("kill command", "stops everything within 5 seconds", killMs < 5_000, `${killMs} ms`);
+  const volumes = docker(["volume", "ls", "-q", "--filter", `name=${PROJECT}_`]).out.split(/\s+/);
+  check("kill command", "volumes are kept", ["automaton-home", "agent-workspace", "sandbox-socket", "sandbox-home"].every((v) => volumes.includes(`${PROJECT}_${v}`)), volumes.join(","));
+  const walletKept = docker([...COMPOSE, "run", "--rm", "-T", "--entrypoint", "sh", "runtime", "-c", "test -f /home/automaton/.automaton/wallet.json"]);
+  check("kill command", "wallet is still there after the kill", walletKept.code === 0, `exit ${walletKept.code}`);
+  docker([...COMPOSE, "stop", "-t", "0", "sandbox"]);
+  const again = spawnSync(process.execPath, [killScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 60_000 });
+  check("kill command", "running it again is safe (exit 0)", again.status === 0, (again.stderr || again.stdout).trim());
+  const none = spawnSync(process.execPath, [killScript, "--project", `${PROJECT}-nothing-here`], { encoding: "utf-8", env, timeout: 60_000 });
+  check("kill command", "with nothing running: exit 0", none.status === 0 && /nothing running/.test(none.stdout), none.stdout.trim());
+
   exitCode = results.every((r) => r.ok) ? 0 : 1;
 } catch (err) {
   check("verify", "script error", false, err.message);
