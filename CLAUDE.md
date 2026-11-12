@@ -32,16 +32,19 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline at commit b5317a2: 1865 passed,
+  `pnpm build` and the full suite in a Linux container. Baseline at commit 45412db: 1893 passed,
   0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1835 passed, 22 failed and 8 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1863 passed, 22 failed and 8 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
   sockets, `/bin/sh`). Any other Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
-  harnesses, skills, `docker/`): `pnpm agent:verify` must also pass (84 checks at b5317a2).
+  harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
+  (97 checks at 45412db).
+- Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
+- Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
 ## Running the agent in Docker (Phase 1)
 Two containers from `docker/compose.agent.yml`, testnet only:
@@ -57,13 +60,23 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   `together_api_key`). Mounted read-only into the runtime only. Never read that folder.
 - **Wallet:** in the `automaton_automaton-home` Docker volume, created with `pnpm agent:init`.
   `docker compose ... down -v` would delete it; `pnpm agent:down` keeps volumes.
-- Commands: `pnpm agent:build`, `agent:init`, `agent:verify`, `agent:run` (owner only, rule 6),
-  `agent:down`. Config template: `docker/automaton.testnet.json` (mounted read-only).
-- Known limits: `--run` still needs a Conway API key (see ROADMAP); `update_genesis_prompt` and
-  `switch_model` fail because the config is read-only; `install_skill` and `expose_port` fail
-  because the sandbox has no network.
-- Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
-- Environment: Windows + PowerShell. Use PowerShell-compatible commands.
+- **Conway off:** the template sets `"conway": "off"` (own providers only). No Conway key is needed
+  and nothing is sent to Conway: the Conway client refuses every call, the model client never uses
+  the Conway backend, x402 to Conway hosts is refused, Conway-only tools are hidden. Model keys come
+  from the secrets folder (env `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- **Settings the agent changes itself** (`update_genesis_prompt`, `switch_model`) are stored in the
+  database (`agent_settings`), never in the config, within the owner's `agentSettings` limits in the
+  config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day.
+- Commands:
+  - `pnpm agent:build`, `agent:init`, `agent:verify`.
+  - `agent:preflight`: startup checks, no model call, agent not started.
+  - `agent:settings` / `agent:settings:reset`: owner view/reset of the agent's own settings.
+  - `agent:kill`: immediate stop of both containers (SIGKILL), volumes kept, safe to run anytime.
+  - `agent:down`: graceful stop.
+  - `agent:run`: owner only (rule 6).
+  - Config template: `docker/automaton.testnet.json` (mounted read-only).
+- Known limits (Phase 5a): `install_skill` and `expose_port` fail because the sandbox has no network.
+  Groq is not yet available to the main loop (only to workers).
 
 ## Roadmap (do phases in order)
 0. Study & setup  1. Core agent loop  2. Heartbeat & memory  3. Wallet & money (testnet)

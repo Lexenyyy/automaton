@@ -319,3 +319,36 @@
   - Baselines: Linux 1865 passed, 0 failed. Windows 1835 passed, 22 known failures, 8 Linux-only skipped.
   - Found, not fixed (ROADMAP): `--run` still needs a Conway API key; `update_genesis_prompt` and
     `switch_model` fail with the read-only config.
+- 2026-11-12: **Blockers before the first real run (Phase 1).** Owner decisions: Groq in the main loop
+  later; agent genesis prompt changes off by default; model allowlist = the strategy models;
+  `--preflight` approved.
+  - **Kill command** (`fa68d14`): `pnpm agent:kill` (`docker/kill-agent.mjs`) finds every container of
+    the compose project by label, including one-off `agent:run` containers, kills them in one call
+    (SIGKILL) and removes them. Volumes and images are never touched. Exit 0 when nothing is left
+    running, also when nothing was running. SQLite WAL keeps committed data. A model call already in
+    flight may still be billed (cents, inside the daily cap). `agent:down` stays the graceful stop.
+  - **Settings in the database** (`3129292`): migration V13 adds `agent_settings` and an append-only
+    `agent_settings_changes` history. The two tools store there instead of `saveConfig`. Owner limits in
+    the config (`agentSettings`): genesis prompt off by default (when on: 1/day, max 2000 chars); model
+    only from the allowlist (default: the owner's strategy models, taken from the original config so
+    the agent can always switch back), max 4/day. At startup a stored value is used only if it still
+    meets the current limits. Owner commands: `automaton --settings show|reset`
+    (`pnpm agent:settings`, `agent:settings:reset`). Guard: no agent code references `saveConfig`.
+  - **Conway off** (`45412db`): new setting `"conway": "on" | "off"` (absent: on with a Conway key,
+    otherwise off; the Docker template sets off). With off:
+    - no Conway key needed and Conway registration skipped;
+    - the Conway client refuses every call before sending;
+    - the main-loop model client never uses the Conway backend, and model keys also come from env;
+    - x402 to Conway hosts refused (covers top-ups);
+    - the Conway social relay is not used;
+    - 14 Conway-only tools are hidden and not executable;
+    - contradictory settings refuse to start.
+  - **`--preflight`**: `run()`'s setup moved to `src/runtime/prepare.ts` (`prepareRuntime`), shared by
+    `--run` and `--preflight`. Preflight runs the real startup path plus checks (wallet, read-only RPC
+    chain-id call, Conway mode, model providers and keys, sandbox) and exits. No model call, never
+    creates a wallet, never prints keys. `inference-chokepoint` now expects the raw model client there.
+  - `check_for_updates` is skipped quietly in container mode (it could only fail there).
+  - Tests: `agent-settings` (15), `conway-off` (13, including a startup run with a stubbed fetch that
+    records zero Conway requests). `agent:verify` 97 checks: kill, settings commands, preflight with no
+    Conway key and fake model keys.
+  - Baselines: Linux 1893 passed, 0 failed. Windows 1863 passed, 22 known failures, 8 Linux-only skipped.

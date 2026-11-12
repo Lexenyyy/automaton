@@ -35,12 +35,16 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         containers (runtime + sandbox, see CLAUDE.md "Running the agent in Docker"). The agent's shell
         and file tools run in a sandbox without network, secrets or host folders; config is read-only;
         keys reach the runtime only. `pnpm agent:verify`: 84 checks pass.
-  - [ ] **`--run` needs a Conway API key** (`src/index.ts`, `run()` exits without `conwayApiKey`). The
-        agent cannot start without Conway yet. Needed before the first real run.
-  - [ ] **Mutable settings in a read-only config.** `update_genesis_prompt` and `switch_model` call
-        `saveConfig` and now fail in Docker. Option: store these two settings in the database.
-  - [ ] **Working kill command** (rest of this bullet; the hard daily spend cap exists since change 1c).
-        `pnpm agent:down` stops both containers; a proper kill command belongs to Phase 2 (creator CLI).
+  - [x] **`--run` without a Conway API key.** Done in `45412db`: `"conway": "off"` (own providers only,
+        nothing sent to Conway) and `--preflight` (`pnpm agent:preflight`) to check the startup path
+        without a model call.
+  - [x] **Mutable settings in a read-only config.** Done in `3129292`: `update_genesis_prompt` and
+        `switch_model` store their value in the database within the owner's `agentSettings` limits.
+  - [x] **Working kill command.** Done in `fa68d14`: `pnpm agent:kill` stops both containers at once
+        (SIGKILL), keeps volumes, safe to run anytime. The hard daily spend cap exists since change 1c.
+        Phase 2's creator CLI can call the same script.
+  - [ ] **Groq in the main loop** (owner decision: later). The main-loop model client has no Groq backend;
+        Groq is only available to the workers through the provider registry.
 - Found in Phase 0 review, to fix in this phase:
   - [x] **HIGH PRIORITY: the tokenizer could freeze the agent loop.** Fixed in `f560a96`.
         `estimateTokens` ran every turn through `js-tiktoken`, which is quadratic on long strings with
