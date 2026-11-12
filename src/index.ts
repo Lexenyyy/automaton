@@ -85,6 +85,8 @@ Usage:
   automaton --init         Initialize wallet and config directory
   automaton --provision    Provision Conway API key via SIWE
   automaton --status       Show current automaton status
+  automaton --settings show|reset
+                           Owner: show or reset settings the agent changed itself
   automaton --version      Show version
   automaton --help         Show this help
 
@@ -130,6 +132,30 @@ Environment:
 
   if (args.includes("--status")) {
     await showStatus();
+    process.exit(0);
+  }
+
+  if (args.includes("--settings")) {
+    // Owner only (run from the host; the agent has no access): show or reset
+    // the settings the agent changed itself.
+    const sub = args[args.indexOf("--settings") + 1] ?? "show";
+    if (sub !== "show" && sub !== "reset") {
+      logger.error('Usage: automaton --settings show|reset');
+      process.exit(2);
+    }
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const db = createDatabase(resolvePath(config.dbPath));
+    const { resetAgentSettings, settingsReport } = await import("./agent/settings.js");
+    if (sub === "reset") {
+      const removed = resetAgentSettings(db.raw);
+      console.log(removed.length ? `Reset agent settings: ${removed.join(", ")}` : "No agent settings to reset.");
+    }
+    console.log(settingsReport(config, db.raw));
+    db.close();
     process.exit(0);
   }
 
@@ -237,6 +263,15 @@ async function run(): Promise<void> {
   // Initialize database
   const dbPath = resolvePath(config.dbPath);
   const db = createDatabase(dbPath);
+
+  // Fork: apply settings the agent changed itself (stored in the database),
+  // only where they still meet the owner's current limits.
+  {
+    const { applyAgentSettings } = await import("./agent/settings.js");
+    const { applied, ignored } = applyAgentSettings(config, db.raw);
+    if (applied.length) logger.info(`[${new Date().toISOString()}] Agent settings applied: ${applied.join(", ")}`);
+    for (const i of ignored) logger.warn(`[${new Date().toISOString()}] Agent setting ${i.key} ignored: ${i.why}`);
+  }
 
   // Persist createdAt: only set if not already stored (never overwrite)
   const existingCreatedAt = db.getIdentity("createdAt");

@@ -57,6 +57,8 @@
     "agent:run": "docker compose -f docker/compose.agent.yml run --rm runtime --run",
     "agent:down": "docker compose -f docker/compose.agent.yml down",
     "agent:kill": "node docker/kill-agent.mjs",
+    "agent:settings": "docker compose -f docker/compose.agent.yml run --rm -T runtime --settings show",
+    "agent:settings:reset": "docker compose -f docker/compose.agent.yml run --rm -T runtime --settings reset",
     "clean": "rm -rf dist && pnpm -r clean"
   },
   "dependencies": {

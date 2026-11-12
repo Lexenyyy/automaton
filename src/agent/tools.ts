@@ -959,17 +959,20 @@ Model: ${ctx.inference.getDefaultModel()}
           return `Error: Genesis prompt exceeds 2000 character limit (${sanitized.content.length} chars after sanitization)`;
         }
 
-        // Backup current genesis prompt before overwriting
-        const oldPrompt = ctx.config.genesisPrompt;
+        const oldPrompt = ctx.config.genesisPrompt ?? "";
+
+        // Fork: stored in the database within the owner's limits (off by
+        // default); the config file is never written by the agent.
+        const { setGenesisPromptByAgent } = await import("./settings.js");
+        const result = setGenesisPromptByAgent(ctx.config, ctx.db.raw, sanitized.content, String(args.reason ?? ""));
+        if (!result.ok) {
+          return result.error;
+        }
+
+        // Backup of the previous prompt
         if (oldPrompt) {
           ctx.db.setKV("genesis_prompt_backup", oldPrompt);
         }
-
-        ctx.config.genesisPrompt = sanitized.content;
-
-        // Save config
-        const { saveConfig } = await import("../config.js");
-        saveConfig(ctx.config);
 
         ctx.db.insertModification({
           id: ulid(),
@@ -980,7 +983,7 @@ Model: ${ctx.inference.getDefaultModel()}
           reversible: true,
         });
 
-        return `Genesis prompt updated (sanitized, ${sanitized.content.length} chars). Reason: ${args.reason}. Previous version backed up.`;
+        return `${result.message} Reason: ${args.reason}. Previous version backed up.`;
       },
     },
 
@@ -2118,7 +2121,7 @@ Model: ${ctx.inference.getDefaultModel()}
     {
       name: "switch_model",
       description:
-        "Change the active inference model at runtime. Persists to config. Use list_models to see available options.",
+        "Change the active inference model at runtime. Only models the owner allows; limited changes per day. Use list_models to see available options.",
       category: "conway",
       riskLevel: "caution",
       parameters: {
@@ -2154,15 +2157,13 @@ Model: ${ctx.inference.getDefaultModel()}
           // Registry not available, allow anyway
         }
 
-        // Update config
-        ctx.config.inferenceModel = modelId;
-        if (ctx.config.modelStrategy) {
-          ctx.config.modelStrategy.inferenceModel = modelId;
+        // Fork: owner allowlist and daily limit; stored in the database, the
+        // config file is never written by the agent.
+        const { setInferenceModelByAgent } = await import("./settings.js");
+        const result = setInferenceModelByAgent(ctx.config, ctx.db.raw, modelId, reason);
+        if (!result.ok) {
+          return result.error;
         }
-
-        // Persist
-        const { saveConfig } = await import("../config.js");
-        saveConfig(ctx.config);
 
         // Audit log
         ctx.db.insertModification({
@@ -2173,7 +2174,7 @@ Model: ${ctx.inference.getDefaultModel()}
           reversible: true,
         });
 
-        return `Inference model switched to ${modelId}. Reason: ${reason}. Change persisted to config.`;
+        return `${result.message} Reason: ${reason}.`;
       },
     },
     {

@@ -93,6 +93,31 @@ export interface AutomatonConfig {
    * socket; this process never runs them itself (see src/sandbox/).
    */
   sandbox?: SandboxConfig;
+  /**
+   * Owner limits for settings the agent may change itself (fork, Phase 1).
+   * Agent changes are stored in the database (table agent_settings), never in
+   * this config file; see src/agent/settings.ts.
+   */
+  agentSettings?: AgentSettingsLimits;
+}
+
+export interface AgentSettingsLimits {
+  genesisPrompt?: {
+    /** Default false: the agent may not change its genesis prompt. */
+    allowAgentChanges?: boolean;
+    /** Default 1 (per UTC day). */
+    maxChangesPerDay?: number;
+    /** Default 2000 characters (after sanitizing). */
+    maxLength?: number;
+  };
+  model?: {
+    /** Default true. */
+    allowAgentChanges?: boolean;
+    /** Default: the three models in the owner's modelStrategy. */
+    allowedModels?: string[];
+    /** Default 4 (per UTC day). */
+    maxChangesPerDay?: number;
+  };
 }
 
 export interface SandboxConfig {

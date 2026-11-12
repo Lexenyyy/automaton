@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -694,6 +694,36 @@ export const MIGRATION_V12 = `
     SELECT 'backfill-' || id, created_at, 'inference_cost', -cost_cents, 'USD', 1, 'inference_router', id,
            model || ' ' || task_type || ' (backfilled)'
     FROM inference_costs WHERE cost_cents > 0;
+`;
+
+// === Fork Phase 1: settings the agent changed itself (owner-limited) ===
+// The config file is read-only in Docker; agent changes live here instead.
+// agent_settings_changes is append-only history, used for the per-day limits.
+export const MIGRATION_V13 = `
+  -- Schema version: 13
+  CREATE TABLE IF NOT EXISTS agent_settings (
+    key TEXT PRIMARY KEY CHECK(key IN ('genesis_prompt','inference_model')),
+    value TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_settings_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    actor TEXT NOT NULL CHECK(actor IN ('agent','owner')),
+    value TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_settings_changes ON agent_settings_changes(key, changed_at);
+
+  CREATE TRIGGER IF NOT EXISTS agent_settings_changes_no_update BEFORE UPDATE ON agent_settings_changes
+  BEGIN SELECT RAISE(ABORT, 'agent_settings_changes is append-only'); END;
+
+  CREATE TRIGGER IF NOT EXISTS agent_settings_changes_no_delete BEFORE DELETE ON agent_settings_changes
+  BEGIN SELECT RAISE(ABORT, 'agent_settings_changes is append-only'); END;
 `;
 
 export const MIGRATION_V10 = `

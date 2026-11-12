@@ -306,6 +306,13 @@ try {
   const statusRun = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--status"]);
   check("entrypoint", "--status shows Base Sepolia (testnet)", statusRun.code === 0 && (statusRun.out + statusRun.err).includes("Base Sepolia (testnet)"), statusRun.code);
 
+  const settingsShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "show"]);
+  check("entrypoint", "owner command --settings show works; agent genesis changes OFF by default",
+    settingsShow.code === 0 && settingsShow.out.includes("=== AGENT SETTINGS ===") && /Genesis prompt[\s\S]*agent changes OFF/.test(settingsShow.out),
+    settingsShow.code === 0 ? "" : settingsShow.err.trim());
+  const settingsReset = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "reset"]);
+  check("entrypoint", "owner command --settings reset works", settingsReset.code === 0 && settingsReset.out.includes("No agent settings to reset."), settingsReset.err.trim());
+
   const mainnet = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_MAINNET_APPROVED=0x0000000000000000000000000000000000000001", "runtime", "--status"]);
   check("entrypoint", "refuses to start when AUTOMATON_MAINNET_APPROVED is set", mainnet.code === 64 && mainnet.err.includes("refusing to start"), `exit ${mainnet.code}`);
 
