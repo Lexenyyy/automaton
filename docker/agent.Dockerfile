@@ -48,6 +48,11 @@ ENV HOME=/home/automaton \
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/runtime-entrypoint.sh"]
 CMD ["--status"]
+# Git commit the image was built from (set by docker/build-agent.mjs and
+# agent:verify; "-dirty" = uncommitted changes). Last, so it costs no cache.
+ARG AUTOMATON_BUILD_COMMIT=unknown
+LABEL org.automaton.build-commit=$AUTOMATON_BUILD_COMMIT
+ENV AUTOMATON_BUILD_COMMIT=$AUTOMATON_BUILD_COMMIT
 
 # ─── sandbox ───────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS sandbox
@@ -73,3 +78,5 @@ USER 10002:10002
 HEALTHCHECK --interval=2s --timeout=3s --start-period=2s --retries=15 \
   CMD ["node", "-e", "require('http').get({socketPath:process.env.SANDBOX_SOCKET,path:'/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
 CMD ["node", "/app/dist/sandbox/main.js"]
+ARG AUTOMATON_BUILD_COMMIT=unknown
+LABEL org.automaton.build-commit=$AUTOMATON_BUILD_COMMIT

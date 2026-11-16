@@ -597,3 +597,19 @@
   Tests: `activity-report` (3). `agent:verify` +5 ("one agent per project": status without and with a
   runtime, `--init` refused, ledger with note, sandbox kept for another runtime). Baselines: Linux 1968
   passed; Windows 1936 passed, 22 known failures, 10 skipped. `agent:verify` 116.
+- 2026-11-16: **Build commit in the images; warning when the agent runs old code** (incident fix 2). The
+  incident runtime ran the image built before that afternoon's fixes, while the fixes were rebuilt and
+  verified next to it.
+  - `docker/agent.Dockerfile`: build arg `AUTOMATON_BUILD_COMMIT` (last lines of each stage, no cache cost)
+    becomes label `org.automaton.build-commit` (runtime and sandbox) and env in the runtime;
+    `compose.agent.yml` passes it (default `unknown`).
+  - `pnpm agent:build` is now `docker/build-agent.mjs`: sets the commit from git (`-dirty` with
+    uncommitted changes), builds, then warns if a runtime of the project still runs an older image
+    ("takes effect only after pnpm agent:down and pnpm agent:run"). `agent:verify` labels its build the
+    same way and gives the same warning for the real project (it rebuilds the same image tags).
+  - The runtime logs `(build <commit>)` at startup; `--preflight` prints `build: <commit>` first.
+  - `agent:status` and the `run-oneoff` refusal show each runtime's build, and `OLD IMAGE` when the image
+    was rebuilt after the container started.
+  Tests: `agent:verify` +3 (images labelled, preflight prints it, `agent:status` flags an older image).
+  Baselines unchanged: Linux 1968 passed; Windows 1936 passed, 22 known failures, 10 skipped.
+  `agent:verify` 119.

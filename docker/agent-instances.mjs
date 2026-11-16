@@ -33,7 +33,36 @@ function dockerOrExit(args, who) {
   return r.out;
 }
 
-/** Running containers of the project for one service, with start time and image. */
+/** Image tags from compose.agent.yml, per service. */
+export const SERVICE_IMAGES = { runtime: "automaton-runtime:local", sandbox: "automaton-sandbox:local" };
+export const COMMIT_LABEL = "org.automaton.build-commit";
+
+/** Git commit of the working tree for image labels: short hash, "-dirty" with uncommitted changes. */
+export function gitBuildCommit(cwd) {
+  const git = (args) => spawnSync("git", args, { cwd, encoding: "utf-8", timeout: 30_000 });
+  const head = git(["rev-parse", "--short=12", "HEAD"]);
+  if (head.status !== 0) return "unknown";
+  const dirty = (git(["status", "--porcelain"]).stdout ?? "").trim() !== "";
+  return `${head.stdout.trim()}${dirty ? "-dirty" : ""}`;
+}
+
+/** Image ID the service tag points to now ("" if the image does not exist). */
+export function currentImageId(service) {
+  const r = docker(["image", "inspect", "-f", "{{.Id}}", SERVICE_IMAGES[service]]);
+  return r.code === 0 ? r.out : "";
+}
+
+/** Build commit label of an image (by ID or tag), or "unknown". */
+export function imageCommit(image) {
+  const r = docker(["image", "inspect", "-f", `{{index .Config.Labels "${COMMIT_LABEL}"}}`, image]);
+  return r.code === 0 && r.out && r.out !== "<no value>" ? r.out : "unknown";
+}
+
+/**
+ * Running containers of the project for one service, with start time, image,
+ * build commit, and `stale` = the service image was rebuilt after the container
+ * was created (it still runs the old code).
+ */
 export function runningContainers(project, service, who = "agent") {
   const out = dockerOrExit(
     ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`, "--filter", `label=com.docker.compose.service=${service}`],
@@ -42,6 +71,7 @@ export function runningContainers(project, service, who = "agent") {
   const ids = out ? out.split(/\s+/) : [];
   if (ids.length === 0) return [];
   const info = JSON.parse(dockerOrExit(["inspect", ...ids], who));
+  const current = currentImageId(service);
   return info
     .filter((c) => c.State?.Running)
     .map((c) => ({
@@ -50,11 +80,29 @@ export function runningContainers(project, service, who = "agent") {
       startedAt: c.State.StartedAt,
       imageId: c.Image,
       oneoff: (c.Config?.Labels ?? {})["com.docker.compose.oneoff"] === "True",
+      commit: (c.Config?.Labels ?? {})[COMMIT_LABEL] || "unknown",
+      stale: current !== "" && c.Image !== current,
     }))
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
 export const runningRuntimes = (project, who) => runningContainers(project, "runtime", who);
+
+/**
+ * After a build: warn when a runtime of the project still runs an older image.
+ * Returns the number of such runtimes.
+ */
+export function warnStaleRuntimes(project, who) {
+  const stale = runningRuntimes(project, who).filter((c) => c.stale);
+  if (stale.length > 0) {
+    console.error(
+      `${who}: WARNING: the running agent of project "${project}" still runs the OLD code:\n` +
+        stale.map((c) => `  ${describeContainer(c)}`).join("\n") +
+        `\n${who}: the new build (${imageCommit(SERVICE_IMAGES.runtime)}) takes effect only after pnpm agent:down and pnpm agent:run.`,
+    );
+  }
+  return stale.length;
+}
 
 export function formatUptime(ms) {
   const min = Math.max(0, Math.floor(ms / 60_000));
@@ -63,9 +111,10 @@ export function formatUptime(ms) {
   return h < 48 ? `${h} h ${String(min % 60).padStart(2, "0")} min` : `${Math.floor(h / 24)} days ${h % 24} h`;
 }
 
-/** "name (one-off, up 1 h 03 min, started 2026-11-16 15:35:08 UTC)" */
+/** "name (one-off, up 1 h 03 min, started 2026-11-16 15:35:08 UTC, build abc123) OLD IMAGE: ..." */
 export function describeContainer(c, now = Date.now()) {
   const started = new Date(c.startedAt);
   const when = started.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
-  return `${c.name} (${c.oneoff ? "one-off, " : ""}up ${formatUptime(now - started.getTime())}, started ${when})`;
+  const text = `${c.name} (${c.oneoff ? "one-off, " : ""}up ${formatUptime(now - started.getTime())}, started ${when}, build ${c.commit})`;
+  return c.stale ? `${text} OLD IMAGE: rebuilt since, it still runs the old code` : text;
 }

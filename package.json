@@ -55,7 +55,7 @@
     "test:financial": "vitest run --grep 'financial|spend|treasury'",
     "test:ci": "vitest run --reporter=verbose",
     "test:linux": "docker build -f docker/test.Dockerfile -t automaton-test . && docker run --rm automaton-test",
-    "agent:build": "docker compose -f docker/compose.agent.yml build",
+    "agent:build": "node docker/build-agent.mjs",
     "agent:init": "node docker/run-oneoff.mjs --tty -- --init",
     "agent:verify": "node docker/verify-agent.mjs",
     "agent:preflight": "node docker/run-oneoff.mjs --needs-sandbox -- --preflight",

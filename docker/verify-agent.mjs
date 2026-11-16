@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_PROJECT, SERVICE_IMAGES, gitBuildCommit, imageCommit, warnStaleRuntimes } from "./agent-instances.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = "automaton-verify";
@@ -31,7 +32,14 @@ fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 
 const VERIFY_CREATOR = "0x000000000000000000000000000000000000dEaD";
-const env = { ...process.env, AUTOMATON_SECRETS_DIR: secretsDir, AUTOMATON_CREATOR_ADDRESS: VERIFY_CREATOR };
+const BUILD_COMMIT = gitBuildCommit(ROOT);
+const OLD_IMAGE = `${PROJECT}-old:local`;
+const env = {
+  ...process.env,
+  AUTOMATON_SECRETS_DIR: secretsDir,
+  AUTOMATON_CREATOR_ADDRESS: VERIFY_CREATOR,
+  AUTOMATON_BUILD_COMMIT: BUILD_COMMIT,
+};
 delete env.AUTOMATON_MAINNET_APPROVED;
 
 const results = [];
@@ -283,7 +291,8 @@ console.log(JSON.stringify({ results }));
 // ─── run ───────────────────────────────────────────────────────
 
 function cleanup() {
-  docker(["rm", "-f", PROBE]);
+  docker(["rm", "-f", PROBE, `${PROJECT}-live`, `${PROJECT}-old`]);
+  docker(["rmi", OLD_IMAGE]);
   docker([...COMPOSE, "down", "-v", "--remove-orphans"]);
   fs.rmSync(secretsDir, { recursive: true, force: true });
 }
@@ -292,7 +301,12 @@ let exitCode = 1;
 try {
   console.log("agent:verify: building images ...");
   docker([...COMPOSE, "build", "--quiet"], { allowFail: false, timeoutMs: 900_000 });
+  // Same image tags as the real agent: say so if it still runs an older build.
+  warnStaleRuntimes(DEFAULT_PROJECT, "agent:verify");
   cleanup();
+  check("build commit", `runtime and sandbox images are labelled with the git commit (${BUILD_COMMIT})`,
+    imageCommit(SERVICE_IMAGES.runtime) === BUILD_COMMIT && imageCommit(SERVICE_IMAGES.sandbox) === BUILD_COMMIT,
+    `${imageCommit(SERVICE_IMAGES.runtime)} / ${imageCommit(SERVICE_IMAGES.sandbox)}`);
   fs.mkdirSync(secretsDir, { recursive: true });
   fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
@@ -319,6 +333,7 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   check("entrypoint", "--preflight: Conway off, sandbox reached as uid 10002, model key from secrets",
     preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
     preOut.includes("model gpt-4.1-mini: provider openai, key present"));
+  check("build commit", "--preflight prints the build commit", preOut.includes(`build: ${BUILD_COMMIT}`));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
   check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
   const preNoCreator = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_CREATOR_ADDRESS=", "runtime", "--preflight"]);
@@ -459,6 +474,21 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preLive.status === 0 && sandboxIds(false) !== "" && preLive.stderr.includes("sandbox left running"),
     `exit ${preLive.status}; sandbox ${sandboxIds(false) || "none"}`);
   docker(["rm", "-f", LIVE]);
+
+  // A runtime started before a rebuild: an image derived from the current one
+  // stands in for the old build (no network, no agent loop).
+  docker(["build", "-q", "-t", OLD_IMAGE, "-"], {
+    input: `FROM ${SERVICE_IMAGES.runtime}\nLABEL org.automaton.build-commit=verify-old\n`, allowFail: false,
+  });
+  docker(["run", "-d", "--name", `${PROJECT}-old`, "--network", "none",
+    "--label", `com.docker.compose.project=${PROJECT}`, "--label", "com.docker.compose.service=runtime",
+    "--entrypoint", "node", OLD_IMAGE, "-e", "setInterval(()=>{},1000)"], { allowFail: false });
+  const st2 = status();
+  check("build commit", "agent:status flags a runtime that still runs an older image, with its build",
+    st2.stdout.includes(`${PROJECT}-old`) && st2.stdout.includes("build verify-old") && st2.stdout.includes("OLD IMAGE"),
+    st2.stdout.trim());
+  docker(["rm", "-f", `${PROJECT}-old`]);
+  docker(["rmi", OLD_IMAGE]);
 
   // ─── graceful stop (pnpm agent:down) ─────────────────────────
   // Stand-ins for an agent:run runtime: one-off `compose run` containers of the

@@ -37,6 +37,11 @@ const logger = createLogger("main");
 
 const VERSION = "0.2.1";
 
+/** Git commit the Docker image was built from (fork; set by docker/build-agent.mjs). */
+function buildCommit(): string {
+  return process.env.AUTOMATON_BUILD_COMMIT || "unknown (not a labelled image)";
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -123,7 +128,7 @@ Environment:
       process.exit(1);
     }
     const { ok, lines } = await runPreflight(config);
-    console.log(lines.join("\n"));
+    console.log([`build: ${buildCommit()}`, ...lines].join("\n"));
     process.exit(ok ? 0 : 1);
   }
 
@@ -265,7 +270,9 @@ Version:    ${config.version}
 // ─── Main Run ──────────────────────────────────────────────────
 
 async function run(): Promise<void> {
-  logger.info(`[${new Date().toISOString()}] Conway Automaton v${VERSION} starting...`);
+  logger.info(
+    `[${new Date().toISOString()}] Conway Automaton v${VERSION} starting... (build ${buildCommit()})`,
+  );
 
   // Load config — first run triggers interactive setup wizard
   let config = loadConfig();

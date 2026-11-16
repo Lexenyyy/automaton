@@ -1,6 +1,7 @@
 # Agent in Docker (fork, Phase 1). Testnet only.
 #
-#   pnpm agent:build    build both images
+#   pnpm agent:build    build both images (labelled with the git commit)
+#   pnpm agent:status   what is running (any terminal), on which build, and its activity
 #   pnpm agent:init     create the testnet wallet in the automaton-home volume
 #   pnpm agent:verify   isolation checks (separate throwaway project and volumes)
 #   pnpm agent:ledger   show the agent's ledger (owner)
@@ -29,6 +30,8 @@ services:
       context: ..
       dockerfile: docker/agent.Dockerfile
       target: sandbox
+      args:
+        AUTOMATON_BUILD_COMMIT: ${AUTOMATON_BUILD_COMMIT:-unknown}
     image: automaton-sandbox:local
     network_mode: none            # no internet, no route to the runtime
     read_only: true
@@ -50,6 +53,8 @@ services:
       context: ..
       dockerfile: docker/agent.Dockerfile
       target: runtime
+      args:
+        AUTOMATON_BUILD_COMMIT: ${AUTOMATON_BUILD_COMMIT:-unknown}
     image: automaton-runtime:local
     depends_on:
       sandbox:

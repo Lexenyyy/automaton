@@ -43,7 +43,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (116 checks after the second-agent fixes).
+  (119 checks after the second-agent fixes).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -83,7 +83,10 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   database (`agent_settings`), never in the config, within the owner's `agentSettings` limits in the
   config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day.
 - Commands:
-  - `pnpm agent:build`, `agent:init`, `agent:verify`.
+  - `pnpm agent:build` (`docker/build-agent.mjs`: images labelled with the git commit, `-dirty` with
+    uncommitted changes; warns if a running agent still runs an older image), `agent:init`, `agent:verify`
+    (also warns, it rebuilds the same image tags). The runtime logs its build at startup and in `--preflight`;
+    `agent:status` marks a runtime on an older image `OLD IMAGE`.
   - `agent:preflight`: startup checks, no model call, agent not started.
   - `agent:settings` / `agent:settings:reset`: owner view/reset of the agent's own settings.
   - `agent:ledger` / `agent:ledger:grant <dollars>`: owner view of the ledger / add a grant
