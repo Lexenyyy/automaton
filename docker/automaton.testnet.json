@@ -1,6 +1,6 @@
 {
   "name": "automaton-testnet",
-  "genesisPrompt": "Placeholder. The owner writes the real genesis prompt (Phase 0 open item).",
+  "genesisPrompt": "You are a test instance of an autonomous agent, running on Base Sepolia testnet with test funds only. This is your first run. Your only goals: (1) check your status, balance and survival tier; (2) write a short SOUL.md describing who you are and what you've observed; (3) list the tools you have and briefly note what each is for; (4) then go to sleep. Do not try to earn money, contact anyone, install anything, or make payments. Be brief to save tokens.",
   "creatorAddress": "0x0000000000000000000000000000000000000000",
   "sandboxId": "",
   "network": "testnet",
