@@ -557,3 +557,15 @@
   Tests: `repeat-guard` (9, including two loop runs); `loop`: the 3 old-detector tests run with the
   guard off, the cycle-limit sleep test expects 30 min. Baselines: Linux 1958 passed; Windows 1926
   passed, 22 known failures, 10 skipped. `agent:verify` 111.
+- 2026-11-16: **Per-wake limit on soul updates** (run-3 fix E; new policy rule, owner-approved under
+  rule 4, only tightens). The restart test ran `update_soul` 8 times in one wake.
+  - New rule `rate.soul_per_wake` in `src/agent/policy-rules/rate-limits.ts` (next to the genesis and
+    self-mod rate rules): denies `update_soul` once the agent has written `soulConfig.maxUpdatesPerWake`
+    soul versions since the wake cycle started (kv `wake_cycle_started_at`; without it, the last
+    hour). Counts only successful agent changes in `soul_history` (not human/system/reflection).
+    Message: "Soul already updated N times this wake (max M per wake). Continue next wake; don't retry
+    now." With the repeat guard, 3 denials force sleep.
+  - Owner setting `"soulConfig": { "maxUpdatesPerWake": 2 }` (default 2, 0 = no limit; in the template;
+    the config is read-only to the agent).
+  Tests: `soul-per-wake-limit` (4, through the real policy engine and `update_soul`). Baselines: Linux
+  1962 passed; Windows 1930 passed, 22 known failures, 10 skipped. `agent:verify` 111.

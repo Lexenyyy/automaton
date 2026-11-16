@@ -130,6 +130,52 @@ function createSpawnDailyRule(): PolicyRule {
   };
 }
 
+/** Default for soulConfig.maxUpdatesPerWake (fork). */
+export const DEFAULT_MAX_SOUL_UPDATES_PER_WAKE = 2;
+
+/**
+ * Fork (run 3, owner-approved under rule 4; only tightens): at most
+ * soulConfig.maxUpdatesPerWake successful update_soul changes by the agent per
+ * wake cycle (default 2, 0 = no limit). Counts soul_history versions written by
+ * the agent since the wake cycle started (kv wake_cycle_started_at, set by the
+ * loop); without a recorded start, the last hour counts. The config is
+ * read-only to the agent.
+ */
+function createSoulPerWakeRule(): PolicyRule {
+  return {
+    id: "rate.soul_per_wake",
+    description: "Maximum soulConfig.maxUpdatesPerWake update_soul changes per wake cycle",
+    priority: 600,
+    appliesTo: { by: "name", names: ["update_soul"] },
+    evaluate(request: PolicyRequest): PolicyRuleResult | null {
+      const configured = (request.context as any)?.config?.soulConfig?.maxUpdatesPerWake;
+      const limit =
+        Number.isInteger(configured) && configured >= 0 ? (configured as number) : DEFAULT_MAX_SOUL_UPDATES_PER_WAKE;
+      if (limit === 0) return null;
+
+      const db = (request.context.db as any)?.raw ?? (request.context as any).rawDb;
+      if (!db) return deny(this.id, "DB_UNAVAILABLE", "Rate limit check failed: database not accessible");
+
+      const startRow = db.prepare("SELECT value FROM kv WHERE key = 'wake_cycle_started_at'").get() as
+        | { value: string }
+        | undefined;
+      const since = startRow?.value ?? new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const row = db
+        .prepare("SELECT COUNT(*) AS count FROM soul_history WHERE change_source = 'agent' AND created_at >= ?")
+        .get(since) as { count: number };
+
+      if (row.count >= limit) {
+        return deny(
+          "rate.soul_per_wake",
+          "RATE_LIMIT_SOUL",
+          `Soul already updated ${row.count} times this wake (max ${limit} per wake). Continue next wake; don't retry now.`,
+        );
+      }
+      return null;
+    },
+  };
+}
+
 /**
  * Create all rate limit policy rules.
  */
@@ -138,5 +184,6 @@ export function createRateLimitRules(): PolicyRule[] {
     createGenesisPromptDailyRule(),
     createSelfModHourlyRule(),
     createSpawnDailyRule(),
+    createSoulPerWakeRule(),
   ];
 }

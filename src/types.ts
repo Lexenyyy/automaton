@@ -1107,12 +1107,18 @@ export interface SoulConfig {
   soulAlignmentThreshold: number; // default: 0.5
   requireCreatorApprovalForPurposeChange: boolean; // default: false
   enableSoulReflection: boolean; // default: true
+  /**
+   * Fork: max successful update_soul changes by the agent per wake cycle
+   * (default 2, 0 = no limit). Enforced by policy rule rate.soul_per_wake.
+   */
+  maxUpdatesPerWake?: number;
 }
 
 export const DEFAULT_SOUL_CONFIG: SoulConfig = {
   soulAlignmentThreshold: 0.5,
   requireCreatorApprovalForPurposeChange: false,
   enableSoulReflection: true,
+  maxUpdatesPerWake: 2,
 };
 
 // === Phase 2.2: Memory System Types ===

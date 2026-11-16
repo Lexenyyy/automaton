@@ -119,7 +119,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **Repeats are not stopped early.** (fixed, see CHANGELOG) "Repetitive pattern detected" logged 4× without effect.
         Fix: force sleep after 3 denials of one tool or 3 identical calls with identical results;
         forced sleeps (also the 25-turn limit) last 30 min instead of 2.
-  - [ ] **No per-wake limit on soul updates.** Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`
+  - [x] **No per-wake limit on soul updates.** (fixed, see CHANGELOG) Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`
         (default 2), owner-approved under rule 4.
   - [ ] **"SOUL.md content changed since last load" after every `update_soul`** (noise).
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
