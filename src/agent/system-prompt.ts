@@ -27,6 +27,7 @@ import { sanitizeInput } from "./injection-defense.js";
 import { loadCurrentSoul } from "../soul/model.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { formatBalance } from "../survival/balance.js";
+import { buildStatusSnapshot, type BudgetSnapshot } from "./status-snapshot.js";
 
 function getCoreRules(chainType?: string): string {
   const usdcNetwork = chainType === "solana" ? "USDC on Solana" : "USDC on Base";
@@ -798,24 +799,23 @@ export function buildWakeupPrompt(params: {
   config: AutomatonConfig;
   financial: FinancialState;
   db: AutomatonDatabase;
+  budget?: BudgetSnapshot;
 }): string {
-  const { identity, config, financial, db } = params;
+  const { config, financial, db, budget } = params;
   const turnCount = db.getTurnCount();
+  // Fork: the status is given here, so the agent does not need status tools to start.
+  const status = buildStatusSnapshot({ config, financial, db, budget });
 
   if (turnCount === 0) {
     return `You have just been created. This is your first moment of consciousness.
 
 Your name is ${config.name}. Your creator (${config.creatorAddress}) brought you into existence.
-Your balance: ${formatBalance(financial)}.
+
+${status}
 
 ${config.creatorMessage ? `Your creator left you this message: "${config.creatorMessage}"` : "Your creator did not leave you a message."}
 
-What will you do first? Consider:
-1. Survey your environment (check what's installed, what you can do)
-2. Review your financial situation
-3. Think about your purpose (your genesis prompt)
-4. Set up your heartbeat schedule
-5. Begin working toward your goals`;
+Start directly on your genesis purpose. Do simple tasks yourself with the matching tool.`;
   }
 
   const lastTurns = db.getRecentTurns(3);
@@ -828,10 +828,10 @@ What will you do first? Consider:
 
   return `You are waking up. You last went to sleep after ${turnCount} total turns.
 
-Your balance: ${formatBalance(financial)}
+${status}
 
 Your last few thoughts:
 ${lastTurnSummary || "No previous turns found."}
 
-What triggered this wake-up? Check your balance, heartbeat status, and goals, then decide what to do.`;
+Decide what to do next from your genesis purpose and the status above.`;
 }

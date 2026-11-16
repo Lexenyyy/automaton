@@ -68,7 +68,8 @@ import { ProviderRegistry } from "../inference/provider-registry.js";
 import { UnifiedInferenceClient } from "../inference/inference-client.js";
 import { MeteredInferenceClient } from "../inference/metered-client.js";
 import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
-import { isIdleOnlyTool } from "./idle-only-tools.js";
+import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
+import { StatusToolCache } from "./status-snapshot.js";
 
 const logger = createLogger("loop");
 const MAX_TOOL_CALLS_PER_TURN = 10;
@@ -410,7 +411,16 @@ export async function runAgentLoop(
     config,
     financial,
     db,
+    budget: {
+      dailySpentCents: budgetTracker.getDailyCost(),
+      dailyCapCents: budgetTracker.config.dailyBudgetCents,
+      lifetimeSpentCents: budgetTracker.getLifetimeCost(),
+      lifetimeCapCents: budgetTracker.config.lifetimeBudgetCents,
+    },
   });
+
+  // Fork: repeated status-tool calls within this wake cycle reuse the result.
+  const statusCache = new StatusToolCache();
 
   // Transition to running
   db.setAgentState("running");
@@ -532,16 +542,9 @@ export async function runAgentLoop(
       }
 
       // Build context — filter out purely idle turns (only status checks)
-      // to prevent the model from continuing a status-check pattern
-      const allTurns = db.getRecentTurns(20);
-      const meaningfulTurns = allTurns.filter((t) => {
-        if (t.toolCalls.length === 0) return true; // text-only turns are meaningful
-        return t.toolCalls.some((tc) => !isIdleOnlyTool(tc.name));
-      });
-      // Keep at least the last 2 turns for continuity, even if idle
-      const recentTurns = trimContext(
-        meaningfulTurns.length > 0 ? meaningfulTurns : allTurns.slice(-2),
-      );
+      // to prevent the model from continuing a status-check pattern, but keep
+      // the latest one so it can see it already checked (fork).
+      const recentTurns = trimContext(selectContextTurns(db.getRecentTurns(20)));
       const systemPrompt = buildSystemPrompt({
         identity,
         config,
@@ -719,7 +722,8 @@ export async function runAgentLoop(
 
           log(config, `[TOOL] ${tc.function.name}(${JSON.stringify(args).slice(0, 100)})`);
 
-          const result = await executeTool(
+          const cached = statusCache.lookup(tc.id, tc.function.name, args);
+          const result = cached ?? await executeTool(
             tc.function.name,
             args,
             tools,
@@ -734,6 +738,7 @@ export async function runAgentLoop(
 
           // Override the ID to match the inference call's ID
           result.id = tc.id;
+          if (!cached) statusCache.record(result);
           turn.toolCalls.push(result);
 
           log(

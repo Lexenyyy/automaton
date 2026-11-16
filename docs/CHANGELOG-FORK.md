@@ -392,3 +392,19 @@
     so nothing else used the repo. Open point for fix 3: the `git_*` tools still default to
     `~/.automaton`. Test: `state-versioning-mode` (2). Baselines: Linux 1910 passed; Windows 1880
     passed, 22 known failures, 8 skipped.
+  - **Fewer repeated status checks** (fix 1): the first run called `system_synopsis` and
+    `check_balance` three times before acting. Causes: the loop dropped every status-only turn from
+    the context (so the model never saw it had checked), and the wake-up text and genesis prompt both
+    asked for checks. Changes:
+    - The wake-up message carries a status snapshot (`src/agent/status-snapshot.ts`): balance, tier,
+      network, inference spend today and lifetime against the caps, heartbeats, model, plus "this
+      status is current; no status tool needed". The "survey / check your balance" prompts are gone.
+    - `selectContextTurns` keeps the most recent status-only turn in the context.
+    - `StatusToolCache`: within one wake cycle, a repeated read-only status call (`check_balance`,
+      `system_synopsis`, `check_credits`, `check_usdc_balance`, `check_inference_spending`) returns
+      the earlier result with an "unchanged, act on it" note and no new RPC read. Any other tool
+      call clears it; entries expire after 5 minutes; errors are never cached.
+    - Testnet genesis prompt: status and tools come from the given context ("no tool call needed");
+      SOUL.md is written with `update_soul`. Same goals and limits as the owner's text.
+    Test: `status-snapshot` (7). Baselines: Linux 1917 passed; Windows 1887 passed, 22 known
+    failures, 8 skipped. `agent:verify` 106.
