@@ -65,6 +65,7 @@ Usage:
                            Owner: show or reset settings the agent changed itself
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
                            Owner: show the ledger or add a grant/adjustment (dollars)
+  automaton --activity     Owner: recent turns, inference spend and sleep state
   automaton --version      Show version
   automaton --help         Show this help
 
@@ -170,6 +171,24 @@ Environment:
     }
     console.log(result.output);
     process.exit(result.code);
+  }
+
+  if (args.includes("--activity")) {
+    // Owner only (pnpm agent:status): recent turns, spend and sleep state from
+    // state.db. Read-only; no model call, no network.
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const db = createDatabase(resolvePath(config.dbPath));
+    const { getActivityReport, formatActivityReport } = await import("./state/activity-report.js");
+    try {
+      console.log(formatActivityReport(getActivityReport(db.raw)));
+    } finally {
+      db.close();
+    }
+    process.exit(0);
   }
 
   if (args.includes("--setup")) {

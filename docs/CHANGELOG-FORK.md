@@ -577,3 +577,23 @@
   content. Without any soul history (e.g. a wizard-written soul) the upstream check is kept.
   Tests: `soul-change-warning` (3). Baselines: Linux 1965 passed; Windows 1933 passed, 22 known
   failures, 10 skipped. `agent:verify` 111.
+- 2026-11-16: **One agent per project; `agent:status`** (incident fix 1). About $0.43 of inference ran
+  15:35-16:17 UTC after `agent:down` had reported everything stopped. Cause, from the Docker Desktop
+  engine logs and state.db: `agent:down` (15:34:52) did stop the run that existed; 13 s later a new
+  interactive `pnpm agent:run` started `automaton-runtime-run-d8a545bd3b3e` on the image built before
+  the loop-guard and soul-limit fixes. It ran 285 turns (SOUL.md rewrite loop: 171 denied `write_file`,
+  83 `update_soul`; old 25-turn cycle + 2 min sleep) until the 25c hourly cap stopped it. Nothing showed
+  it was running, and nothing refused a second agent. Fix (scripts, plus a read-only owner command):
+  - `docker/agent-instances.mjs` (new): running runtime/sandbox containers of a project, uptime.
+  - `docker/run-oneoff.mjs`: refuses `--run` and `--init` while any runtime container of the project is
+    running (names it, exit 1, "stop it first with pnpm agent:down"); ledger/settings/preflight print a
+    note. Cleanup no longer removes a sandbox another runtime still uses (at 16:38 a new run's cleanup
+    removed the sandbox of a different run).
+  - `pnpm agent:status` (`docker/status-agent.mjs`, new): runtimes with uptime, sandbox, and the activity
+    report of the new owner command `runtime --activity` (`src/state/activity-report.ts`, read-only):
+    state, last turn, turns and inference spend last hour / today (UTC) / lifetime, sleep, budget pause.
+    New ledger helper `getInferenceCostSinceMc`.
+  - `agent:down` ends by saying no runtime is running now and that a later `agent:run` starts a new one.
+  Tests: `activity-report` (3). `agent:verify` +5 ("one agent per project": status without and with a
+  runtime, `--init` refused, ledger with note, sandbox kept for another runtime). Baselines: Linux 1968
+  passed; Windows 1936 passed, 22 known failures, 10 skipped. `agent:verify` 116.

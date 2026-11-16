@@ -163,6 +163,20 @@ export function getLifetimeInferenceCostCents(db: Database): number {
   return Math.ceil(getLifetimeInferenceCostMc(db) / MC_PER_CENT);
 }
 
+/**
+ * Inference spend (all entries, test and real) since an ISO time, positive
+ * millicents. Fork: owner activity report (`--activity`, pnpm agent:status).
+ */
+export function getInferenceCostSinceMc(db: Database, sinceIso: string): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(-SUM(${MC_SQL}), 0) AS total FROM ledger_entries
+       WHERE kind = 'inference_cost' AND occurred_at >= ?`,
+    )
+    .get(toSqlTime(sinceIso)) as { total: number };
+  return row.total;
+}
+
 export function getLedgerTotalsByKind(db: Database): { kind: LedgerKind; totalCents: number; totalMc: number; count: number }[] {
   const rows = db
     .prepare(

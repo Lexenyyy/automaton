@@ -32,10 +32,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after the first-run fixes
-  (Phase 1, run-3 fixes): 1965 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after the second-agent fixes
+  (Phase 1): 1968 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1933 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1936 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -43,7 +43,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (111 checks after the run-2 fixes).
+  (116 checks after the second-agent fixes).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -93,9 +93,13 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     `agent:run` one (30 s grace; the runtime admits no new model call and waits up to 20 s for in-flight
     calls to be recorded), then the sandbox, then containers and network removed. Volumes kept.
   - `agent:run`: owner only (rule 6).
+  - `agent:status`: running runtime containers (any terminal, with uptime), sandbox, and the activity
+    report from state.db (runtime `--activity`: state, last turn, turns and inference spend last hour/today,
+    sleep, budget pause). Changes nothing.
   - One-off commands run through `docker/run-oneoff.mjs`: `init`, `ledger`, `settings` use `--no-deps`
     (sandbox never started); `preflight` and `run` stop and remove the sandbox afterwards, only if
-    they started it.
+    they started it and no other runtime is running. **One agent per project:** `run` and `init` are
+    refused while any runtime container of the project is running; other commands print a note.
   - Config template: `docker/automaton.testnet.json` (mounted read-only).
 - Known limits (Phase 5a): `install_skill` and `expose_port` fail because the sandbox has no network.
   Groq is not yet available to the main loop (only to workers).

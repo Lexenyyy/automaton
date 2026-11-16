@@ -429,6 +429,37 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const failOneoff = oneoff(["--", "--ledger", "grant", "-5"]);
   check("one-off commands", "passes the runtime's exit code through", failOneoff.status === 1, `exit ${failOneoff.status}`);
 
+  // ─── one agent per project (incident 2026-11-16) ─────────────
+  // A stand-in for a live agent:run runtime (one-off runtime container, no
+  // agent loop). The real agent is never started; --init is the refused command.
+  console.log("agent:verify: one agent per project ...");
+  const statusScript = path.join(ROOT, "docker", "status-agent.mjs");
+  const status = () => spawnSync(process.execPath, [statusScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 180_000 });
+  const st0 = status();
+  check("one agent per project", "agent:status with no runtime: 'not running' plus the activity report from state.db",
+    st0.status === 0 && st0.stdout.includes("Runtime:  not running") && st0.stdout.includes("=== AGENT ACTIVITY (state.db) ==="),
+    (st0.stdout + st0.stderr).trim());
+  const LIVE = `${PROJECT}-live`;
+  docker([...COMPOSE, "run", "-d", "--name", LIVE, "--entrypoint", "node", "runtime", "-e",
+    "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)"], { allowFail: false });
+  const st1 = status();
+  check("one agent per project", "agent:status shows the running runtime by name",
+    st1.status === 0 && st1.stdout.includes("Runtime:  RUNNING, 1 container(s)") && st1.stdout.includes(LIVE), st1.stdout.trim());
+  const initRefused = oneoff(["--", "--init"]);
+  check("one agent per project", "--init is refused while a runtime runs, naming it (exit 1)",
+    initRefused.status === 1 && initRefused.stderr.includes("refusing --init") && initRefused.stderr.includes(LIVE),
+    `exit ${initRefused.status}: ${initRefused.stderr.trim()}`);
+  const ledgerLive = oneoff(["--", "--ledger", "show"]);
+  check("one agent per project", "ledger show still works, with a note that the agent is running",
+    ledgerLive.status === 0 && ledgerLive.stderr.includes("note: the agent is running"), `exit ${ledgerLive.status}`);
+  docker([...COMPOSE, "stop", "-t", "0", "sandbox"]);
+  docker([...COMPOSE, "rm", "-f", "sandbox"]);
+  const preLive = oneoff(["--needs-sandbox", "--", "--preflight"]);
+  check("one agent per project", "a one-off never removes a sandbox another runtime uses",
+    preLive.status === 0 && sandboxIds(false) !== "" && preLive.stderr.includes("sandbox left running"),
+    `exit ${preLive.status}; sandbox ${sandboxIds(false) || "none"}`);
+  docker(["rm", "-f", LIVE]);
+
   // ─── graceful stop (pnpm agent:down) ─────────────────────────
   // Stand-ins for an agent:run runtime: one-off `compose run` containers of the
   // runtime service (the real agent is never started here). The sandbox is running.

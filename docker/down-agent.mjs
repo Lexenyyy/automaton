@@ -115,4 +115,8 @@ if (still.length > 0) {
   process.exit(1);
 }
 console.log(`agent:down: done in ${Date.now() - started} ms. Volumes kept.${problems ? " See the messages above." : ""}`);
+console.log(
+  `agent:down: no runtime of project "${project}" is running now. Any later pnpm agent:run (from any terminal) ` +
+    "starts a new one; pnpm agent:status shows what is running.",
+);
 process.exit(problems ? 1 : 0);
