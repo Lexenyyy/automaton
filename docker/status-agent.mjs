@@ -12,12 +12,11 @@
  * Changes nothing. Exit 0, or 1 if Docker cannot be reached.
  */
 
-import { spawnSync } from "node:child_process";
 import {
-  COMPOSE_FILE,
   DEFAULT_PROJECT,
   describeContainer,
   isValidProject,
+  runActivity,
   runningContainers,
   runningRuntimes,
 } from "./agent-instances.mjs";
@@ -49,16 +48,11 @@ console.log(
 );
 
 if (!args.includes("--no-activity")) {
-  const r = spawnSync(
-    "docker",
-    ["compose", "-f", COMPOSE_FILE, "-p", project, "run", "--rm", "--no-deps", "-T", "runtime", "--activity"],
-    { encoding: "utf-8", timeout: 120_000 },
-  );
-  const out = (r.stdout ?? "").trim();
-  if (r.status === 0 && out) {
-    console.log(`\n${out}`);
+  const r = runActivity(project);
+  if (r.code === 0 && r.out) {
+    console.log(`\n${r.out}`);
   } else {
-    console.error(`\n${WHO}: activity report unavailable (${(r.stderr ?? "").trim().split("\n").pop() || `exit ${r.status}`}).`);
+    console.error(`\n${WHO}: activity report unavailable (${r.err.split("\n").pop() || `exit ${r.code}`}).`);
   }
 }
 process.exit(0);

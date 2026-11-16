@@ -114,6 +114,32 @@ export function allRuntimeContainers(project, who = "agent") {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * `runtime --activity [args]` against the project's state.db, as a plain
+ * `docker run` (no compose labels, so it never shows up as a second runtime;
+ * no network, no secrets, read-only root). Returns { code, out, err }, or
+ * code null with err when the project has no state volume yet.
+ */
+export function runActivity(project, extraArgs = []) {
+  const volume = `${project}_automaton-home`;
+  if (docker(["volume", "inspect", volume]).code !== 0) {
+    return { code: null, out: "", err: `no state volume ${volume} (run pnpm agent:init first)` };
+  }
+  const configFile = path.join(path.dirname(COMPOSE_FILE), "automaton.testnet.json");
+  const r = spawnSync(
+    "docker",
+    [
+      "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp:size=16m",
+      "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+      "-v", `${volume}:/home/automaton/.automaton`,
+      "-v", `${configFile}:/home/automaton/.automaton/automaton.json:ro`,
+      SERVICE_IMAGES.runtime, "--activity", ...extraArgs,
+    ],
+    { encoding: "utf-8", timeout: 120_000 },
+  );
+  return { code: r.status, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
+}
+
 /** Folder for saved runtime logs (outside the repo). AUTOMATON_LOG_DIR overrides. */
 export function logDir() {
   return process.env.AUTOMATON_LOG_DIR || path.join(os.homedir(), ".automaton-logs");

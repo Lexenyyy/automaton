@@ -562,6 +562,40 @@ db.close();`;
   check(G, "agent:kill saves the log too", kl.status === 0 && savedLogs().includes("verify-kill-marker") && runtimeIds() === "",
     (kl.stdout + kl.stderr).trim());
 
+  // ─── watchdog (pnpm agent:watch) ─────────────────────────────
+  // Stand-in runtimes (node only, no agent loop); state.db is the verify volume's.
+  console.log("agent:verify: watchdog ...");
+  const W = "watchdog";
+  const watchScript = path.join(ROOT, "docker", "watch-agent.mjs");
+  const watch = (extra) => spawnSync(process.execPath, [watchScript, "--project", PROJECT, ...extra], { encoding: "utf-8", env, timeout: 300_000 });
+  const standInW = (name, code) =>
+    docker([...COMPOSE, "run", "-d", "--name", name, "--entrypoint", "node", "runtime", "-e", code], { allowFail: false });
+  const KEEP = "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)";
+  const w0 = watch(["--once"]);
+  check(W, "with no runtime running: nothing to watch (exit 1)", w0.status === 1 && w0.stdout.includes("nothing to watch"), w0.stdout.trim());
+  standInW(`${PROJECT}-w1`, KEEP);
+  const w1 = watch(["--once"]);
+  check(W, "--once with a healthy runtime: all checks pass, the agent is left running",
+    w1.status === 0 && w1.stdout.includes("all checks passed") && runtimeIds("running") !== "", (w1.stdout + w1.stderr).trim());
+  const beforeGrant = new Date().toISOString();
+  oneoff(["--", "--ledger", "grant", "0.01"]);
+  const w2 = watch(["--once", "--since", beforeGrant]);
+  check(W, "a tripped stop rule (ledger entry other than inference) runs agent:down (exit 2)",
+    w2.status === 2 && w2.stdout.includes("STOP: 1 ledger entry other than inference cost") && runtimeIds("running") === "",
+    (w2.stdout + w2.stderr).trim());
+  standInW(`${PROJECT}-w2`, KEEP);
+  const w3 = watch(["--hours", "0.001", "--interval", "10"]);
+  check(W, "--hours: stops the agent gracefully at the end of the run (exit 0)",
+    w3.status === 0 && w3.stdout.includes("DONE: run complete") && runtimeIds("running") === "", (w3.stdout + w3.stderr).trim());
+  standInW(`${PROJECT}-w3`, "setTimeout(()=>process.exit(0),4000)");
+  const w4 = watch(["--hours", "0.02", "--interval", "10"]);
+  check(W, "a runtime that exits is noticed and cleaned up (exit 2)",
+    w4.status === 2 && w4.stdout.includes("STOP: no runtime is running") && runtimeIds() === "", (w4.stdout + w4.stderr).trim());
+  check(W, "every check is written to the watch log", fs.readdirSync(logsDir).some((f) => f.startsWith(`watch-${PROJECT}-`)));
+  const st3 = status();
+  check(W, "agent:status's activity report no longer starts a compose runtime container",
+    st3.status === 0 && st3.stdout.includes("Survival tier:") && runtimeIds() === "", (st3.stdout + st3.stderr).trim());
+
   // ─── graceful stop (pnpm agent:down) ─────────────────────────
   // Stand-ins for an agent:run runtime: one-off `compose run` containers of the
   // runtime service (the real agent is never started here). The sandbox is running.

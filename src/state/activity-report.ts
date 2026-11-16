@@ -20,6 +20,23 @@ export interface ActivityReport {
   lastWakeEnd: string | null;
   budgetPauseUntil: string | null;
   budgetPauseReason: string | null;
+  /** Survival tier at the last heartbeat tick. */
+  tier: string | null;
+  /** Turns since the current (or last) wake cycle started. */
+  turnsThisWake: number;
+  wakeStartedAt: string | null;
+  /** Totals since a given time (the watchdog's start), when asked for. */
+  since?: SinceStats;
+}
+
+export interface SinceStats {
+  since: string;
+  turns: number;
+  spendMc: number;
+  /** The tool with the most policy denials since then. */
+  maxDenials: { tool: string; count: number } | null;
+  /** Ledger entries other than inference cost (grants, transfers, revenue ...). */
+  otherLedgerEntries: number;
 }
 
 function kv(db: Database, key: string): string | null {
@@ -27,12 +44,43 @@ function kv(db: Database, key: string): string | null {
   return row?.value ?? null;
 }
 
-export function getActivityReport(db: Database, now: Date = new Date()): ActivityReport {
+/** SQLite datetime('now') format, for columns written that way. */
+const sqlTime = (iso: string) => iso.replace("T", " ").replace(/(\.\d+)?Z$/, "");
+
+function sinceStats(db: Database, since: string): SinceStats {
+  const turns = db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(since) as { n: number };
+  const denial = db
+    .prepare(
+      `SELECT tool_name AS tool, COUNT(*) AS count FROM policy_decisions
+       WHERE decision <> 'allow' AND created_at >= ? GROUP BY tool_name ORDER BY count DESC LIMIT 1`,
+    )
+    .get(sqlTime(since)) as { tool: string; count: number } | undefined;
+  const other = db
+    .prepare("SELECT COUNT(*) AS n FROM ledger_entries WHERE kind <> 'inference_cost' AND occurred_at >= ?")
+    .get(sqlTime(since)) as { n: number };
+  return {
+    since,
+    turns: turns.n,
+    spendMc: getInferenceCostSinceMc(db, since),
+    maxDenials: denial ?? null,
+    otherLedgerEntries: other.n,
+  };
+}
+
+export function getActivityReport(db: Database, now: Date = new Date(), since?: string): ActivityReport {
   const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
   const last = db.prepare("SELECT MAX(timestamp) AS t FROM turns").get() as { t: string | null };
   const recent = db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(hourAgo) as { n: number };
+  const wakeStart = kv(db, "wake_cycle_started_at");
+  const thisWake = wakeStart
+    ? (db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(wakeStart) as { n: number }).n
+    : 0;
   return {
+    tier: kv(db, "last_tick_tier"),
+    turnsThisWake: thisWake,
+    wakeStartedAt: wakeStart,
+    ...(since ? { since: sinceStats(db, since) } : {}),
     agentState: kv(db, "agent_state") ?? "unknown",
     lastTurnAt: last.t,
     turnsLastHour: recent.n,
@@ -64,7 +112,8 @@ export function formatActivityReport(r: ActivityReport, now: Date = new Date()):
     "=== AGENT ACTIVITY (state.db) ===",
     `State:             ${r.agentState}`,
     `Last turn:         ${r.lastTurnAt ? `${r.lastTurnAt} (${ago(r.lastTurnAt, now)})` : "none"}`,
-    `Turns, last hour:  ${r.turnsLastHour}`,
+    `Survival tier:     ${r.tier ?? "unknown"}`,
+    `Turns, last hour:  ${r.turnsLastHour} (this or last wake: ${r.turnsThisWake})`,
     `Inference spend:   last hour ${formatUsdMc(r.spendLastHourMc)}, today (UTC) ${formatUsdMc(r.spendTodayMc)}, lifetime real money ${formatUsdMc(r.spendLifetimeMc)}`,
   ];
   if (isFuture(r.sleepUntil, now)) {

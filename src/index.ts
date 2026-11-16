@@ -75,7 +75,8 @@ Usage:
                            Owner: show or reset settings the agent changed itself
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
                            Owner: show the ledger or add a grant/adjustment (dollars)
-  automaton --activity     Owner: recent turns, inference spend and sleep state
+  automaton --activity [--json] [--since <ISO time>]
+                           Owner: recent turns, inference spend and sleep state
   automaton --version      Show version
   automaton --help         Show this help
 
@@ -191,10 +192,18 @@ Environment:
       logger.error("Automaton is not configured.");
       process.exit(1);
     }
+    // --json [--since <ISO time>]: machine-readable, for pnpm agent:watch.
+    const sinceArg = args.includes("--since") ? args[args.indexOf("--since") + 1] : undefined;
+    if (sinceArg !== undefined && !Number.isFinite(Date.parse(sinceArg))) {
+      logger.error("Usage: automaton --activity [--json] [--since <ISO time>]");
+      process.exit(2);
+    }
+    const since = sinceArg ? new Date(sinceArg).toISOString() : undefined;
     const db = createDatabase(resolvePath(config.dbPath));
     const { getActivityReport, formatActivityReport } = await import("./state/activity-report.js");
     try {
-      console.log(formatActivityReport(getActivityReport(db.raw)));
+      const report = getActivityReport(db.raw, new Date(), since);
+      console.log(args.includes("--json") ? JSON.stringify(report) : formatActivityReport(report));
     } finally {
       db.close();
     }

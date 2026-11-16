@@ -697,3 +697,24 @@
   - `compose.agent.yml`: runtime log rotation (json-file, 20 MB × 5).
   Tests: `agent:verify` +6 (detach returns, logs after exit, container kept, sandbox kept, down saves both
   kinds, kill saves). `agent:verify` 128; no `src/` change.
+- 2026-11-16: **Watchdog `pnpm agent:watch`** (Phase 2 prep A4). Unattended runs must stop on their own when
+  something looks wrong, not when the owner happens to look.
+  - `docker/watch-agent.mjs` (new): every `--interval` s (default 300) checks Docker (runtimes, old image) and
+    the activity report since the watch started; on the first stop rule it runs `agent:down` (graceful, logs
+    saved) and exits 2; `--hours H` ends the run the same way with exit 0. Rules and defaults: no runtime /
+    more than one / old image; spend since start > 5¢ (`--max-run-cents`) or in the last hour > 3¢
+    (`--max-hour-cents`, below the 5¢ code cap); > 6 turns in one wake started after the watch
+    (`--max-wake-turns`); > 20 turns in an hour (`--max-hour-turns`); a wake ended by force (loop guard,
+    cycle limit, budget cap, wake limit, consecutive errors); one tool denied 3 times (`--max-denials`); tier
+    low_compute/critical/dead; any ledger entry other than inference cost (so no owner grants during a
+    watched run); activity unreadable 3 times. In the first hour, hour figures count only since the start.
+    `--since` resumes counting from an earlier time; `--once` checks once. One line per check on the console
+    and in `~/.automaton-logs/watch-<project>-<start>.log`. Ctrl+C stops only the watchdog.
+  - `runtime --activity --json [--since <ISO>]`: adds tier, turns this wake, wake start and since-stats
+    (turns, spend, most-denied tool, non-inference ledger entries). Text report shows tier and turns this wake.
+  - `agent:status` and the watchdog read the activity report through a label-free `docker run` (no network,
+    no secrets, read-only root) instead of `compose run`, so the check never shows up as a second runtime.
+  Tests: `activity-report` +1; `agent:verify` +7 (nothing to watch, `--once` passes, a tripped rule runs
+  `agent:down`, `--hours` ends the run, an exited runtime is noticed, watch log, status without a compose
+  container). Baselines: Linux 1987 passed; Windows 1955 passed, 22 known failures, 10 skipped.
+  `agent:verify` 135.
