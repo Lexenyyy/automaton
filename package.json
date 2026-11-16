@@ -63,6 +63,7 @@
     "agent:down": "node docker/down-agent.mjs",
     "agent:kill": "node docker/kill-agent.mjs",
     "agent:status": "node docker/status-agent.mjs",
+    "agent:logs": "node docker/logs-agent.mjs",
     "agent:settings": "node docker/run-oneoff.mjs -- --settings show",
     "agent:settings:reset": "node docker/run-oneoff.mjs -- --settings reset",
     "agent:ledger": "node docker/run-oneoff.mjs -- --ledger show",

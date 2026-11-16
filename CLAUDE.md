@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (122 checks after the second-agent fixes).
+  (128 checks after Phase 2 prep A3).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -107,6 +107,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     calls to be recorded), then the sandbox, then containers and network removed. Volumes kept.
   - `agent:run`: owner only (rule 6). A restart honours a sleep that is still pending (the agent's own or a
     forced one; the log says until when). `pnpm agent:run --wake-now` wakes the agent immediately.
+    `pnpm agent:run --detach` starts it in the background (survives closing the terminal; container kept
+    after exit). `pnpm agent:logs [-f] [--tail N]` shows the newest runtime's log. `agent:down` and
+    `agent:kill` save every runtime log to `~/.automaton-logs` (`AUTOMATON_LOG_DIR`) before removing it.
   - `agent:status`: running runtime containers (any terminal, with uptime), sandbox, and the activity
     report from state.db (runtime `--activity`: state, last turn, turns and inference spend last hour/today,
     sleep, budget pause). Changes nothing.

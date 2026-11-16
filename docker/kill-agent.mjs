@@ -14,6 +14,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { saveRuntimeLogs } from "./agent-instances.mjs";
 
 const args = process.argv.slice(2);
 const projectIndex = args.indexOf("--project");
@@ -39,6 +40,9 @@ const ids = (all) => {
 };
 
 const started = Date.now();
+// Logs of interactive (--rm) runtimes first (they vanish when killed); the
+// kept (detached) ones after the kill. Saving takes well under a second.
+saveRuntimeLogs(project, "agent:kill", "autoRemove");
 const running = ids(false);
 if (running.length === 0) {
   console.log(`agent:kill: nothing running in project "${project}".`);
@@ -50,6 +54,7 @@ if (running.length === 0) {
 }
 
 // Remove the stopped containers too (volumes and images are never touched).
+saveRuntimeLogs(project, "agent:kill", "kept");
 const leftovers = ids(true);
 if (leftovers.length > 0) docker(["rm", "-f", ...leftovers]);
 

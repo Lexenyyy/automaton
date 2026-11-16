@@ -21,9 +21,14 @@
  *
  * --tty: keep an interactive terminal (agent:run, agent:init). Otherwise `-T`.
  * Exits with the runtime's exit code.
+ *
+ * --detach (anywhere, e.g. `pnpm agent:run --detach`): start the runtime in
+ * the background and return. The container is not removed on exit, so its
+ * log stays readable (pnpm agent:logs) and is saved by agent:down/agent:kill;
+ * the sandbox is left running for it.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   COMPOSE_FILE,
   DEFAULT_PROJECT,
@@ -45,7 +50,9 @@ if (sep < 0 || sep === argv.length - 1) {
   process.exit(2);
 }
 const opts = argv.slice(0, sep);
-const runtimeArgs = argv.slice(sep + 1);
+// `pnpm agent:run --detach` appends the flag after `--`: it is ours, not the runtime's.
+const detach = argv.includes("--detach");
+const runtimeArgs = argv.slice(sep + 1).filter((a) => a !== "--detach");
 const projectIndex = opts.indexOf("--project");
 const projectOpt = projectIndex >= 0 ? opts[projectIndex + 1] : undefined;
 if (projectIndex >= 0 && !isValidProject(projectOpt)) {
@@ -75,12 +82,31 @@ if (live.length > 0) {
 
 const sandboxWasRunning = needsSandbox ? runningContainers(project, "sandbox", WHO).length > 0 : true;
 
+// Detached: no terminal, not removed on exit (its log stays readable with
+// pnpm agent:logs and is saved by agent:down / agent:kill), sandbox left
+// running for it. Interactive: --rm, as before.
 const runArgs = [
-  ...COMPOSE, "run", "--rm",
-  ...(tty ? [] : ["-T"]),
+  ...COMPOSE, "run",
+  ...(detach ? ["-d", "-T"] : ["--rm", ...(tty ? [] : ["-T"])]),
   ...(needsSandbox ? [] : ["--no-deps"]),
   "runtime", ...runtimeArgs,
 ];
+
+if (detach) {
+  const r = spawnSync("docker", runArgs, { encoding: "utf-8" });
+  const name = (r.stdout ?? "").trim().split("\n").pop();
+  if (r.status !== 0 || !name) {
+    console.error(`${WHO}: could not start detached: ${(r.stderr ?? "").trim() || `exit ${r.status}`}`);
+    process.exit(r.status || 1);
+  }
+  console.log(
+    `${WHO}: started detached: ${name}. It keeps running when this terminal closes.\n` +
+      "  pnpm agent:logs -f    follow its log\n" +
+      "  pnpm agent:status     what it is doing\n" +
+      "  pnpm agent:down       stop it (its log is saved to ~/.automaton-logs)",
+  );
+  process.exit(0);
+}
 
 // Ctrl+C reaches the runtime through compose (graceful stop). This process
 // only waits for it to exit, then cleans up.

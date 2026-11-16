@@ -12,6 +12,7 @@
  *      (SIGKILL) a container that is still running at the timeout;
  *   2. stops the sandbox and any other container of the project;
  *   3. removes the stopped containers and runs `docker compose down` (network).
+ * Runtime logs are saved first to ~/.automaton-logs (AUTOMATON_LOG_DIR).
  * Never removes volumes or images: wallet, state and workspace are kept.
  * Exit 0 when nothing of the project is left running.
  *
@@ -23,6 +24,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { saveRuntimeLogs } from "./agent-instances.mjs";
 
 const COMPOSE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "compose.agent.yml");
 
@@ -72,6 +74,9 @@ function exitCodeWhenStopped(id) {
 const started = Date.now();
 let problems = 0;
 
+// 0. Logs of interactive (--rm) runtimes now: they vanish when they stop.
+saveRuntimeLogs(project, "agent:down", "autoRemove");
+
 // 1. Runtime containers (service and one-off), graceful.
 const runtimes = ids(["label=com.docker.compose.service=runtime"]);
 if (runtimes.length > 0) {
@@ -100,7 +105,9 @@ if (others.length > 0) {
   console.log(`agent:down: stopped ${others.length} other container(s): ${others.map(nameOf).join(", ")}`);
 }
 
-// 3. Remove stopped containers (volumes are never touched), then the network.
+// 3. Logs of the kept (detached) runtimes, shutdown included; then remove
+//    stopped containers (volumes are never touched), then the network.
+saveRuntimeLogs(project, "agent:down", "kept");
 const leftovers = ids([], true);
 if (leftovers.length > 0) docker(["rm", "-f", ...leftovers]);
 const down = docker(["compose", "-f", COMPOSE_FILE, "-p", project, "down", "--remove-orphans"]);

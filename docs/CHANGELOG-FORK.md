@@ -683,3 +683,17 @@
   their defaults). Expected use is at most 2 wakes an hour (30-min sleep floor) at about 0.3¢ each and
   at most 48 wakes a day (about 15¢), so the caps leave 2–8× headroom and stop a fault within an hour.
   `agent:verify` 122.
+- 2026-11-16: **Detached runs; `agent:logs`; logs saved on stop** (Phase 2 prep A3). Until now the agent's log
+  existed only in the `agent:run` terminal: closing it ended the run, and the `--rm` container took its log
+  with it.
+  - `pnpm agent:run --detach` (`run-oneoff`; the flag may come after `--`, as pnpm appends it): `compose run
+    -d -T`, not `--rm`, so the run survives closing the terminal and its log stays readable after it exits;
+    the sandbox is left running for it. Prints the next commands.
+  - `pnpm agent:logs [-f] [--tail N]` (`docker/logs-agent.mjs`, new): the log of the running runtime, else
+    the newest stopped one; warns if more than one is running.
+  - `agent:down` and `agent:kill` save every runtime log (with timestamps) to `~/.automaton-logs`
+    (`AUTOMATON_LOG_DIR`), outside the repo: `--rm` (interactive) ones before stopping them, kept
+    (detached) ones after, so their shutdown lines are included.
+  - `compose.agent.yml`: runtime log rotation (json-file, 20 MB × 5).
+  Tests: `agent:verify` +6 (detach returns, logs after exit, container kept, sandbox kept, down saves both
+  kinds, kill saves). `agent:verify` 128; no `src/` change.

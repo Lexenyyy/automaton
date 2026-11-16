@@ -9,6 +9,8 @@
  */
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,6 +89,64 @@ export function runningContainers(project, service, who = "agent") {
 }
 
 export const runningRuntimes = (project, who) => runningContainers(project, "runtime", who);
+
+/**
+ * Runtime containers of the project, running or stopped (detached runs are
+ * kept after they exit so their logs survive), newest first.
+ */
+export function allRuntimeContainers(project, who = "agent") {
+  const out = dockerOrExit(
+    ["ps", "-a", "-q", "--filter", `label=com.docker.compose.project=${project}`, "--filter", "label=com.docker.compose.service=runtime"],
+    who,
+  );
+  const ids = out ? out.split(/\s+/) : [];
+  if (ids.length === 0) return [];
+  return JSON.parse(dockerOrExit(["inspect", ...ids], who))
+    .map((c) => ({
+      id: c.Id.slice(0, 12),
+      name: (c.Name ?? "").replace(/^\//, ""),
+      running: Boolean(c.State?.Running),
+      createdAt: c.Created,
+      exitCode: c.State?.ExitCode,
+      /** --rm (interactive agent:run): gone as soon as it stops. */
+      autoRemove: Boolean(c.HostConfig?.AutoRemove),
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Folder for saved runtime logs (outside the repo). AUTOMATON_LOG_DIR overrides. */
+export function logDir() {
+  return process.env.AUTOMATON_LOG_DIR || path.join(os.homedir(), ".automaton-logs");
+}
+
+/**
+ * Save the logs of the project's runtime containers to logDir() before
+ * agent:down / agent:kill remove them. `which`: "autoRemove" = only --rm ones
+ * (call before stopping them: they vanish on exit), "kept" = the others
+ * (call after stopping, so the shutdown lines are included). Returns the
+ * files written. The runtime never prints secrets; the folder is outside the
+ * repo anyway.
+ */
+export function saveRuntimeLogs(project, who, which) {
+  const files = [];
+  for (const c of allRuntimeContainers(project, who)) {
+    if ((which === "autoRemove") !== c.autoRemove) continue;
+    const r = spawnSync("docker", ["logs", "--timestamps", c.id], { encoding: "utf-8", maxBuffer: 512 * 1024 * 1024, timeout: 120_000 });
+    if (r.status !== 0) {
+      console.error(`${who}: could not read the logs of ${c.name}: ${(r.stderr ?? "").trim()}`);
+      continue;
+    }
+    const text = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    if (!text.trim()) continue;
+    fs.mkdirSync(logDir(), { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = path.join(logDir(), `${c.name}-${stamp}.log`);
+    fs.writeFileSync(file, text);
+    files.push(file);
+    console.log(`${who}: saved the log of ${c.name} to ${file}`);
+  }
+  return files;
+}
 
 /**
  * After a build: warn when a runtime of the project still runs an older image.

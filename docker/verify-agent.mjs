@@ -33,12 +33,15 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 
 const VERIFY_CREATOR = "0x000000000000000000000000000000000000dEaD";
 const BUILD_COMMIT = gitBuildCommit(ROOT);
+const logsDir = fs.mkdtempSync(path.join(os.tmpdir(), "automaton-verify-logs-"));
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const OLD_IMAGE = `${PROJECT}-old:local`;
 const env = {
   ...process.env,
   AUTOMATON_SECRETS_DIR: secretsDir,
   AUTOMATON_CREATOR_ADDRESS: VERIFY_CREATOR,
   AUTOMATON_BUILD_COMMIT: BUILD_COMMIT,
+  AUTOMATON_LOG_DIR: logsDir,
 };
 delete env.AUTOMATON_MAINNET_APPROVED;
 
@@ -295,6 +298,7 @@ function cleanup() {
   docker(["rmi", OLD_IMAGE]);
   docker([...COMPOSE, "down", "-v", "--remove-orphans"]);
   fs.rmSync(secretsDir, { recursive: true, force: true });
+  fs.rmSync(logsDir, { recursive: true, force: true });
 }
 
 let exitCode = 1;
@@ -518,6 +522,45 @@ db.close();`;
   docker(["rm", "-f", HOLDER]);
   const freed = tryLease();
   check("runtime lease", "after a graceful stop the lease is free at once", freed.ok === true, JSON.stringify(freed));
+
+  // ─── detached runs and saved logs ────────────────────────────
+  // `--status` stands in for `--run` (the agent loop is never started).
+  console.log("agent:verify: detached runs and logs ...");
+  const G = "detached runs and logs";
+  const logsScript = path.join(ROOT, "docker", "logs-agent.mjs");
+  const logsOf = () => spawnSync(process.execPath, [logsScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 60_000 });
+  const savedLogs = () =>
+    fs.existsSync(logsDir) ? fs.readdirSync(logsDir).map((f) => fs.readFileSync(path.join(logsDir, f), "utf-8")).join("\n") : "";
+  const runtimeIds = (status) => docker(["ps", "-a", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`,
+    "--filter", "label=com.docker.compose.service=runtime", ...(status ? ["--filter", `status=${status}`] : [])]).out.trim();
+  const det = oneoff(["--needs-sandbox", "--", "--status", "--detach"]);
+  check(G, "--detach starts the runtime in the background and returns", det.status === 0 && det.stdout.includes("started detached"),
+    (det.stdout + det.stderr).trim());
+  let lg = { stdout: "", stderr: "" };
+  for (let i = 0; i < 20; i++) {
+    lg = logsOf();
+    if (lg.stdout.includes("=== AUTOMATON STATUS ===") && lg.stderr.includes("stopped, exit 0")) break;
+    sleepSync(1000);
+  }
+  check(G, "agent:logs shows its log, also after it exited", lg.stdout.includes("=== AUTOMATON STATUS ===") && lg.stderr.includes("stopped, exit 0"),
+    lg.stderr.trim());
+  check(G, "the detached container is kept after it exits (log readable)", runtimeIds("exited") !== "");
+  check(G, "the sandbox is left running for a detached run", sandboxIds(false) !== "");
+  // An interactive-style (--rm) runtime: it vanishes when stopped, so its log is saved first.
+  docker([...COMPOSE, "run", "-d", "--rm", "--name", `${PROJECT}-rm`, "--entrypoint", "node", "runtime", "-e",
+    "console.log('verify-rm-marker');process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)"], { allowFail: false });
+  sleepSync(2000);
+  const downScriptA3 = path.join(ROOT, "docker", "down-agent.mjs");
+  const dn = spawnSync(process.execPath, [downScriptA3, "--project", PROJECT], { encoding: "utf-8", env, timeout: 180_000 });
+  check(G, "agent:down saves both logs (--rm one before it stops, detached one after) and removes them",
+    dn.status === 0 && savedLogs().includes("=== AUTOMATON STATUS ===") && savedLogs().includes("verify-rm-marker") && runtimeIds() === "",
+    (dn.stdout + dn.stderr).trim());
+  docker([...COMPOSE, "run", "-d", "--name", `${PROJECT}-killme`, "--entrypoint", "node", "runtime", "-e",
+    "console.log('verify-kill-marker');setInterval(()=>{},1000)"], { allowFail: false });
+  sleepSync(2000);
+  const kl = spawnSync(process.execPath, [killScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 60_000 });
+  check(G, "agent:kill saves the log too", kl.status === 0 && savedLogs().includes("verify-kill-marker") && runtimeIds() === "",
+    (kl.stdout + kl.stderr).trim());
 
   // ─── graceful stop (pnpm agent:down) ─────────────────────────
   // Stand-ins for an agent:run runtime: one-off `compose run` containers of the
