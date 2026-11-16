@@ -645,3 +645,18 @@
     and waits. `pnpm agent:run --wake-now` passes the flag through `run-oneoff`.
   Tests: `startup-sleep` (5). Baselines: Linux 1978 passed; Windows 1946 passed, 22 known failures,
   10 skipped. `agent:verify` 122.
+- 2026-11-16: **Incident record: second agent on old code; run 4.**
+  - Incident (15:35–16:17 UTC, about 43¢ of the $5 testing budget, testnet only, no funds moved):
+    `agent:down` (15:34:52) correctly stopped the run that existed. 13 s later an interactive
+    `pnpm agent:run` in another VS Code terminal started `automaton-runtime-run-d8a545bd3b3e` on the image
+    built before the run-3 fixes. On that old code the loop guard only warned and soul updates had no
+    per-wake limit, so it ran 285 turns over 15 wakes (25 turns, then a 2-min forced sleep), rewriting
+    SOUL.md: 171 denied `write_file`, 83 `update_soul`, 40 `exec`. The 25¢ hourly cap paused it at 16:17.
+    It ended at 16:38 when another run recreated the sandbox. Found from the Docker Desktop engine logs
+    (the containers were `--rm`) and read-only queries of state.db. Why it went unnoticed: no command
+    showed running runtimes, nothing refused a second agent, the image had no build label, and a restart
+    always woke the agent. Fixed by the four entries above.
+  - Run 4 (build `1ec28e5`, owner-started): 2 turns, $0.00322. One `write_file` SOUL.md attempt received
+    the new explanation; it then slept on its own with zero soul rewrites.
+  - Testnet genesis prompt (`docker/automaton.testnet.json`), one sentence added after rule (4): "Never
+    use write_file for SOUL.md; use view_soul/update_soul." (702 of 2000 chars.)

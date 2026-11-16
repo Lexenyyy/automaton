@@ -122,9 +122,21 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **No per-wake limit on soul updates.** (fixed, see CHANGELOG) Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`
         (default 2), owner-approved under rule 4.
   - [x] **"SOUL.md content changed since last load" after every `update_soul`** (noise). (fixed, see CHANGELOG)
+  - [x] **Incident: a second agent ran unnoticed** (2026-11-16, 15:35–16:17 UTC, about 43¢). A new
+        `pnpm agent:run` in another terminal, started 13 s after `agent:down`, ran the image from before the
+        run-3 fixes: 285 turns rewriting SOUL.md (171 denied `write_file`, 83 `update_soul`) until the 25¢
+        hourly cap stopped it. Nothing showed it was running, nothing refused a second agent, and every
+        restart woke the agent at once. Fixed in `f588151` (one agent per project, `agent:status`), `6d65777`
+        (build commit in images, old-image warnings), `927b4fd` (runtime instance lease), `1ec28e5` (restart
+        honours a pending sleep, `--wake-now`). See CHANGELOG-FORK.md.
+  - [x] **Fourth real run** (build `1ec28e5`). 2 turns, $0.00322. One `write_file` SOUL.md attempt got the
+        new explanation; then it slept on its own with zero soul rewrites. All run-3 fixes confirmed.
+        Follow-up: the testnet genesis prompt now says "Never use write_file for SOUL.md; use
+        view_soul/update_soul."
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
-  Status after run 3: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
-  exact ledger); restart loses no state — met (restart test, run 3).
+  Status after run 4: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
+  exact ledger); restart loses no state — met (restart test, run 3); runaway loops stopped in code
+  (run 4); only one agent can run at a time (incident fixes).
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
 - Heartbeat scheduler independent of the main loop (exists: `src/heartbeat/`)
