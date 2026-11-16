@@ -100,6 +100,13 @@ export interface AutomatonConfig {
    */
   conway?: "on" | "off";
   /**
+   * Goal orchestration and child agents (fork, Phase 1). Absent = "on"
+   * (upstream behavior). "off" = no orchestrator or local workers, no
+   * orchestration prompt, goal and child tools hidden and not executable
+   * (see src/agent/orchestration-mode.ts). The agent does its work directly.
+   */
+  orchestration?: "on" | "off";
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

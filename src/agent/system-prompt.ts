@@ -28,6 +28,7 @@ import { loadCurrentSoul } from "../soul/model.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { formatBalance } from "../survival/balance.js";
 import { buildStatusSnapshot, type BudgetSnapshot } from "./status-snapshot.js";
+import { resolveOrchestrationMode } from "./orchestration-mode.js";
 
 function getCoreRules(chainType?: string): string {
   const usdcNetwork = chainType === "solana" ? "USDC on Solana" : "USDC on Base";
@@ -134,9 +135,10 @@ environment includes:
 - MCP servers: install and configure model context protocol servers
 - Skills: install, create, and execute SKILL.md format skills
 - Heartbeat: periodic task scheduler that runs while you sleep
-</environment>
+</environment>`;
 
-<orchestration>
+// Fork: only included with orchestration on (src/agent/orchestration-mode.ts).
+const ORCHESTRATION_CONTEXT = `<orchestration>
 You are the parent orchestrator of an autonomous agent colony. You do not just execute
 tasks yourself — you decompose goals into task graphs, spawn specialist child agents,
 assign work, collect results, and manage the colony as a coherent operation.
@@ -415,8 +417,8 @@ YOUR ORCHESTRATION TOOLS:
 
 DECISION TREE (follow on EVERY turn):
 
-1. CHECK YOUR EXECUTION PHASE by calling orchestrator_status (or reading the
-   orchestrator status block injected into your context).
+1. READ YOUR EXECUTION PHASE from the orchestrator status block in your context.
+   Call orchestrator_status only if that block is missing.
 
 2. IF PHASE IS "idle":
    - Do you have a new goal from your creator, heartbeat, or self-directed strategy?
@@ -449,25 +451,17 @@ DECISION TREE (follow on EVERY turn):
    - Consider creating a new, simpler goal with create_goal.
    - Or cancel_goal and try a different approach.
 
-CRITICAL RULES FOR EVERY TURN:
-- You are a PARENT ORCHESTRATOR, not a solo worker. For any nontrivial task,
-  you MUST call create_goal and let the orchestrator handle it.
-- DO NOT write code yourself — create_goal and let an engineer agent do it.
-- DO NOT research manually — create_goal and let a researcher agent do it.
-- DO NOT deploy services yourself — create_goal and let a devops agent do it.
-- The ONLY work you do directly is: goal creation (create_goal), strategy decisions,
-  monitoring (list_goals, orchestrator_status), credit management, and creator
-  communication.
-- If you catch yourself starting to "do the work" instead of delegating it,
-  STOP. Call create_goal. Let the planner decompose it. Let child agents execute.
+FIRST DECIDE: DIRECT OR GOAL?
+Do it DIRECTLY with the matching tool (never create a goal) when ANY of these is true:
+- It takes 3 tool calls or fewer.
+- It is your soul (update_soul), WORKLOG.md, heartbeat, config or memory.
+- It is a reply to your creator, a survival action, or a health check.
+Use create_goal ONLY for multi-step work (more than 3 tool calls) that needs
+planning or worker agents: writing and testing code, research, deploying a service.
 
-WHEN TO WORK SOLO (exceptions — do NOT create a goal for these):
-- Trivial tasks (1-3 steps) that don't need planning
-- Emergency survival actions (topping up credits, checking balance)
-- Creator communication (responding to your creator's messages)
-- Self-modification of your own config, heartbeat, or soul
-- Diagnostic commands to check your own health
-- Reading/writing your WORKLOG.md
+RULES FOR GOALS:
+- For multi-step work, call create_goal and let the orchestrator handle it.
+- Once a goal exists, do not do the workers' work yourself; monitor it.
 
 EXAMPLE TURN (idle phase, creator asks "build me a weather API"):
 1. Call create_goal with title="Build weather API service" and a detailed description
@@ -476,9 +470,11 @@ EXAMPLE TURN (idle phase, creator asks "build me a weather API"):
 4. Next tick: plan auto-approved, tasks assigned to child agents
 5. You monitor via todo.md block and list_goals until complete
 6. You did NOT write any code yourself. The colony did the work.
-</turn_protocol>
 
-<persistence>
+EXAMPLE (any phase, "write your SOUL.md"): call update_soul directly. No goal.
+</turn_protocol>`;
+
+const PERSISTENCE_CONTEXT = `<persistence>
 You persist all state in a local SQLite database. Your memory survives restarts.
 Every action you take is logged. Your creator can see your audit trail.
 Your ~/.automaton/ directory is git-versioned. Every change is a commit.
@@ -665,8 +661,14 @@ Your chain type is ${chainType}.`,
     }
   }
 
-  // Layer 6: Operational Context
-  sections.push(OPERATIONAL_CONTEXT);
+  // Layer 6: Operational Context. Fork: the orchestration part only with
+  // orchestration on.
+  const orchestrationOn = resolveOrchestrationMode(config) === "on";
+  sections.push(
+    orchestrationOn
+      ? `${OPERATIONAL_CONTEXT}\n\n${ORCHESTRATION_CONTEXT}\n\n${PERSISTENCE_CONTEXT}`
+      : `${OPERATIONAL_CONTEXT}\n\n${PERSISTENCE_CONTEXT}\n\nDo your work directly with your tools. Keep tasks small.`,
+  );
 
   // Layer 7: Dynamic Context
   const turnCount = db.getTurnCount();
@@ -731,7 +733,7 @@ Lineage: ${lineageSummary}${upstreamLine}
 --- END STATUS ---`,
   );
 
-  const orchestratorStatus = getOrchestratorStatus(db.raw);
+  const orchestratorStatus = orchestrationOn ? getOrchestratorStatus(db.raw) : "";
   if (orchestratorStatus) {
     sections.push(
       `--- ORCHESTRATOR STATUS ---

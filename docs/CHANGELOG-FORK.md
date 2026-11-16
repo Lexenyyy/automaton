@@ -408,3 +408,15 @@
       SOUL.md is written with `update_soul`. Same goals and limits as the owner's text.
     Test: `status-snapshot` (7). Baselines: Linux 1917 passed; Windows 1887 passed, 22 known
     failures, 8 skipped. `agent:verify` 106.
+  - **Orchestration switch; simple tasks done directly** (fix 2): the first run created an
+    orchestrator goal instead of calling `update_soul`, because the orchestration prompt said "you
+    MUST call create_goal" and the orchestrator always ran. New setting
+    `"orchestration": "on" | "off"` (`src/agent/orchestration-mode.ts`; absent = on, upstream
+    behavior; the Docker template sets off). With off: no orchestrator, plan mode or local worker
+    pool (so no worker model spend), no orchestration/turn-protocol prompt or orchestrator status
+    block, and the 13 goal and child tools are hidden and not executable. With on: the rule is now
+    "do it directly when it takes 3 tool calls or fewer, or is soul/worklog/heartbeat/config/memory,
+    a creator reply, survival or a health check; create_goal only for multi-step work", plus an
+    `update_soul` example; the phase is read from the status block instead of a tool call. Preflight
+    shows the mode and hidden count. Test: `orchestration-mode` (4). Baselines: Linux 1921 passed;
+    Windows 1891 passed, 22 known failures, 8 skipped. `agent:verify` 106.

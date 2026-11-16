@@ -67,6 +67,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   and nothing is sent to Conway: the Conway client refuses every call, the model client never uses
   the Conway backend, x402 to Conway hosts is refused, Conway-only tools are hidden. Model keys come
   from the secrets folder (env `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- **Orchestration off:** the template sets `"orchestration": "off"`: no orchestrator or local workers,
+  no orchestration prompt, goal and child tools hidden. The agent works directly (Phase 7 may turn it on).
 - **Settings the agent changes itself** (`update_genesis_prompt`, `switch_model`) are stored in the
   database (`agent_settings`), never in the config, within the owner's `agentSettings` limits in the
   config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day.

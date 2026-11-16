@@ -6,6 +6,7 @@
   "network": "testnet",
   "balanceSource": "own",
   "conway": "off",
+  "orchestration": "off",
   "socialRelayUrl": "",
   "agentSettings": {
     "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },

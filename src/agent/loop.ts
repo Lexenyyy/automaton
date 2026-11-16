@@ -70,6 +70,7 @@ import { MeteredInferenceClient } from "../inference/metered-client.js";
 import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
+import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
 
 const logger = createLogger("loop");
 const MAX_TOOL_CALLS_PER_TURN = 10;
@@ -105,7 +106,12 @@ export async function runAgentLoop(
   const installedTools = loadInstalledTools(db);
   // Fork: with Conway off, Conway-only tools are neither offered nor
   // executable (executeTool looks tools up in this same list).
-  const tools = filterToolsForConwayMode([...builtinTools, ...installedTools], config.conway);
+  // Fork: with orchestration off, goal and child tools are hidden the same way.
+  const orchestrationMode = resolveOrchestrationMode(config);
+  const tools = filterToolsForOrchestration(
+    filterToolsForConwayMode([...builtinTools, ...installedTools], config.conway),
+    orchestrationMode,
+  );
   const toolContext: ToolContext = {
     identity,
     config,
@@ -140,7 +146,7 @@ export async function runAgentLoop(
   let orchestrator: Orchestrator | undefined;
   let workerPool: LocalWorkerPool | undefined;
 
-  if (hasTable(db.raw, "goals")) {
+  if (orchestrationMode === "on" && hasTable(db.raw, "goals")) {
     try {
       planModeController = new PlanModeController(db.raw);
 

@@ -24,6 +24,7 @@ import { PolicyEngine } from "../agent/policy-engine.js";
 import { SpendTracker } from "../agent/spend-tracker.js";
 import { createDefaultRules } from "../agent/policy-rules/index.js";
 import { createBuiltinTools } from "../agent/tools.js";
+import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
 import { activateNetwork, getActiveNetwork } from "../identity/network.js";
 import { isContainerSandbox } from "../sandbox/transport.js";
@@ -371,8 +372,14 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     }
 
     const all = createBuiltinTools(rt.identity.sandboxId);
-    const offered = filterToolsForConwayMode(all, rt.conwayMode);
-    lines.push(`INFO  tools: ${offered.length} offered, ${all.length - offered.length} Conway-only hidden`);
+    const afterConway = filterToolsForConwayMode(all, rt.conwayMode);
+    const orchestration = resolveOrchestrationMode(rt.config);
+    const offered = filterToolsForOrchestration(afterConway, orchestration);
+    lines.push(
+      `INFO  tools: ${offered.length} offered, ${all.length - afterConway.length} Conway-only hidden` +
+        (orchestration === "off" ? `, ${afterConway.length - offered.length} orchestration hidden` : ""),
+    );
+    lines.push(`INFO  orchestration: ${orchestration}`);
     lines.push(`INFO  social relay: ${rt.social ? rt.config.socialRelayUrl : "off"}`);
     lines.push(`INFO  skills: ${rt.skills.length} loaded from ${rt.skillsDir}`);
   } finally {
