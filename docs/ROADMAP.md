@@ -144,6 +144,22 @@ Done when: agent completes a simple task unaided; restart loses no state; cost p
 - SOUL.md identity file in every turn's context (exists: `src/soul/`)
 - Creator CLI: status, logs, pause, resume, kill (`packages/cli`)
 Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
+- Step A, preparation for unattended runs (done 2026-11-16, see CHANGELOG):
+  - [x] **A1 Sleep floor and daily wake cap** (`6eabbe7`): `sleepConfig` minSeconds 1800, maxWakesPerDay 48
+        in the template. Worst case about 15¢ a day even if the agent tries to wake constantly.
+  - [x] **A2 Tighter money caps** (`d701930`): template hourly 5¢, daily 30¢.
+  - [x] **A3 Detached runs and saved logs** (`4fb69e0`): `agent:run --detach`, `agent:logs`, logs saved to
+        `~/.automaton-logs` by `agent:down`/`agent:kill`.
+  - [x] **A4 Watchdog** (`3199fa1`): `agent:watch --hours H` stops the agent on a stop rule or at the end.
+  - [x] **A5 Provider-side cap:** the OpenAI account is prepaid with auto-reload off (owner).
+- Unattended runs (owner-started, testnet):
+  - [ ] **Run 5: 3 hours**, detached, watchdog on, PC kept awake. Expected about 6 wakes, about 2¢.
+  - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected at most about 15¢.
+  - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
+        crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
+  - After each run, review (read-only): wake times vs chosen sleeps, turns and tokens per wake (does context
+    grow?), spend per wake, ledger vs OpenAI usage, soul versions, facts table growth, heartbeat failures,
+    container memory/CPU, database size, new errors in the saved log.
 
 ## Phase 3 — Wallet & money, TESTNET ONLY (2 weeks)
 - Wallet generated with viem, stored encrypted, never in logs or model context

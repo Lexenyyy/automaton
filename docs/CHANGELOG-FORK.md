@@ -718,3 +718,7 @@
   `agent:down`, `--hours` ends the run, an exited runtime is noticed, watch log, status without a compose
   container). Baselines: Linux 1987 passed; Windows 1955 passed, 22 known failures, 10 skipped.
   `agent:verify` 135.
+- 2026-11-16: **Docs: Phase 2 step A done; unattended-run plan** (Phase 2 prep A5). ROADMAP Phase 2 lists
+  A1–A4 with commits, A5 (provider-side cap: the owner's OpenAI account is prepaid with auto-reload off,
+  so no code), and the run plan: run 5 (3 h), run 6 (24 h), then 72 h with supervision, plus the review
+  checklist after each run.
