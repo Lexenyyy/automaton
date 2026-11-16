@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { StatusToolCache, buildStatusSnapshot } from "../agent/status-snapshot.js";
 import { selectContextTurns } from "../agent/idle-only-tools.js";
 import { buildWakeupPrompt } from "../agent/system-prompt.js";
+import { getWakeStart, recordWakeEnd, recordWakeStart } from "../agent/wake-state.js";
 import { createTestConfig, createTestDb, createTestIdentity } from "./mocks.js";
 import type { AutomatonDatabase, FinancialState, ToolCallResult } from "../types.js";
 
@@ -31,6 +32,25 @@ describe("status in the wake-up message", () => {
     expect(s).toContain("Inference today: $0.06 of $1.00 cap");
     expect(s).toContain("Inference lifetime: $0.06 of $5.00 cap");
     expect(s).toMatch(/do not need check_balance, system_synopsis/);
+  });
+
+  it("says what is already done: soul version and why the last wake ended", () => {
+    const before = buildStatusSnapshot({ config: createTestConfig(), financial, db, budget });
+    expect(before).toContain("SOUL.md: not written yet (write it with update_soul)");
+    expect(before).not.toContain("Last wake ended");
+
+    db.raw.prepare(
+      "INSERT INTO soul_history (id, version, content, content_hash, change_source, created_at) VALUES ('h5', 5, 'x', 'h', 'agent', '2026-11-16T10:00:00.000Z')",
+    ).run();
+    recordWakeEnd(db.raw, "cycle limit (25 turns)", new Date("2026-11-16T11:22:33Z"));
+    const after = buildStatusSnapshot({ config: createTestConfig(), financial, db, budget });
+    expect(after).toContain("SOUL.md: exists, version 5, last updated 2026-11-16");
+    expect(after).toContain("Last wake ended: cycle limit (25 turns) (2026-11-16 11:22 UTC)");
+  });
+
+  it("records the wake start time", () => {
+    const iso = recordWakeStart(db.raw, new Date("2026-11-16T09:00:00Z"));
+    expect(getWakeStart(db.raw)).toBe(iso);
   });
 
   it("first-run and later wake-up messages carry the status and do not ask for checks", () => {

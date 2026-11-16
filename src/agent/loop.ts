@@ -70,6 +70,7 @@ import { MeteredInferenceClient } from "../inference/metered-client.js";
 import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
+import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
 import { filterToolsForAllowlist, resolveToolAllowlist } from "./tool-allowlist.js";
@@ -387,6 +388,8 @@ export async function runAgentLoop(
   let lastToolPatterns: string[] = [];
   let loopWarningPattern: string | null = null;
   let idleToolTurns = 0;
+  // Fork: why this wake cycle ended; shown in the next wake-up status.
+  let wakeEndReason: string | undefined;
   // blockedGoalTurns removed — replaced by immediate sleep + exponential backoff
 
   // Drain any stale wake events from before this loop started,
@@ -397,6 +400,9 @@ export async function runAgentLoop(
   // Clear any stale sleep_until from a previous session so the agent
   // doesn't immediately go back to sleep on startup.
   db.deleteKV("sleep_until");
+
+  // Fork: start of this wake cycle (per-wake limits, wake-up status).
+  recordWakeStart(db.raw);
 
   // Transition to waking state
   db.setAgentState("waking");
@@ -615,6 +621,7 @@ export async function runAgentLoop(
             config,
             "[ORCHESTRATOR] All delegated work is active and no self-assigned parent task remains. Sleeping to avoid idle loop.",
           );
+          wakeEndReason = "delegated work running";
           db.setKV("sleep_until", new Date(Date.now() + 60_000).toISOString());
           db.setAgentState("sleeping");
           onStateChange?.("sleeping");
@@ -695,6 +702,7 @@ export async function runAgentLoop(
         // Pause orchestration and workers until the same window.
         pauseForBudget(db.raw, routerResult.content);
         const wakeAt = nextBudgetWindow();
+        wakeEndReason = "budget cap reached";
         db.setKV("sleep_until", new Date(wakeAt).toISOString());
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
@@ -816,6 +824,7 @@ export async function runAgentLoop(
         );
         db.setKV("blocked_goal_backoff", String(backoffMs));
         log(config, `[LOOP] create_goal BLOCKED — sleeping ${Math.round(backoffMs / 1000)}s (backoff).`);
+        wakeEndReason = "create_goal blocked";
         db.setKV("sleep_until", new Date(Date.now() + backoffMs).toISOString());
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
@@ -853,6 +862,7 @@ export async function runAgentLoop(
           lastToolPatterns.every((p) => p === currentPattern)
         ) {
           log(config, `[LOOP] Enforcement: agent ignored loop warning, forcing sleep.`);
+          wakeEndReason = `forced sleep: repeated "${currentPattern}" after a warning`;
           pendingInput = {
             content:
               `LOOP ENFORCEMENT: You were warned about repeating "${currentPattern}" but continued. ` +
@@ -915,6 +925,7 @@ export async function runAgentLoop(
       const sleepTool = turn.toolCalls.find((tc) => tc.name === "sleep");
       if (sleepTool && !sleepTool.error) {
         log(config, "[SLEEP] Agent chose to sleep.");
+        wakeEndReason = "agent chose sleep";
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
         running = false;
@@ -946,6 +957,7 @@ export async function runAgentLoop(
         idleTurnCount++;
         if (idleTurnCount >= MAX_IDLE_TURNS) {
           log(config, `[IDLE] ${idleTurnCount} consecutive idle turns with no work. Entering sleep.`);
+          wakeEndReason = `idle (${idleTurnCount} turns without work)`;
           db.setKV("sleep_until", new Date(Date.now() + 60_000).toISOString());
           db.setAgentState("sleeping");
           onStateChange?.("sleeping");
@@ -962,6 +974,7 @@ export async function runAgentLoop(
       cycleTurnCount++;
       if (running && cycleTurnCount >= maxCycleTurns) {
         log(config, `[CYCLE LIMIT] ${cycleTurnCount} turns reached (max: ${maxCycleTurns}). Forcing sleep.`);
+        wakeEndReason = `cycle limit (${cycleTurnCount} turns)`;
         db.setKV("sleep_until", new Date(Date.now() + 120_000).toISOString());
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
@@ -978,6 +991,7 @@ export async function runAgentLoop(
         // Agent produced text without tool calls.
         // This is a natural pause point -- no work queued, sleep briefly.
         log(config, "[IDLE] No pending inputs. Entering brief sleep.");
+        wakeEndReason = "no more work (text reply, no tool call)";
         db.setKV(
           "sleep_until",
           new Date(Date.now() + 60_000).toISOString(),
@@ -1014,6 +1028,7 @@ export async function runAgentLoop(
           config,
           `[FATAL] ${MAX_CONSECUTIVE_ERRORS} consecutive errors. Sleeping.`,
         );
+        wakeEndReason = `${MAX_CONSECUTIVE_ERRORS} consecutive errors`;
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
         db.setKV(
@@ -1025,6 +1040,13 @@ export async function runAgentLoop(
     }
   }
 
+  if (wakeEndReason) {
+    try {
+      recordWakeEnd(db.raw, wakeEndReason);
+    } catch {
+      // status line only; never blocks
+    }
+  }
   log(config, `[LOOP END] Agent loop finished. State: ${db.getAgentState()}`);
 }
 

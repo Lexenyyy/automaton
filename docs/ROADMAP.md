@@ -111,7 +111,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         state survived (balance continued at $4.93, soul continued from version 5). Sandbox held
         (`ls /root/.automaton`: Permission denied). But the run looped for 25 turns (~4.7¢) until the
         cycle limit forced sleep: 12 blocked `write_file` SOUL.md, 8 `update_soul` in one wake.
-  - [ ] **One-time setup tasks repeat on every wake** (the genesis prompt reads like a first-run script;
+  - [x] **One-time setup tasks repeat on every wake** (fixed, see CHANGELOG) (the genesis prompt reads like a first-run script;
         nothing says what is already done). Fix: soul version and last-wake reason in the wake-up status;
         reword the template as standing rules.
   - [ ] **SOUL.md block/not-found messages don't explain** that the soul is managed with

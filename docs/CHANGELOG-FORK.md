@@ -518,3 +518,15 @@
     since last load" was logged after every `update_soul`. Also found while planning: after the cycle
     limit the agent slept only 2 minutes, so the loop could restart until the daily cap.
   - Fixes follow in the next commits (owner-approved plan).
+- 2026-11-16: **One-time setup is not repeated on every wake** (run-3 fix B).
+  - The wake-up status now says what is already done (`src/agent/wake-state.ts`): "SOUL.md: exists,
+    version N, last updated <day> (view_soul / update_soul; don't rewrite it without a real change)"
+    or "SOUL.md: not written yet", and "Last wake ended: <reason> (<time> UTC)". The loop records
+    the wake start (kv `wake_cycle_started_at`, also used by the per-wake soul limit) and the reason
+    at every exit: agent chose sleep, cycle limit, idle, budget cap, loop enforcement, errors, etc.
+  - Testnet genesis prompt reworded from a first-run script into standing rules for every wake:
+    write SOUL.md only if the status says it is not written yet, otherwise don't rewrite it unless
+    something important changed; then sleep. Same limits as before (no earning, contacting,
+    installing or payments).
+  Tests: `status-snapshot` (+2), `loop` (wake start and end reason recorded). Baselines: Linux 1945
+  passed; Windows 1915 passed, 22 known failures, 8 skipped. `agent:verify` 111.

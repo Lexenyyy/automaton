@@ -12,6 +12,7 @@ import { getSurvivalTier } from "../conway/credits.js";
 import { formatBalance } from "../survival/balance.js";
 import { getActiveNetwork } from "../identity/network.js";
 import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
+import { getLastWakeEnd, getSoulState } from "./wake-state.js";
 
 export interface BudgetSnapshot {
   /** Exact spend in millicents (1/1000 cent). */
@@ -60,6 +61,15 @@ export function buildStatusSnapshot(params: {
   }
   lines.push(`Active heartbeats: ${heartbeats}`);
   lines.push(`Model: ${config.inferenceModel}`);
+  // Fork: what is already done, so one-time setup is not repeated every wake.
+  const soul = getSoulState(db.raw);
+  lines.push(
+    soul
+      ? `SOUL.md: exists, version ${soul.version}, last updated ${soul.updatedAt.slice(0, 10)} (view_soul / update_soul; don't rewrite it without a real change)`
+      : "SOUL.md: not written yet (write it with update_soul)",
+  );
+  const lastEnd = getLastWakeEnd(db.raw);
+  if (lastEnd) lines.push(`Last wake ended: ${lastEnd.reason} (${lastEnd.at.slice(0, 16).replace("T", " ")} UTC)`);
   return `--- STATUS (current, ${new Date().toISOString()}) ---
 ${lines.join("\n")}
 --- END STATUS ---

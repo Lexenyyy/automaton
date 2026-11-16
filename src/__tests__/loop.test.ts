@@ -137,6 +137,9 @@ describe("Agent Loop", () => {
 
     expect(db.getAgentState()).toBe("sleeping");
     expect(db.getKV("sleep_until")).toBeDefined();
+    // Fork: the wake start and why the wake ended are recorded for the next wake-up status.
+    expect(db.getKV("wake_cycle_started_at")).toBeDefined();
+    expect(JSON.parse(db.getKV("last_wake_end")!).reason).toBe("agent chose sleep");
   });
 
   it("budget stop: sleeps without calling the model when the daily cap is spent", async () => {
