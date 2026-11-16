@@ -30,7 +30,8 @@ const secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "automaton-verify-secre
 fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 
-const env = { ...process.env, AUTOMATON_SECRETS_DIR: secretsDir };
+const VERIFY_CREATOR = "0x000000000000000000000000000000000000dEaD";
+const env = { ...process.env, AUTOMATON_SECRETS_DIR: secretsDir, AUTOMATON_CREATOR_ADDRESS: VERIFY_CREATOR };
 delete env.AUTOMATON_MAINNET_APPROVED;
 
 const results = [];
@@ -319,6 +320,10 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
     preOut.includes("model gpt-4.1-mini: provider openai, key present"));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
+  check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
+  const preNoCreator = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_CREATOR_ADDRESS=", "runtime", "--preflight"]);
+  check("entrypoint", "--preflight refuses without a creator address",
+    preNoCreator.code !== 0 && (preNoCreator.out + preNoCreator.err).includes("No creator address"), `exit ${preNoCreator.code}`);
 
   const settingsShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "show"]);
   check("entrypoint", "owner command --settings show works; agent genesis changes OFF by default",

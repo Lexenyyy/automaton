@@ -12,6 +12,10 @@
 #   $env:AUTOMATON_SECRETS_DIR = "$env:USERPROFILE\.automaton-secrets"
 # File names: openai_api_key, anthropic_api_key, groq_api_key, together_api_key.
 # The folder is mounted read-only into the runtime only.
+#
+# Creator address (your own wallet; required, startup refuses without it):
+#   $env:AUTOMATON_CREATOR_ADDRESS = "0xYourAddress"
+# It overrides "creatorAddress" in the config template, which stays empty in the repo.
 
 name: automaton
 
@@ -57,6 +61,8 @@ services:
     mem_limit: 1g
     cpus: 1.0
     restart: "no"
+    environment:
+      AUTOMATON_CREATOR_ADDRESS: ${AUTOMATON_CREATOR_ADDRESS:-}
     volumes:
       - automaton-home:/home/automaton/.automaton
       - ./automaton.testnet.json:/home/automaton/.automaton/automaton.json:ro

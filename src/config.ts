@@ -10,6 +10,7 @@ import type { AutomatonConfig, TreasuryPolicy, ModelStrategyConfig, SoulConfig }
 import { DEFAULT_CONFIG, DEFAULT_TREASURY_POLICY, DEFAULT_MODEL_STRATEGY_CONFIG, DEFAULT_SOUL_CONFIG } from "./types.js";
 import { getAutomatonDir } from "./identity/wallet.js";
 import { loadApiKeyFromConfig } from "./identity/provision.js";
+import { resolveCreatorAddress } from "./identity/creator.js";
 import { createLogger } from "./observability/logger.js";
 import type { ChainType } from "./identity/chain.js";
 
@@ -73,6 +74,8 @@ export function loadConfig(): AutomatonConfig | null {
       modelStrategy,
       soulConfig,
       chainType: raw.chainType || "evm",
+      // Fork: AUTOMATON_CREATOR_ADDRESS (env) overrides the config field.
+      creatorAddress: resolveCreatorAddress(raw.creatorAddress),
     } as AutomatonConfig;
   } catch {
     return null;

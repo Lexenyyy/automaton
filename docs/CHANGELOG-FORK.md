@@ -367,3 +367,12 @@
   - Tests: `ledger-command` (10). `agent:verify` 100 checks (+3: `--ledger show`, `grant 5.00` persists,
     negative amount refused; throwaway volume only).
   - Baselines: Linux 1903 passed, 0 failed. Windows 1873 passed, 22 known failures, 8 Linux-only skipped.
+- 2026-11-16: **Fixes from the first testnet run** (owner-approved plan, one commit each).
+  - **Creator address from `AUTOMATON_CREATOR_ADDRESS`** (fix 5): the first run had the zero address.
+    The env value overrides `creatorAddress` in the config (`src/identity/creator.ts`); the Docker
+    template leaves it empty so the owner's address is not committed, and compose passes the variable
+    to the runtime only. `prepareRuntime` (`--run` and `--preflight`) refuses an empty, zero, malformed
+    or bad-checksum address; preflight prints the creator it uses. Tests: `creator-address` (4),
+    `conway-off` (+1). `agent:verify` +2 checks (creator from env; refusal without it).
+    Baselines: Linux 1908 passed, 0 failed. Windows 1878 passed, 22 known failures, 8 skipped.
+    `agent:verify` 102 checks.

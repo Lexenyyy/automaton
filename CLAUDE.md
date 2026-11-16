@@ -58,6 +58,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
 - **Secrets:** API keys are files in a folder outside the repo, set with
   `$env:AUTOMATON_SECRETS_DIR` (names: `openai_api_key`, `anthropic_api_key`, `groq_api_key`,
   `together_api_key`). Mounted read-only into the runtime only. Never read that folder.
+- **Creator address:** set `$env:AUTOMATON_CREATOR_ADDRESS` (the owner's own wallet). It overrides
+  `creatorAddress` in the template, which stays empty in the repo. `--preflight` and `--run` refuse to
+  start without a valid, non-zero address.
 - **Wallet:** in the `automaton_automaton-home` Docker volume, created with `pnpm agent:init`.
   `docker compose ... down -v` would delete it; `pnpm agent:down` keeps volumes.
 - **Conway off:** the template sets `"conway": "off"` (own providers only). No Conway key is needed

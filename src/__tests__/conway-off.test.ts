@@ -176,15 +176,20 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
   const savedHome = process.env.HOME;
   const savedOpenAi = process.env.OPENAI_API_KEY;
 
+  const savedCreator = process.env.AUTOMATON_CREATOR_ADDRESS;
+
   beforeEach(() => {
     home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "conway-off-home-")));
     process.env.HOME = home;
     delete process.env.AUTOMATON_RPC_URL;
+    delete process.env.AUTOMATON_CREATOR_ADDRESS;
     vi.resetModules();
   });
 
   afterEach(() => {
     process.env.HOME = savedHome;
+    if (savedCreator === undefined) delete process.env.AUTOMATON_CREATOR_ADDRESS;
+    else process.env.AUTOMATON_CREATOR_ADDRESS = savedCreator;
     if (savedOpenAi === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = savedOpenAi;
     fs.rmSync(home, { recursive: true, force: true });
@@ -269,5 +274,25 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
     await expect(prepareRuntime({ ...(await setup()), balanceSource: "conway" }, { preflight: true })).rejects.toThrow(
       /balanceSource "conway" needs Conway on/,
     );
+  });
+
+  it("refuses to start without a real creator address; the env value overrides the config", async () => {
+    stubFetch();
+    const { getWallet } = await import("../identity/wallet.js");
+    await getWallet();
+    const { prepareRuntime, runPreflight } = await import("../runtime/prepare.js");
+    const zero = "0x0000000000000000000000000000000000000000";
+    await expect(prepareRuntime({ ...(await setup()), creatorAddress: zero }, { preflight: true })).rejects.toThrow(
+      /zero address.*AUTOMATON_CREATOR_ADDRESS.*Refusing to start/,
+    );
+    const report = await runPreflight({ ...(await setup()), creatorAddress: "" });
+    expect(report.ok).toBe(false);
+    expect(report.lines.join("\n")).toMatch(/FAIL {2}startup: No creator address/);
+
+    process.env.AUTOMATON_CREATOR_ADDRESS = "0x000000000000000000000000000000000000dEaD";
+    const rt = await prepareRuntime({ ...(await setup()), creatorAddress: zero }, { preflight: true });
+    expect(rt.config.creatorAddress).toBe("0x000000000000000000000000000000000000dEaD");
+    expect(rt.db.getIdentity("creator")).toBe("0x000000000000000000000000000000000000dEaD");
+    rt.db.close();
   });
 });

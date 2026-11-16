@@ -27,6 +27,7 @@ import { createBuiltinTools } from "../agent/tools.js";
 import { applyAgentSettings } from "../agent/settings.js";
 import { activateNetwork, getActiveNetwork } from "../identity/network.js";
 import { isContainerSandbox } from "../sandbox/transport.js";
+import { resolveCreatorAddress, validateCreatorAddress } from "../identity/creator.js";
 import {
   filterToolsForConwayMode,
   isConwayHost,
@@ -106,6 +107,13 @@ export async function prepareRuntime(
   // Load wallet (chain-aware)
   const { account, chainIdentity, chainType: walletChainType } = await getWallet();
   const resolvedChainType: ChainType = config.chainType || walletChainType || "evm";
+
+  // Fork: refuse to start without a real creator address (env or config).
+  config.creatorAddress = resolveCreatorAddress(config.creatorAddress);
+  const creatorError = validateCreatorAddress(config.creatorAddress, resolvedChainType);
+  if (creatorError) {
+    throw new Error(`${creatorError} Refusing to start.`);
+  }
 
   // EVM network: testnet unless mainnet is set AND approved by the owner (fork change 2).
   // Throws (refuses to start) on mainnet without approval or an unknown value.
@@ -329,6 +337,7 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
   try {
     line(true, `network: ${getActiveNetwork().label}, RPC chain id verified (${rt.rpcUrlChecked ? "read-only call" : "skipped"})`);
     line(true, `wallet: ${rt.identity.address}`);
+    line(true, `creator: ${rt.config.creatorAddress}`);
     line(true, `Conway: ${rt.conwayMode}${rt.conwayMode === "off" ? " (own providers only; no Conway requests)" : ""}`);
     line(true, `database: ${rt.db.raw.name}`);
 
