@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -725,6 +725,34 @@ export const MIGRATION_V13 = `
   CREATE TRIGGER IF NOT EXISTS agent_settings_changes_no_delete BEFORE DELETE ON agent_settings_changes
   BEGIN SELECT RAISE(ABORT, 'agent_settings_changes is append-only'); END;
 `;
+
+// === Fork Phase 1 (fix 6): sub-cent amounts in millicents (1/1000 cent) ===
+// Added as nullable columns: older rows have NULL and count as cents × 1000,
+// so no existing row is changed (the ledger stays append-only). New rows keep
+// the cents column as the millicent amount rounded away from zero, so the
+// existing sign CHECKs still hold. Applied per column (see database.ts), so a
+// rerun is harmless.
+export const MIGRATION_V14_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: "inference_costs", column: "cost_mc", definition: "INTEGER CHECK(cost_mc IS NULL OR cost_mc >= 0)" },
+  {
+    table: "ledger_entries",
+    column: "amount_mc",
+    definition: "INTEGER CHECK(amount_mc IS NULL OR (amount_mc <> 0 AND (amount_mc > 0) = (amount_cents > 0)))",
+  },
+];
+
+/** Applies V14: adds each millicent column where the table exists and the column is missing. */
+export function applyMigrationV14(db: {
+  prepare(sql: string): { all(): unknown[] };
+  exec(sql: string): unknown;
+}): void {
+  for (const c of MIGRATION_V14_COLUMNS) {
+    const cols = db.prepare(`PRAGMA table_info(${c.table})`).all() as { name: string }[];
+    if (cols.length > 0 && !cols.some((x) => x.name === c.column)) {
+      db.exec(`ALTER TABLE ${c.table} ADD COLUMN ${c.column} ${c.definition}`);
+    }
+  }
+}
 
 export const MIGRATION_V10 = `
   -- Schema version: 10

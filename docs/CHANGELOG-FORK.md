@@ -442,3 +442,24 @@
     Tests: `tool-allowlist` (3), `conway-off` (+allowlist refusal). The template's own list is
     checked by `agent:verify` (preflight). Baselines: Linux 1924 passed; Windows 1894 passed, 22
     known failures, 8 skipped. `agent:verify` 106.
+  - **Sub-cent accounting in millicents** (fix 6, owner-approved change to spending-limit code): every
+    call was rounded up to a whole cent, so the first run's ledger showed $0.06 for about $0.02 of
+    real spend. Amounts are now exact in millicents (1 mc = 1/1000 cent = $0.00001), rounded up per
+    call, so the ledger can still never show less than the real cost.
+    - Schema V14 (`applyMigrationV14`): nullable `inference_costs.cost_mc` and
+      `ledger_entries.amount_mc`, added only where missing. No existing row is changed (the ledger
+      stays append-only); older rows count as cents × 1000. New rows keep the cents column as the mc
+      amount rounded away from zero, so the existing sign CHECKs hold; a new CHECK keeps the mc sign
+      equal to the cents sign. `insertLedgerEntry` refuses an inconsistent pair.
+    - Pricing: `costMcCeil` (metered client: orchestrator, workers) and `costMcFromPer1k` (router:
+      main loop) compute estimates and actual costs in mc; `recordCost` stores both units.
+    - Caps: the per-call, hourly, daily, session and lifetime checks, and the in-flight reservations,
+      are compared exactly in mc against the owner's cent caps (cap values unchanged; no cap
+      loosened). Cents helpers round spend UP and the ledger balance DOWN.
+    - Display: `pnpm agent:ledger`, the wake-up status and `check_balance` show exact amounts
+      (e.g. `-$0.00312`); whole-cent amounts still print as `$5.00`.
+    - Prompt caching discounts (cached input tokens) are not used to lower the recorded cost: it
+      stays conservative.
+    Tests: `sub-cent-accounting` (10); `ledger`, `inference-router` and others updated for the
+    exact amounts. Baselines: Linux 1934 passed; Windows 1904 passed, 22 known failures, 8 skipped.
+    `agent:verify` 106.

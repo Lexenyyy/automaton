@@ -32,17 +32,17 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline at the `agent:ledger` commit
-  (Phase 1): 1903 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after the first-run fixes
+  (Phase 1, sub-cent accounting): 1934 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1873 passed, 22 failed and 8 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1904 passed, 22 failed and 8 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
   sockets, `/bin/sh`). Any other Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (100 checks at the `agent:ledger` commit).
+  (106 checks after the first-run fixes).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -101,7 +101,7 @@ Two containers from `docker/compose.agent.yml`, testnet only:
 - Much safety already exists: policy engine (6 rule categories), treasury limits, path
   protection, injection defense, inference budget tracker. See ARCHITECTURE.md "Security Model".
 - ~~**Balance depends on Conway**~~ Resolved in change 3: survival tiers use `src/survival/balance.ts`
-  (default `balanceSource: "own"` = wallet USDC on the active network + append-only `ledger_entries`).
+  (default `balanceSource: "own"` = wallet USDC on the active network + append-only `ledger_entries`, exact in millicents since fix 6).
   Conway credits only with `balanceSource: "conway"`. A lifetime real-money inference cap
   (`modelStrategy.lifetimeBudgetCents`, default 500) is enforced from the ledger.
 - ~~**Mainnet is hardcoded**~~ Resolved in change 2: `src/identity/network.ts` makes Base Sepolia the

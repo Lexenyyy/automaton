@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import type BetterSqlite3 from "better-sqlite3";
-import { MIGRATION_V6, MIGRATION_V12 } from "../state/schema.js";
+import { MIGRATION_V6, MIGRATION_V12, applyMigrationV14 } from "../state/schema.js";
 import {
   inferenceInsertCost,
   inferenceGetSessionCosts,
@@ -42,6 +42,7 @@ function createTestDb(): BetterSqlite3.Database {
   testDb.pragma("foreign_keys = ON");
   testDb.exec(MIGRATION_V6);
   testDb.exec(MIGRATION_V12); // ledger (fork change 3): recordCost also writes a ledger debit
+  applyMigrationV14(testDb);
   return testDb;
 }
 
@@ -1061,8 +1062,9 @@ describe("daily inference cap", () => {
   });
 
   it("estimate uses the routing preference's maxTokens, not a fixed 1000", async () => {
-    // high/planning: gpt-4.1-mini, maxTokens 8192 -> output estimate 8192*16/100000 = 1.31c -> 2c.
-    // With the old fixed 1000-token estimate this would be 1c and pass a 1c ceiling.
+    // high/planning: gpt-4.1-mini, maxTokens 8192 -> output estimate 8192*16/100000 = 1.31c
+    // (exact in millicents since fix 6; before it was rounded up to 2c).
+    // With the old fixed 1000-token estimate this would be ~0.16c and pass a 1c ceiling.
     const tracker = new InferenceBudgetTracker(db, {
       ...DEFAULT_MODEL_STRATEGY_CONFIG,
       perCallCeilingCents: 1,
@@ -1075,7 +1077,7 @@ describe("daily inference cap", () => {
       async () => ({ message: { content: "x" }, usage: { promptTokens: 1, completionTokens: 1 }, finishReason: "stop" }),
     );
     expect(result.finishReason).toBe("budget_exceeded");
-    expect(result.content).toContain("Per-call cost 2c");
+    expect(result.content).toMatch(/Per-call cost 1\.31\dc exceeds ceiling of 1c/);
   });
 
   describe("resolveDailyInferenceCap", () => {

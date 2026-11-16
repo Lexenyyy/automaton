@@ -305,12 +305,12 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
       execute: async (_args, ctx) => {
         const s = await readSurvivalBalance(ctx);
         const { getSurvivalTier } = await import("../conway/credits.js");
-        const { getLifetimeInferenceCostCents } = await import("../state/ledger.js");
+        const { getLifetimeInferenceCostMc, formatUsdMc } = await import("../state/ledger.js");
         const { formatBalance } = await import("../survival/balance.js");
         const tier = s.balanceStatus === "unavailable" ? "unknown (balance could not be read)" : getSurvivalTier(s.creditsCents);
         let lifetime = "";
         try {
-          lifetime = ` | lifetime inference spend: $${(getLifetimeInferenceCostCents(ctx.db.raw) / 100).toFixed(2)}`;
+          lifetime = ` | lifetime inference spend: ${formatUsdMc(getLifetimeInferenceCostMc(ctx.db.raw))}`;
         } catch {
           // ledger not available
         }

@@ -11,16 +11,20 @@ import type { AutomatonConfig, AutomatonDatabase, FinancialState, ToolCallResult
 import { getSurvivalTier } from "../conway/credits.js";
 import { formatBalance } from "../survival/balance.js";
 import { getActiveNetwork } from "../identity/network.js";
+import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
 
 export interface BudgetSnapshot {
-  dailySpentCents: number;
+  /** Exact spend in millicents (1/1000 cent). */
+  dailySpentMc: number;
   dailyCapCents: number;
-  lifetimeSpentCents: number;
+  lifetimeSpentMc: number;
   lifetimeCapCents: number;
 }
 
-const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-const ofCap = (spent: number, cap: number) => (cap > 0 ? `${usd(spent)} of ${usd(cap)} cap` : `${usd(spent)} (no cap)`);
+const ofCap = (spentMc: number, capCents: number) =>
+  capCents > 0
+    ? `${formatUsdMc(spentMc)} of ${formatUsdMc(capCents * MC_PER_CENT)} cap`
+    : `${formatUsdMc(spentMc)} (no cap)`;
 
 /** Status block for the wake-up message. Never includes keys or the sandbox ID. */
 export function buildStatusSnapshot(params: {
@@ -45,8 +49,8 @@ export function buildStatusSnapshot(params: {
     `Network: ${network}`,
   ];
   if (budget) {
-    lines.push(`Inference today: ${ofCap(budget.dailySpentCents, budget.dailyCapCents)}`);
-    lines.push(`Inference lifetime: ${ofCap(budget.lifetimeSpentCents, budget.lifetimeCapCents)}`);
+    lines.push(`Inference today: ${ofCap(budget.dailySpentMc, budget.dailyCapCents)}`);
+    lines.push(`Inference lifetime: ${ofCap(budget.lifetimeSpentMc, budget.lifetimeCapCents)}`);
   }
   let heartbeats = 0;
   try {

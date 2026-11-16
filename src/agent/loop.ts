@@ -426,9 +426,9 @@ export async function runAgentLoop(
     financial,
     db,
     budget: {
-      dailySpentCents: budgetTracker.getDailyCost(),
+      dailySpentMc: budgetTracker.getDailyCostMc(),
       dailyCapCents: budgetTracker.config.dailyBudgetCents,
-      lifetimeSpentCents: budgetTracker.getLifetimeCost(),
+      lifetimeSpentMc: budgetTracker.getLifetimeCostMc(),
       lifetimeCapCents: budgetTracker.config.lifetimeBudgetCents,
     },
   });

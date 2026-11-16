@@ -48,6 +48,7 @@ import {
   MIGRATION_V11,
   MIGRATION_V12,
   MIGRATION_V13,
+  applyMigrationV14,
 } from "./schema.js";
 import type {
   RiskLevel,
@@ -634,6 +635,11 @@ function applyMigrations(db: DatabaseType): void {
     {
       version: 13,
       apply: () => db.exec(MIGRATION_V13),
+    },
+    {
+      // Fork fix 6: millicent columns (only added where missing).
+      version: 14,
+      apply: () => applyMigrationV14(db),
     },
   ];
 
@@ -2082,8 +2088,8 @@ function deserializeRelationshipRow(row: any): RelationshipMemoryEntry {
 export function inferenceInsertCost(db: DatabaseType, row: Omit<InferenceCostRow, "id" | "createdAt">): string {
   const id = ulid();
   db.prepare(
-    `INSERT INTO inference_costs (id, session_id, turn_id, model, provider, input_tokens, output_tokens, cost_cents, latency_ms, tier, task_type, cache_hit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO inference_costs (id, session_id, turn_id, model, provider, input_tokens, output_tokens, cost_cents, cost_mc, latency_ms, tier, task_type, cache_hit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     row.sessionId,
@@ -2093,6 +2099,7 @@ export function inferenceInsertCost(db: DatabaseType, row: Omit<InferenceCostRow
     row.inputTokens,
     row.outputTokens,
     row.costCents,
+    row.costMc ?? row.costCents * 1000,
     row.latencyMs,
     row.tier,
     row.taskType,
@@ -2108,7 +2115,11 @@ export function inferenceGetSessionCosts(db: DatabaseType, sessionId: string): I
   return rows.map(deserializeInferenceCostRow);
 }
 
-export function inferenceGetDailyCost(db: DatabaseType, date?: string): number {
+// Fork fix 6: sums are exact in millicents; rows from before schema V14 have
+// no cost_mc and count as cost_cents × 1000. The *Cost (cents) helpers round UP.
+const COST_MC_SQL = "COALESCE(cost_mc, cost_cents * 1000)";
+
+export function inferenceGetDailyCostMc(db: DatabaseType, date?: string): number {
   const targetDate = date || new Date().toISOString().slice(0, 10);
   // Compute the next day to use as exclusive upper bound, avoiding the off-by-one
   // that missed records created at exactly 23:59:59 or fractional seconds after it.
@@ -2117,34 +2128,46 @@ export function inferenceGetDailyCost(db: DatabaseType, date?: string): number {
   const nextDate = d.toISOString().slice(0, 10);
   const row = db
     .prepare(
-      "SELECT COALESCE(SUM(cost_cents), 0) as total FROM inference_costs WHERE created_at >= ? AND created_at < ?",
+      `SELECT COALESCE(SUM(${COST_MC_SQL}), 0) as total FROM inference_costs WHERE created_at >= ? AND created_at < ?`,
     )
     .get(`${targetDate} 00:00:00`, `${nextDate} 00:00:00`) as { total: number };
   return row.total;
 }
 
-export function inferenceGetHourlyCost(db: DatabaseType): number {
+export function inferenceGetDailyCost(db: DatabaseType, date?: string): number {
+  return Math.ceil(inferenceGetDailyCostMc(db, date) / 1000);
+}
+
+export function inferenceGetHourlyCostMc(db: DatabaseType): number {
   const now = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
   const hourStart = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:00:00`;
   const row = db
     .prepare(
-      "SELECT COALESCE(SUM(cost_cents), 0) as total FROM inference_costs WHERE created_at >= ?",
+      `SELECT COALESCE(SUM(${COST_MC_SQL}), 0) as total FROM inference_costs WHERE created_at >= ?`,
     )
     .get(hourStart) as { total: number };
   return row.total;
 }
 
-export function inferenceGetModelCosts(db: DatabaseType, model: string, days?: number): { totalCents: number; callCount: number } {
+export function inferenceGetHourlyCost(db: DatabaseType): number {
+  return Math.ceil(inferenceGetHourlyCostMc(db) / 1000);
+}
+
+export function inferenceGetModelCosts(
+  db: DatabaseType,
+  model: string,
+  days?: number,
+): { totalCents: number; totalMc: number; callCount: number } {
   const since = days
     ? new Date(Date.now() - days * 86400000).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "")
     : "1970-01-01 00:00:00";
   const row = db
     .prepare(
-      "SELECT COALESCE(SUM(cost_cents), 0) as total, COUNT(*) as count FROM inference_costs WHERE model = ? AND created_at >= ?",
+      `SELECT COALESCE(SUM(${COST_MC_SQL}), 0) as total, COUNT(*) as count FROM inference_costs WHERE model = ? AND created_at >= ?`,
     )
     .get(model, since) as { total: number; count: number };
-  return { totalCents: row.total, callCount: row.count };
+  return { totalCents: Math.ceil(row.total / 1000), totalMc: row.total, callCount: row.count };
 }
 
 export function inferencePruneCosts(db: DatabaseType, retentionDays: number): number {
@@ -2228,6 +2251,7 @@ function deserializeInferenceCostRow(row: any): InferenceCostRow {
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     costCents: row.cost_cents,
+    costMc: row.cost_mc ?? row.cost_cents * 1000,
     latencyMs: row.latency_ms,
     tier: row.tier,
     taskType: row.task_type,

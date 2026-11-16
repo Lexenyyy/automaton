@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import type BetterSqlite3 from "better-sqlite3";
-import { MIGRATION_V6, MIGRATION_V12 } from "../state/schema.js";
+import { MIGRATION_V6, MIGRATION_V12, applyMigrationV14 } from "../state/schema.js";
 import { getLedgerBalanceCents, getRecentLedgerEntries, insertLedgerEntry } from "../state/ledger.js";
 import { parseDollarsToCents, runLedgerCommand, LEDGER_USAGE } from "../state/ledger-command.js";
 
@@ -17,6 +17,7 @@ beforeEach(() => {
   db = new Database(":memory:");
   db.exec(MIGRATION_V6);
   db.exec(MIGRATION_V12);
+  applyMigrationV14(db);
 });
 
 afterEach(() => db.close());

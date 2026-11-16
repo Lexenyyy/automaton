@@ -5,17 +5,18 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import type BetterSqlite3 from "better-sqlite3";
-import { MIGRATION_V6, MIGRATION_V12 } from "../state/schema.js";
+import { MIGRATION_V6, MIGRATION_V12, applyMigrationV14 } from "../state/schema.js";
 import {
   insertLedgerEntry,
   getLedgerBalanceCents,
   getLifetimeInferenceCostCents,
   getUncountedCurrencyCount,
   getLedgerTotalsByKind,
+  getLifetimeInferenceCostMc,
 } from "../state/ledger.js";
 import { InferenceBudgetTracker } from "../inference/budget.js";
 import { DEFAULT_MODEL_STRATEGY_CONFIG } from "../inference/types.js";
-import { inferenceInsertCost, inferencePruneCosts } from "../state/database.js";
+import { inferenceGetDailyCostMc, inferencePruneCosts } from "../state/database.js";
 import { createTestDb as createFullTestDb } from "./mocks.js";
 
 let db: BetterSqlite3.Database;
@@ -24,6 +25,7 @@ beforeEach(() => {
   db = new Database(":memory:");
   db.exec(MIGRATION_V6);
   db.exec(MIGRATION_V12);
+  applyMigrationV14(db);
 });
 
 afterEach(() => db.close());
@@ -110,10 +112,19 @@ describe("inference costs go to the ledger", () => {
   it("the migration backfills earlier inference costs", () => {
     const fresh = new Database(":memory:");
     fresh.exec(MIGRATION_V6);
-    inferenceInsertCost(fresh, cost(7));
-    inferenceInsertCost(fresh, cost(0));
+    // Rows as written before the ledger and before millicents (no cost_mc column).
+    const legacy = fresh.prepare(
+      `INSERT INTO inference_costs (id, session_id, turn_id, model, provider, input_tokens, output_tokens, cost_cents, latency_ms, tier, task_type, cache_hit)
+       VALUES (?, 's', NULL, 'gpt-4.1-mini', 'openai', 1, 1, ?, 1, 'normal', 'agent_turn', 0)`,
+    );
+    legacy.run("old-1", 7);
+    legacy.run("old-2", 0);
     fresh.exec(MIGRATION_V12);
+    applyMigrationV14(fresh);
+    // Old rows have no amount_mc / cost_mc and count as cents × 1000.
     expect(getLifetimeInferenceCostCents(fresh)).toBe(7);
+    expect(getLifetimeInferenceCostMc(fresh)).toBe(7000);
+    expect(inferenceGetDailyCostMc(fresh, "2000-01-01")).toBe(0);
     fresh.close();
   });
 });

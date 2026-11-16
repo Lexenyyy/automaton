@@ -21,8 +21,21 @@ import type {
 import { ModelRegistry } from "./registry.js";
 import { InferenceBudgetTracker } from "./budget.js";
 import { DEFAULT_ROUTING_MATRIX, TASK_TIMEOUTS } from "./types.js";
+import { MC_PER_CENT } from "../state/ledger.js";
 
 type Database = BetterSqlite3.Database;
+
+/**
+ * Cost in millicents (1/1000 cent), rounded UP (fork fix 6). costPer1k* are
+ * hundredths of a cent per 1k tokens, so tokens × costPer1k / 100 is millicents.
+ */
+export function costMcFromPer1k(
+  inputTokens: number,
+  outputTokens: number,
+  model: Pick<ModelEntry, "costPer1kInput" | "costPer1kOutput">,
+): number {
+  return Math.ceil((inputTokens * model.costPer1kInput + outputTokens * model.costPer1kOutput) / 100);
+}
 
 export class InferenceRouter {
   private db: Database;
@@ -69,14 +82,12 @@ export class InferenceRouter {
     const toolChars = tools && tools.length > 0 ? JSON.stringify(tools).length : 0;
     const estimatedTokens =
       (messages.reduce((sum, m) => sum + (m.content?.length || 0), 0) + toolChars) / 4;
-    const estimatedCostCents = Math.ceil(
-      (estimatedTokens / 1000) * model.costPer1kInput / 100 +
-      maxTokens / 1000 * model.costPer1kOutput / 100,
-    );
+    // Fork fix 6: in millicents, rounded up (was whole cents).
+    const estimatedCostMc = costMcFromPer1k(estimatedTokens, maxTokens, model);
 
     // 3. Check every cap (incl. session) and reserve the estimate until the
     //    cost is recorded, so parallel calls can't overspend together.
-    const reservation = this.budget.tryReserve(estimatedCostCents, model.modelId, request.sessionId);
+    const reservation = this.budget.tryReserve(estimatedCostMc / MC_PER_CENT, model.modelId, request.sessionId);
     if (!reservation.allowed) {
       const reason = reservation.reason;
       return {
@@ -152,10 +163,10 @@ export class InferenceRouter {
     // 7. Calculate actual cost
     const inputTokens = response.usage?.promptTokens || 0;
     const outputTokens = response.usage?.completionTokens || 0;
-    const actualCostCents = Math.ceil(
-      (inputTokens / 1000) * model.costPer1kInput / 100 +
-      (outputTokens / 1000) * model.costPer1kOutput / 100,
-    );
+    // Fork fix 6: exact cost in millicents, rounded up per call; the cents
+    // value is that rounded up (display, turns table).
+    const actualCostMc = costMcFromPer1k(inputTokens, outputTokens, model);
+    const actualCostCents = Math.ceil(actualCostMc / MC_PER_CENT);
 
     // 8. Record cost
     this.budget.recordCost({
@@ -166,6 +177,7 @@ export class InferenceRouter {
       inputTokens,
       outputTokens,
       costCents: actualCostCents,
+      costMc: actualCostMc,
       latencyMs,
       tier,
       taskType,
@@ -180,6 +192,7 @@ export class InferenceRouter {
       inputTokens,
       outputTokens,
       costCents: actualCostCents,
+      costMc: actualCostMc,
       latencyMs,
       toolCalls: response.toolCalls,
       finishReason: response.finishReason || "stop",

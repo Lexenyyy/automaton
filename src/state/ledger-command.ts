@@ -12,9 +12,10 @@
 import type BetterSqlite3 from "better-sqlite3";
 import {
   insertLedgerEntry,
-  getLedgerBalanceCents,
+  formatUsdMc,
+  getLedgerBalanceMc,
   getLedgerTotalsByKind,
-  getLifetimeInferenceCostCents,
+  getLifetimeInferenceCostMc,
   getRecentLedgerEntries,
   getUncountedCurrencyCount,
 } from "./ledger.js";
@@ -50,7 +51,7 @@ export function runLedgerCommand(
   const sub = args[0];
   const memoIndex = args.indexOf("--memo");
   const memo = memoIndex >= 0 ? args[memoIndex + 1] : undefined;
-  const balance = () => usd(getLedgerBalanceCents(db, { liveOnly: opts.liveOnly }));
+  const balance = () => formatUsdMc(getLedgerBalanceMc(db, { liveOnly: opts.liveOnly }));
 
   switch (sub) {
     case "grant": {
@@ -74,15 +75,15 @@ export function runLedgerCommand(
       const lines: string[] = [];
       lines.push(`\nLedger (${opts.liveOnly ? "mainnet: real money only" : "testnet: all entries"})`);
       lines.push(`  Balance:                 ${balance()}`);
-      lines.push(`  Lifetime inference cost: ${usd(getLifetimeInferenceCostCents(db))}`);
+      lines.push(`  Lifetime inference cost: ${formatUsdMc(getLifetimeInferenceCostMc(db))}`);
       for (const t of getLedgerTotalsByKind(db)) {
-        lines.push(`  ${t.kind.padEnd(18)} ${usd(t.totalCents).padStart(10)}  (${t.count})`);
+        lines.push(`  ${t.kind.padEnd(18)} ${formatUsdMc(t.totalMc).padStart(10)}  (${t.count})`);
       }
       const uncounted = getUncountedCurrencyCount(db);
       if (uncounted > 0) lines.push(`  Warning: ${uncounted} non-USD entries are not counted.`);
       lines.push("\nRecent entries");
       for (const e of getRecentLedgerEntries(db, 15)) {
-        lines.push(`  ${e.recordedAt}  ${e.kind.padEnd(16)} ${usd(e.amountCents).padStart(9)} ${e.currency}${e.livemode ? "" : " (test)"}  ${e.memo}`);
+        lines.push(`  ${e.recordedAt}  ${e.kind.padEnd(16)} ${formatUsdMc(e.amountMc).padStart(9)} ${e.currency}${e.livemode ? "" : " (test)"}  ${e.memo}`);
       }
       lines.push("");
       return { code: 0, output: lines.join("\n") };

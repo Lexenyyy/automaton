@@ -15,6 +15,7 @@
 
 import type { InferenceTaskType } from "../types.js";
 import type { InferenceBudgetTracker } from "./budget.js";
+import { MC_PER_CENT } from "../state/ledger.js";
 import type {
   UnifiedChatDirectParams,
   UnifiedChatParams,
@@ -91,7 +92,7 @@ export class MeteredInferenceClient implements MeteredInference {
     const bounded = this.admit(params, plan, `tier:${params.tier}`);
     try {
       const result = await this.inner.chat(bounded.params);
-      this.record(result, params.tier, bounded.estimateCents);
+      this.record(result, params.tier, bounded.estimateMc);
       return result;
     } finally {
       bounded.release();
@@ -106,7 +107,7 @@ export class MeteredInferenceClient implements MeteredInference {
     const bounded = this.admit(params, plan, params.modelId);
     try {
       const result = await this.inner.chatDirect(bounded.params);
-      this.record(result, found?.model.tier ?? "unknown", bounded.estimateCents);
+      this.record(result, found?.model.tier ?? "unknown", bounded.estimateMc);
       return result;
     } finally {
       bounded.release();
@@ -122,7 +123,7 @@ export class MeteredInferenceClient implements MeteredInference {
     params: P,
     plan: CallPlan,
     modelLabel: string,
-  ): { params: P; estimateCents: number; release: () => void } {
+  ): { params: P; estimateMc: number; release: () => void } {
     const inputTokens = estimateInputTokens(params);
     const inCents = centsPerToken(plan.price.input);
     const outCents = centsPerToken(plan.price.output);
@@ -132,16 +133,15 @@ export class MeteredInferenceClient implements MeteredInference {
       maxTokens = this.defaultOutputCap(inputTokens * inCents, outCents, plan.maxOutputTokens);
     }
 
-    const estimateCents = plan.free
-      ? 0
-      : Math.ceil(inputTokens * inCents + maxTokens * outCents);
+    // Fork fix 6: worst case in millicents, rounded up (was whole cents).
+    const estimateMc = plan.free ? 0 : costMcCeil(inputTokens, maxTokens, plan.price);
 
-    const reservation = this.budget.tryReserve(estimateCents, modelLabel, this.sessionId());
+    const reservation = this.budget.tryReserve(estimateMc / MC_PER_CENT, modelLabel, this.sessionId());
     if (!reservation.allowed) {
       throw new InferenceBudgetExceededError(reservation.reason);
     }
 
-    return { params: { ...params, maxTokens }, estimateCents, release: reservation.release };
+    return { params: { ...params, maxTokens }, estimateMc, release: reservation.release };
   }
 
   /**
@@ -164,7 +164,7 @@ export class MeteredInferenceClient implements MeteredInference {
     return Math.max(1, Math.min(limit, tokens));
   }
 
-  private record(result: UnifiedInferenceResult, tier: string, estimateCents: number): void {
+  private record(result: UnifiedInferenceResult, tier: string, estimateMc: number): void {
     const found = this.findModel(result.metadata.providerId, result.metadata.modelId);
     const free = found ? isFreeProvider(found.provider) : false;
     const price = found ? effectivePrice(found.provider, found.model) : getHighestBuiltinPrice();
@@ -172,17 +172,17 @@ export class MeteredInferenceClient implements MeteredInference {
     const inputTokens = result.usage?.inputTokens ?? 0;
     const outputTokens = result.usage?.outputTokens ?? 0;
 
-    let costCents = 0;
+    // Fork fix 6: exact cost in millicents, rounded up per call.
+    let costMc = 0;
     if (!free) {
-      costCents = Math.ceil(
-        inputTokens * centsPerToken(price.input) + outputTokens * centsPerToken(price.output),
-      );
+      costMc = costMcCeil(inputTokens, outputTokens, price);
       // A paid call that reports no usage (e.g. a stream without a usage
       // chunk) is charged at its estimate, never 0.
       if (inputTokens === 0 && outputTokens === 0) {
-        costCents = estimateCents;
+        costMc = estimateMc;
       }
     }
+    const costCents = Math.ceil(costMc / MC_PER_CENT);
 
     this.budget.recordCost(
       {
@@ -193,6 +193,7 @@ export class MeteredInferenceClient implements MeteredInference {
         inputTokens,
         outputTokens,
         costCents,
+        costMc,
         latencyMs: result.metadata.latencyMs,
         tier,
         taskType: this.options.taskType,
@@ -250,6 +251,14 @@ export class MeteredInferenceClient implements MeteredInference {
 /** Dollars per 1M tokens → cents per token. */
 function centsPerToken(dollarsPerMillion: number): number {
   return dollarsPerMillion / 10_000;
+}
+
+/**
+ * Cost in millicents (1/1000 cent), rounded UP. Prices are dollars per 1M
+ * tokens, so one token costs price / 10 millicents.
+ */
+export function costMcCeil(inputTokens: number, outputTokens: number, price: Price): number {
+  return Math.ceil((inputTokens * price.input + outputTokens * price.output) / 10);
 }
 
 function isFreeProvider(provider: ProviderConfig): boolean {

@@ -1282,6 +1282,8 @@ export interface InferenceResult {
   inputTokens: number;
   outputTokens: number;
   costCents: number;
+  /** Exact cost in millicents (fork fix 6); costCents is this rounded up. */
+  costMc?: number;
   latencyMs: number;
   toolCalls?: unknown[];
   finishReason: string;
@@ -1295,7 +1297,13 @@ export interface InferenceCostRow {
   provider: string;
   inputTokens: number;
   outputTokens: number;
+  /** Whole cents, rounded up from costMc (display and older readers). */
   costCents: number;
+  /**
+   * Exact cost in millicents (1/1000 cent), rounded up per call (fork fix 6).
+   * Absent when writing = costCents × 1000. Budget caps and the ledger use it.
+   */
+  costMc?: number;
   latencyMs: number;
   tier: string;
   taskType: string;

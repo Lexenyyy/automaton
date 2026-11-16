@@ -16,7 +16,7 @@ const financial: FinancialState = {
   lastChecked: new Date().toISOString(),
 } as FinancialState;
 
-const budget = { dailySpentCents: 6, dailyCapCents: 100, lifetimeSpentCents: 6, lifetimeCapCents: 500 };
+const budget = { dailySpentMc: 6000, dailyCapCents: 100, lifetimeSpentMc: 6000, lifetimeCapCents: 500 };
 
 describe("status in the wake-up message", () => {
   let db: AutomatonDatabase;
