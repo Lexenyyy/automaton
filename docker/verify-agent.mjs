@@ -429,6 +429,32 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const failOneoff = oneoff(["--", "--ledger", "grant", "-5"]);
   check("one-off commands", "passes the runtime's exit code through", failOneoff.status === 1, `exit ${failOneoff.status}`);
 
+  // ─── graceful stop (pnpm agent:down) ─────────────────────────
+  // Stand-ins for an agent:run runtime: one-off `compose run` containers of the
+  // runtime service (the real agent is never started here). The sandbox is running.
+  console.log("agent:verify: down command ...");
+  const downScript = path.join(ROOT, "docker", "down-agent.mjs");
+  const down = (extra = []) => spawnSync(process.execPath, [downScript, "--project", PROJECT, ...extra], { encoding: "utf-8", env, timeout: 180_000 });
+  const standIn = (name, code) =>
+    docker([...COMPOSE, "run", "-d", "--name", name, "--entrypoint", "node", "runtime", "-e", code], { allowFail: false });
+  const projectContainers = () => docker(["ps", "-a", "-q", "--filter", `label=com.docker.compose.project=${PROJECT}`]).out.trim();
+  const egressNetwork = () => docker(["network", "ls", "-q", "--filter", `name=^${PROJECT}_egress$`]).out.trim();
+
+  standIn(`${PROJECT}-graceful`, "process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)");
+  const d1 = down();
+  check("down command", "stops a one-off runtime (agent:run) with SIGTERM: exit 0, not killed",
+    d1.status === 0 && d1.stdout.includes(`${PROJECT}-graceful stopped gracefully (exit 0)`), (d1.stdout + d1.stderr).trim());
+  check("down command", "nothing of the project is left (sandbox included)", projectContainers() === "", projectContainers());
+  check("down command", "the network is removed (no 'resource still in use')", egressNetwork() === "", egressNetwork());
+  const volsAfterDown = docker(["volume", "ls", "-q", "--filter", `name=${PROJECT}_`]).out.split(/\s+/);
+  check("down command", "volumes are kept", ["automaton-home", "agent-workspace", "sandbox-socket", "sandbox-home"].every((v) => volsAfterDown.includes(`${PROJECT}_${v}`)), volsAfterDown.join(","));
+
+  docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
+  standIn(`${PROJECT}-stubborn`, "setInterval(()=>{},1000)"); // PID 1 without a handler ignores SIGTERM
+  const d2 = down(["--timeout", "3"]);
+  check("down command", "a runtime that ignores SIGTERM is force-stopped at the timeout and reported (exit 1)",
+    d2.status === 1 && d2.stderr.includes("was force-stopped (exit 137)") && projectContainers() === "", (d2.stdout + d2.stderr).trim());
+
   exitCode = results.every((r) => r.ok) ? 0 : 1;
 } catch (err) {
   check("verify", "script error", false, err.message);

@@ -101,7 +101,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         `c086b54`, `c745d95`, `922d138` (see CHANGELOG-FORK.md).
   - [x] **Second real run** (after `922d138`). 2 turns, ~3k tokens each; SOUL.md written with
         `update_soul`; `write_file` to SOUL.md correctly blocked; slept on its own; cost $0.00311.
-  - [ ] **`agent:down` leaves the `agent:run` runtime running** ("network still in use"; needed
+  - [x] **`agent:down` leaves the `agent:run` runtime running** (fixed, see CHANGELOG) ("network still in use"; needed
         `agent:kill`). Fix: graceful stop of one-off runtime containers, waiting for in-flight model calls
         to be recorded.
   - [ ] **Stale status facts.** `system_synopsis` / balance outputs were saved as long-term facts

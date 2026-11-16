@@ -24,6 +24,8 @@ import {
   getLifetimeInferenceCostMc,
 } from "../state/ledger.js";
 
+import { isInferenceShuttingDown, trackInferenceCall } from "./in-flight.js";
+
 type Database = BetterSqlite3.Database;
 
 /**
@@ -89,6 +91,10 @@ export class InferenceBudgetTracker {
     model: string,
     sessionId?: string,
   ): BudgetReservation {
+    // Fork: during a graceful shutdown no new model call starts.
+    if (isInferenceShuttingDown()) {
+      return { allowed: false, reason: "shutting down: no new model calls" };
+    }
     const check = this.checkBudget(estimatedCostCents, model);
     if (!check.allowed) {
       return { allowed: false, reason: check.reason ?? "budget cap reached" };
@@ -107,6 +113,9 @@ export class InferenceBudgetTracker {
     }
 
     this.reservedMc += estimateMc;
+    // Fork: counted process-wide until released (after recordCost), so a
+    // graceful shutdown can wait for the cost to be recorded.
+    const endCall = trackInferenceCall();
     let released = false;
     return {
       allowed: true,
@@ -114,6 +123,7 @@ export class InferenceBudgetTracker {
         if (released) return;
         released = true;
         this.reservedMc = Math.max(0, this.reservedMc - estimateMc);
+        endCall();
       },
     };
   }

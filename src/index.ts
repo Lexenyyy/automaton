@@ -24,6 +24,14 @@ import { prettySink } from "./observability/pretty-sink.js";
 import { bootstrapTopup } from "./conway/topup.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
+import {
+  beginInferenceShutdown,
+  getInFlightInferenceCount,
+  waitForInFlightInference,
+} from "./inference/in-flight.js";
+
+/** Max wait for in-flight model calls on SIGTERM (below Docker's 30 s stop grace). */
+const SHUTDOWN_INFERENCE_WAIT_MS = 20_000;
 
 const logger = createLogger("main");
 
@@ -318,13 +326,33 @@ async function run(): Promise<void> {
   heartbeat.start();
   logger.info(`[${new Date().toISOString()}] Heartbeat daemon started.`);
 
-  // Handle graceful shutdown
-  const shutdown = () => {
+  // Handle graceful shutdown. Fork: admit no new model call, then wait (up to
+  // SHUTDOWN_INFERENCE_WAIT_MS, inside Docker's 30 s stop grace) until every
+  // call that already ran has its cost recorded, so the ledger never misses one.
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info(`[${new Date().toISOString()}] Shutting down...`);
+    beginInferenceShutdown();
     heartbeat.stop();
-    db.setAgentState("sleeping");
-    db.close();
-    process.exit(0);
+    const pending = getInFlightInferenceCount();
+    if (pending > 0) {
+      logger.info(`[${new Date().toISOString()}] Waiting for ${pending} model call(s) to be recorded...`);
+      const idle = await waitForInFlightInference(SHUTDOWN_INFERENCE_WAIT_MS);
+      if (!idle) {
+        logger.warn(
+          `[${new Date().toISOString()}] ${getInFlightInferenceCount()} model call(s) still running after ${SHUTDOWN_INFERENCE_WAIT_MS / 1000}s; ` +
+            "their cost may be missing from the ledger. Check the provider's usage page.",
+        );
+      }
+    }
+    try {
+      db.setAgentState("sleeping");
+      db.close();
+    } finally {
+      process.exit(0);
+    }
   };
 
   process.on("SIGTERM", shutdown);

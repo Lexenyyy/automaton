@@ -60,7 +60,7 @@
     "agent:verify": "node docker/verify-agent.mjs",
     "agent:preflight": "node docker/run-oneoff.mjs --needs-sandbox -- --preflight",
     "agent:run": "node docker/run-oneoff.mjs --needs-sandbox --tty -- --run",
-    "agent:down": "docker compose -f docker/compose.agent.yml down",
+    "agent:down": "node docker/down-agent.mjs",
     "agent:kill": "node docker/kill-agent.mjs",
     "agent:settings": "node docker/run-oneoff.mjs -- --settings show",
     "agent:settings:reset": "node docker/run-oneoff.mjs -- --settings reset",

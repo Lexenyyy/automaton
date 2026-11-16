@@ -476,3 +476,20 @@
     automaton_egress: Resource is still in use"; the owner used `agent:kill`), and `recall_facts`
     returned a stale fact from run 1 (a `system_synopsis` snapshot with creator 0x000…). Both are
     fixed in the next commits.
+- 2026-11-16: **Graceful `pnpm agent:down`, including the `agent:run` runtime** (run-2 leftover).
+  `docker compose down` does not stop one-off `compose run` containers, so the runtime kept running and
+  the network stayed in use. New `docker/down-agent.mjs`:
+  1. SIGTERM to every running runtime container of the project (one-off included), 30 s grace;
+     reports per container: stopped gracefully (exit 0) or force-stopped at the timeout (exit 137,
+     script exits 1);
+  2. stops the sandbox and any other project container;
+  3. removes the stopped containers and runs `compose down --remove-orphans` (network). Never `-v`.
+  The runtime's SIGTERM handler now admits no new model call (`tryReserve` refuses while shutting
+  down) and waits up to 20 s until every call that already ran has its cost recorded, then saves the
+  state as sleeping and exits. Before, it exited at once, so a call billed by the provider could be
+  missing from the ledger. In-flight calls are counted process-wide from the existing budget
+  reservation (`src/inference/in-flight.ts`), released only after `recordCost`. No cap changed.
+  Tests: `in-flight-shutdown` (6). `agent:verify` 111 (+5: one-off runtime stand-in stopped by
+  SIGTERM with exit 0, nothing left, network removed, volumes kept, a SIGTERM-ignoring stand-in
+  force-stopped and reported). Baselines: Linux 1940 passed; Windows 1910 passed, 22 known failures,
+  8 skipped.

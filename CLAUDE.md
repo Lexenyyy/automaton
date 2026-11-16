@@ -33,16 +33,16 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
   `pnpm build` and the full suite in a Linux container. Baseline after the first-run fixes
-  (Phase 1, sub-cent accounting): 1934 passed, 0 failed. Any failure there is a regression.
+  (Phase 1, graceful agent:down): 1940 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1904 passed, 22 failed and 8 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1910 passed, 22 failed and 8 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
   sockets, `/bin/sh`). Any other Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (106 checks after the first-run fixes).
+  (111 checks after the run-2 fixes).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -83,7 +83,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:ledger` / `agent:ledger:grant <dollars>`: owner view of the ledger / add a grant
     (runtime `--ledger show|grant|adjust`, same logic as `automaton-cli ledger`).
   - `agent:kill`: immediate stop of both containers (SIGKILL), volumes kept, safe to run anytime.
-  - `agent:down`: graceful stop.
+  - `agent:down`: graceful stop (`docker/down-agent.mjs`): SIGTERM to every runtime container including the
+    `agent:run` one (30 s grace; the runtime admits no new model call and waits up to 20 s for in-flight
+    calls to be recorded), then the sandbox, then containers and network removed. Volumes kept.
   - `agent:run`: owner only (rule 6).
   - One-off commands run through `docker/run-oneoff.mjs`: `init`, `ledger`, `settings` use `--no-deps`
     (sandbox never started); `preflight` and `run` stop and remove the sandbox afterwards, only if
