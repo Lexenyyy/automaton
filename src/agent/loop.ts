@@ -71,6 +71,7 @@ import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
 import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
+import { RepeatGuard, resolveLoopGuard } from "./repeat-guard.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
 import { filterToolsForAllowlist, resolveToolAllowlist } from "./tool-allowlist.js";
@@ -441,6 +442,11 @@ export async function runAgentLoop(
 
   // Fork: repeated status-tool calls within this wake cycle reuse the result.
   const statusCache = new StatusToolCache();
+  // Fork: force sleep early on repeated failures / no-progress repeats, and
+  // sleep longer after any forced stop (owner settings: config.loopGuard).
+  const loopGuard = resolveLoopGuard(config);
+  const repeatGuard = new RepeatGuard(loopGuard.maxRepeats);
+  const forcedSleepMs = loopGuard.forcedSleepMinutes * 60_000;
 
   // Transition to running
   db.setAgentState("running");
@@ -735,6 +741,7 @@ export async function runAgentLoop(
       };
 
       // ── Execute Tool Calls ──
+      let guardTrip: string | undefined;
       if (response.toolCalls && response.toolCalls.length > 0) {
         const toolCallMessages: any[] = [];
         let callCount = 0;
@@ -781,6 +788,9 @@ export async function runAgentLoop(
           );
 
           callCount++;
+
+          guardTrip = repeatGuard.record(result);
+          if (guardTrip) break; // run no more tool calls this turn
         }
       }
 
@@ -806,6 +816,18 @@ export async function runAgentLoop(
       } catch (error) {
         logger.error("Memory ingestion failed", error instanceof Error ? error : undefined);
         // Memory failure must not block the agent loop
+      }
+
+      // ── Repeat guard (fork) ──
+      // The turn is saved first; then sleep instead of waiting for the turn limit.
+      if (guardTrip) {
+        log(config, `[LOOP GUARD] ${guardTrip}. Forcing sleep for ${loopGuard.forcedSleepMinutes} min.`);
+        wakeEndReason = `forced sleep: ${guardTrip}`;
+        db.setKV("sleep_until", new Date(Date.now() + forcedSleepMs).toISOString());
+        db.setAgentState("sleeping");
+        onStateChange?.("sleeping");
+        running = false;
+        break;
       }
 
       // ── create_goal BLOCKED fast-break ──
@@ -871,6 +893,8 @@ export async function runAgentLoop(
           };
           loopWarningPattern = null;
           lastToolPatterns = [];
+          // Fork: forced sleep has an explicit length (was: none, so 60 s).
+          db.setKV("sleep_until", new Date(Date.now() + forcedSleepMs).toISOString());
           db.setAgentState("sleeping");
           onStateChange?.("sleeping");
           running = false;
@@ -975,7 +999,8 @@ export async function runAgentLoop(
       if (running && cycleTurnCount >= maxCycleTurns) {
         log(config, `[CYCLE LIMIT] ${cycleTurnCount} turns reached (max: ${maxCycleTurns}). Forcing sleep.`);
         wakeEndReason = `cycle limit (${cycleTurnCount} turns)`;
-        db.setKV("sleep_until", new Date(Date.now() + 120_000).toISOString());
+        // Fork: forced sleep is loopGuard.forcedSleepMinutes (default 30), not 2 minutes.
+        db.setKV("sleep_until", new Date(Date.now() + forcedSleepMs).toISOString());
         db.setAgentState("sleeping");
         onStateChange?.("sleeping");
         running = false;

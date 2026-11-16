@@ -7,6 +7,7 @@
   "balanceSource": "own",
   "conway": "off",
   "orchestration": "off",
+  "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
   "toolAllowlist": [
     "exec", "read_file", "write_file",
     "check_balance", "sleep",

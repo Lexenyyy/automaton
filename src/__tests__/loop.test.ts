@@ -408,7 +408,7 @@ describe("Agent Loop", () => {
     expect(db.getKV("sleep_until")).toBeDefined();
   });
 
-  it("cycle limit sets 2-minute sleep duration", async () => {
+  it("cycle limit sets the forced sleep duration (30 minutes by default)", async () => {
     const lowLimitConfig = createTestConfig({ maxTurnsPerCycle: 1 });
 
     const inference = new MockInferenceClient([
@@ -425,10 +425,10 @@ describe("Agent Loop", () => {
 
     const sleepUntil = db.getKV("sleep_until");
     expect(sleepUntil).toBeDefined();
-    // Sleep should be ~2 minutes (120_000ms) from now
+    // Fork: forced sleep is loopGuard.forcedSleepMinutes (default 30 min), was 2 min.
     const sleepMs = new Date(sleepUntil!).getTime() - Date.now();
-    expect(sleepMs).toBeGreaterThan(100_000); // at least ~100s
-    expect(sleepMs).toBeLessThan(150_000); // at most ~150s
+    expect(sleepMs).toBeGreaterThan(29 * 60_000);
+    expect(sleepMs).toBeLessThan(31 * 60_000);
   });
 
   it("respects custom maxTurnsPerCycle from config", async () => {
@@ -665,7 +665,8 @@ describe("Agent Loop", () => {
 
     await runAgentLoop({
       identity,
-      config,
+      // Fork: tests the old pattern detector; the repeat guard (stops at 3) is off here.
+      config: { ...config, loopGuard: { maxRepeats: 0 } },
       db,
       conway,
       inference,
@@ -727,7 +728,8 @@ describe("Agent Loop", () => {
 
     await runAgentLoop({
       identity,
-      config,
+      // Fork: tests the old pattern detector; the repeat guard (stops at 3) is off here.
+      config: { ...config, loopGuard: { maxRepeats: 0 } },
       db,
       conway,
       inference,
@@ -785,7 +787,8 @@ describe("Agent Loop", () => {
 
     await runAgentLoop({
       identity,
-      config,
+      // Fork: tests the old pattern detector; the repeat guard (stops at 3) is off here.
+      config: { ...config, loopGuard: { maxRepeats: 0 } },
       db,
       conway,
       inference,

@@ -113,6 +113,14 @@ export interface AutomatonConfig {
    */
   toolAllowlist?: string[];
   /**
+   * Repeat guard and forced-sleep length (fork, Phase 1; see
+   * src/agent/repeat-guard.ts). maxRepeats (default 3, 0 = off): force sleep
+   * when one tool fails that often in a wake, or is called that often with the
+   * same arguments and result. forcedSleepMinutes (default 30): sleep after
+   * this guard or the per-wake turn limit.
+   */
+  loopGuard?: { maxRepeats?: number; forcedSleepMinutes?: number };
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

@@ -116,7 +116,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         reword the template as standing rules.
   - [x] **SOUL.md block/not-found messages don't explain** (fixed, see CHANGELOG) that the soul is managed with
         `update_soul`/`view_soul` and lives outside the sandbox.
-  - [ ] **Repeats are not stopped early.** "Repetitive pattern detected" logged 4× without effect.
+  - [x] **Repeats are not stopped early.** (fixed, see CHANGELOG) "Repetitive pattern detected" logged 4× without effect.
         Fix: force sleep after 3 denials of one tool or 3 identical calls with identical results;
         forced sleeps (also the 25-turn limit) last 30 min instead of 2.
   - [ ] **No per-wake limit on soul updates.** Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`

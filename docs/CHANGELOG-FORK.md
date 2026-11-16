@@ -541,3 +541,19 @@
   Tests: `soul-path-messages` (4; the 2 write_file tests are Linux-only because `/root` confinement
   uses `path.resolve`, the same cause as the known Windows failures). Baselines: Linux 1949 passed;
   Windows 1917 passed, 22 known failures, 10 skipped (8 sandbox + 2 new). `agent:verify` 111.
+- 2026-11-16: **Repeat guard and 30-minute forced sleep** (run-3 fix D). The old detector compares whole-
+  turn tool sets; the agent mixed `write_file`, `read_file` and `update_soul`, so it only warned (4×)
+  and the run went to the 25-turn limit. After that limit the agent slept only 2 minutes.
+  - New `RepeatGuard` (`src/agent/repeat-guard.ts`), per wake cycle: force sleep when one tool fails
+    `maxRepeats` times (policy denial, "Blocked:", "ERROR:", tool error; any arguments), or is called
+    `maxRepeats` times with the same arguments AND the same result (no progress). A rerun with a
+    different result does not count. The turn is saved first; the remaining tool calls of that turn
+    are skipped. The next wake-up status shows the reason ("Last wake ended: forced sleep: write_file
+    failed 3× …").
+  - Forced sleeps last `forcedSleepMinutes`: the guard, the 25-turn cycle limit (was 2 min) and the old
+    loop enforcement (had no explicit length, so 60 s). A sleep the agent chooses is unchanged.
+  - Owner setting `"loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 }` (defaults; in the
+    template; `maxRepeats: 0` turns the guard off). The old warning stays.
+  Tests: `repeat-guard` (9, including two loop runs); `loop`: the 3 old-detector tests run with the
+  guard off, the cycle-limit sleep test expects 30 min. Baselines: Linux 1958 passed; Windows 1926
+  passed, 22 known failures, 10 skipped. `agent:verify` 111.
