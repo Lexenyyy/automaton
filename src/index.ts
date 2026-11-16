@@ -55,6 +55,8 @@ Usage:
   automaton --preflight    Check the startup path (no model call, agent not started)
   automaton --settings show|reset
                            Owner: show or reset settings the agent changed itself
+  automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
+                           Owner: show the ledger or add a grant/adjustment (dollars)
   automaton --version      Show version
   automaton --help         Show this help
 
@@ -138,6 +140,28 @@ Environment:
     console.log(settingsReport(config, db.raw));
     db.close();
     process.exit(0);
+  }
+
+  if (args.includes("--ledger")) {
+    // Owner only (run from the host; the agent has no access): show the
+    // ledger, add a grant or an adjustment. Same logic as `automaton-cli ledger`.
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const db = createDatabase(resolvePath(config.dbPath));
+    const { runLedgerCommand } = await import("./state/ledger-command.js");
+    let result: { code: number; output: string };
+    try {
+      result = runLedgerCommand(db.raw, args.slice(args.indexOf("--ledger") + 1), {
+        liveOnly: config.network === "mainnet",
+      });
+    } finally {
+      db.close();
+    }
+    console.log(result.output);
+    process.exit(result.code);
   }
 
   if (args.includes("--setup")) {

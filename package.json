@@ -21,6 +21,10 @@
     "./state/ledger.js": {
       "types": "./dist/state/ledger.d.ts",
       "default": "./dist/state/ledger.js"
+    },
+    "./state/ledger-command.js": {
+      "types": "./dist/state/ledger-command.d.ts",
+      "default": "./dist/state/ledger-command.js"
     }
   },
   "bin": {
@@ -60,6 +64,8 @@
     "agent:kill": "node docker/kill-agent.mjs",
     "agent:settings": "docker compose -f docker/compose.agent.yml run --rm -T runtime --settings show",
     "agent:settings:reset": "docker compose -f docker/compose.agent.yml run --rm -T runtime --settings reset",
+    "agent:ledger": "docker compose -f docker/compose.agent.yml run --rm -T runtime --ledger show",
+    "agent:ledger:grant": "docker compose -f docker/compose.agent.yml run --rm -T runtime --ledger grant",
     "clean": "rm -rf dist && pnpm -r clean"
   },
   "dependencies": {

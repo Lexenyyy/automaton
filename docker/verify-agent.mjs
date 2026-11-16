@@ -327,6 +327,18 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const settingsReset = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "reset"]);
   check("entrypoint", "owner command --settings reset works", settingsReset.code === 0 && settingsReset.out.includes("No agent settings to reset."), settingsReset.err.trim());
 
+  // Owner ledger commands (throwaway verify volume; the real wallet volume is never touched).
+  const ledgerShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "show"]);
+  check("entrypoint", "owner command --ledger show works (testnet ledger)",
+    ledgerShow.code === 0 && ledgerShow.out.includes("Ledger (testnet: all entries)"), ledgerShow.err.trim());
+  const ledgerGrant = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "grant", "5.00"]);
+  const ledgerAfter = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "show"]);
+  check("entrypoint", "owner command --ledger grant 5.00 persists in the volume",
+    ledgerGrant.code === 0 && ledgerGrant.out.includes("Granted $5.00.") && /owner_grant\s+\$5\.00\s+\(1\)/.test(ledgerAfter.out),
+    ledgerGrant.code === 0 ? ledgerAfter.out.trim() : ledgerGrant.err.trim());
+  const ledgerBad = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "grant", "-5"]);
+  check("entrypoint", "owner command --ledger grant refuses a negative amount", ledgerBad.code === 1 && ledgerBad.out.includes("Usage: ledger grant"), `exit ${ledgerBad.code}`);
+
   const mainnet = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_MAINNET_APPROVED=0x0000000000000000000000000000000000000001", "runtime", "--status"]);
   check("entrypoint", "refuses to start when AUTOMATON_MAINNET_APPROVED is set", mainnet.code === 64 && mainnet.err.includes("refusing to start"), `exit ${mainnet.code}`);
 

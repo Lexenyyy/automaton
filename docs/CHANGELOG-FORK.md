@@ -352,3 +352,18 @@
     records zero Conway requests). `agent:verify` 97 checks: kill, settings commands, preflight with no
     Conway key and fake model keys.
   - Baselines: Linux 1893 passed, 0 failed. Windows 1863 passed, 22 known failures, 8 Linux-only skipped.
+- 2026-11-16: **First-run genesis prompt** in `docker/automaton.testnet.json` (owner text): test
+  instance on Base Sepolia; check status, balance and tier, write a short SOUL.md, list tools, then
+  sleep. No earning, contacting, installing or payments.
+- 2026-11-16: **Owner ledger commands in Docker: `pnpm agent:ledger`, `pnpm agent:ledger:grant <dollars>`.**
+  The ledger CLI (`automaton-cli ledger`) is not in the runtime image, so the owner had no way to add the
+  testing grant to `state.db` in the `automaton-home` volume.
+  - The show/grant/adjust logic moved to `src/state/ledger-command.ts` (`runLedgerCommand`), shared by
+    `automaton-cli ledger` and a new runtime flag `automaton --ledger [show | grant <amount> | adjust
+    <±amount> --memo "..."]`. Output and rules are unchanged (grant > 0, max 2 decimals, append-only,
+    `livemode` true, source `owner_cli`).
+  - Owner only, like `--settings`: the agent has no tool that reaches it, and its shell stays blocked
+    from `state.db`. No change to the policy engine.
+  - Tests: `ledger-command` (10). `agent:verify` 100 checks (+3: `--ledger show`, `grant 5.00` persists,
+    negative amount refused; throwaway volume only).
+  - Baselines: Linux 1903 passed, 0 failed. Windows 1873 passed, 22 known failures, 8 Linux-only skipped.

@@ -96,3 +96,14 @@ declare module "@conway/automaton/state/ledger.js" {
   export function getLedgerTotalsByKind(db: unknown): { kind: LedgerKind; totalCents: number; count: number }[];
   export function getRecentLedgerEntries(db: unknown, limit?: number): LedgerEntry[];
 }
+
+declare module "@conway/automaton/state/ledger-command.js" {
+  export interface LedgerCommandResult {
+    code: number;
+    output: string;
+  }
+
+  export const LEDGER_USAGE: string;
+  export function parseDollarsToCents(rawAmount: string | undefined): number;
+  export function runLedgerCommand(db: unknown, args: readonly string[], opts: { liveOnly: boolean }): LedgerCommandResult;
+}

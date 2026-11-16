@@ -32,17 +32,17 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline at commit 45412db: 1893 passed,
-  0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline at the `agent:ledger` commit
+  (Phase 1): 1903 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1863 passed, 22 failed and 8 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1873 passed, 22 failed and 8 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
   sockets, `/bin/sh`). Any other Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (97 checks at 45412db).
+  (100 checks at the `agent:ledger` commit).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -71,6 +71,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `pnpm agent:build`, `agent:init`, `agent:verify`.
   - `agent:preflight`: startup checks, no model call, agent not started.
   - `agent:settings` / `agent:settings:reset`: owner view/reset of the agent's own settings.
+  - `agent:ledger` / `agent:ledger:grant <dollars>`: owner view of the ledger / add a grant
+    (runtime `--ledger show|grant|adjust`, same logic as `automaton-cli ledger`).
   - `agent:kill`: immediate stop of both containers (SIGKILL), volumes kept, safe to run anytime.
   - `agent:down`: graceful stop.
   - `agent:run`: owner only (rule 6).

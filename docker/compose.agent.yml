@@ -3,6 +3,8 @@
 #   pnpm agent:build    build both images
 #   pnpm agent:init     create the testnet wallet in the automaton-home volume
 #   pnpm agent:verify   isolation checks (separate throwaway project and volumes)
+#   pnpm agent:ledger   show the agent's ledger (owner)
+#   pnpm agent:ledger:grant 5.00   add an owner grant (owner)
 #   pnpm agent:run      start the agent (owner only)
 #   pnpm agent:down     stop everything (volumes are kept)
 #
