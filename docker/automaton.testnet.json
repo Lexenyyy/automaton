@@ -9,6 +9,7 @@
   "orchestration": "off",
   "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
   "soulConfig": { "maxUpdatesPerWake": 2 },
+  "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
   "toolAllowlist": [
     "exec", "read_file", "write_file",
     "check_balance", "sleep",

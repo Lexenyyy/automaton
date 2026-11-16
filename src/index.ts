@@ -26,6 +26,7 @@ import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
 import { releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
 import { pendingStartupSleep, waitForSleepOrWake } from "./agent/startup-sleep.js";
+import { effectiveSleepUntil, resolveSleepSettings } from "./agent/sleep-limits.js";
 import {
   beginInferenceShutdown,
   getInFlightInferenceCount,
@@ -472,11 +473,17 @@ async function run(): Promise<void> {
       }
 
       if (state === "sleeping") {
+        // Fork: no sleep is shorter than the owner's floor (sleepConfig.minSeconds),
+        // whichever path set it (agent, idle, budget, guard); the effective
+        // wake time is written back so status and restarts see it.
         const sleepUntilStr = db.getKV("sleep_until");
-        const sleepUntil = sleepUntilStr
-          ? new Date(sleepUntilStr).getTime()
-          : Date.now() + 60_000;
-        const sleepMs = Math.max(sleepUntil - Date.now(), 10_000);
+        const sleepUntil = effectiveSleepUntil(
+          sleepUntilStr ? new Date(sleepUntilStr).getTime() : NaN,
+          Date.now(),
+          resolveSleepSettings(config),
+        );
+        db.setKV("sleep_until", new Date(sleepUntil).toISOString());
+        const sleepMs = sleepUntil - Date.now();
         logger.info(
           `[${new Date().toISOString()}] Sleeping for ${Math.round(sleepMs / 1000)}s`,
         );

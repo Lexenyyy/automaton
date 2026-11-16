@@ -71,6 +71,7 @@ import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
 import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
+import { admitWake, nextUtcDay, resolveSleepSettings } from "./sleep-limits.js";
 import { RepeatGuard, resolveLoopGuard } from "./repeat-guard.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
@@ -401,6 +402,25 @@ export async function runAgentLoop(
   // Clear any stale sleep_until from a previous session so the agent
   // doesn't immediately go back to sleep on startup.
   db.deleteKV("sleep_until");
+
+  // Fork: daily wake cap (owner setting sleepConfig.maxWakesPerDay). Past it,
+  // sleep until the next UTC day without any model call.
+  const sleepSettings = resolveSleepSettings(config);
+  const admitted = admitWake(db.raw, sleepSettings);
+  if (!admitted.allowed) {
+    const until = nextUtcDay(new Date());
+    const reason = `wake limit: ${admitted.count} wakes today (max ${sleepSettings.maxWakesPerDay} per day)`;
+    log(config, `[WAKE LIMIT] ${reason}. Sleeping until ${until.toISOString()}.`);
+    db.setKV("sleep_until", until.toISOString());
+    db.setAgentState("sleeping");
+    onStateChange?.("sleeping");
+    try {
+      recordWakeEnd(db.raw, reason);
+    } catch {
+      // status line only; never blocks
+    }
+    return;
+  }
 
   // Fork: start of this wake cycle (per-wake limits, wake-up status).
   recordWakeStart(db.raw);

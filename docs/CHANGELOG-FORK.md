@@ -660,3 +660,20 @@
     the new explanation; it then slept on its own with zero soul rewrites.
   - Testnet genesis prompt (`docker/automaton.testnet.json`), one sentence added after rule (4): "Never
     use write_file for SOUL.md; use view_soul/update_soul." (702 of 2000 chars.)
+- 2026-11-16: **Sleep floor and daily wake cap** (Phase 2 prep A1, owner-approved; only tightens). Nothing
+  limited how short a sleep the agent picked: `sleep(0)` or `sleep(-5)` ended the wake and the runtime woke
+  it again 10 s later (about 240 wakes an hour, stopped only by the 25¢ hourly and $1 daily caps: up to $1 a
+  day). The idle path also slept only 60 s.
+  - `src/agent/sleep-limits.ts` (new), owner setting `sleepConfig` (code defaults `minSeconds` 300,
+    `maxWakesPerDay` 48, 0 = no limit; template 1800 / 48; invalid values fall back to the defaults).
+  - Floor: the runtime's sleeping state (`index.ts`, the one place every sleep goes through) never waits
+    less than `minSeconds` and writes the effective `sleep_until` back, so status and restarts see it.
+  - `sleep` tool: refuses non-numbers, zero and negatives ("duration_seconds must be a positive number of
+    seconds (minimum N)"); raises a shorter value and says so ("Entering sleep mode for 1800s (the minimum;
+    you asked for 60s)").
+  - Wake cap: each wake cycle is counted per UTC day (kv `wake_count_day`) before any model call. Past the
+    cap the loop sleeps until the next UTC day; the next wake-up status says "wake limit: N wakes today
+    (max M per day)". Restarts and heartbeat wake-ups count; `--wake-now` does not override it.
+  With the template values the most the agent can spend is about 48 wakes × 0.3¢ ≈ 15¢ a day.
+  Tests: `sleep-limits` (8, including a loop run at the cap and the real `sleep` tool). Baselines: Linux
+  1986 passed; Windows 1954 passed, 22 known failures, 10 skipped. `agent:verify` 122.

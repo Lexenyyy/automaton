@@ -121,6 +121,13 @@ export interface AutomatonConfig {
    */
   loopGuard?: { maxRepeats?: number; forcedSleepMinutes?: number };
   /**
+   * Sleep floor and daily wake cap (fork, Phase 2 prep; see
+   * src/agent/sleep-limits.ts). minSeconds (default 300): no sleep is shorter.
+   * maxWakesPerDay (default 48, 0 = no limit): wake cycles per UTC day; past
+   * it the agent sleeps until the next UTC day.
+   */
+  sleepConfig?: { minSeconds?: number; maxWakesPerDay?: number };
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

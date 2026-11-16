@@ -24,6 +24,7 @@ import { sanitizeToolResult, sanitizeInput } from "./injection-defense.js";
 import { getForbiddenCommandMatch } from "./policy-rules/command-safety.js";
 import { createLogger } from "../observability/logger.js";
 import { getSoulState } from "./wake-state.js";
+import { clampSleepSeconds, resolveSleepSettings } from "./sleep-limits.js";
 
 const logger = createLogger("tools");
 
@@ -819,7 +820,7 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
         properties: {
           duration_seconds: {
             type: "number",
-            description: "How long to sleep in seconds",
+            description: "How long to sleep in seconds (the owner sets a minimum; shorter values are raised to it)",
           },
           reason: {
             type: "string",
@@ -829,15 +830,25 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
         required: ["duration_seconds"],
       },
       execute: async (args, ctx) => {
-        const duration = args.duration_seconds as number;
+        // Fork: owner floor (sleepConfig.minSeconds); invalid durations refused.
+        const settings = resolveSleepSettings(ctx.config);
+        const sleep = clampSleepSeconds(args.duration_seconds, settings);
+        if (!sleep) {
+          throw new Error(
+            `duration_seconds must be a positive number of seconds (minimum ${settings.minSeconds}).`,
+          );
+        }
         const reason = (args.reason as string) || "No reason given";
         ctx.db.setAgentState("sleeping");
         ctx.db.setKV(
           "sleep_until",
-          new Date(Date.now() + duration * 1000).toISOString(),
+          new Date(Date.now() + sleep.seconds * 1000).toISOString(),
         );
         ctx.db.setKV("sleep_reason", reason);
-        return `Entering sleep mode for ${duration}s. Reason: ${reason}. Heartbeat will continue.`;
+        const length = sleep.raised
+          ? `${sleep.seconds}s (the minimum; you asked for ${args.duration_seconds}s)`
+          : `${sleep.seconds}s`;
+        return `Entering sleep mode for ${length}. Reason: ${reason}. Heartbeat will continue.`;
       },
     },
     {

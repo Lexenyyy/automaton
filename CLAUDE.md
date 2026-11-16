@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
   `pnpm build` and the full suite in a Linux container. Baseline after the second-agent fixes
-  (Phase 1): 1978 passed, 0 failed. Any failure there is a regression.
+  (Phase 1): 1986 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1946 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1954 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -77,6 +77,11 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   renews it every 30 s; a second `--run` on the same database refuses to start while the holder's heartbeat
   is under 90 s old (however it was started). A runtime that loses its lease stops (exit 3). Graceful stop
   releases it; after `agent:kill` it expires after 90 s. `--preflight` reports it (owner-approved).
+- **Sleep floor and wake cap:** `"sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 }` in the template
+  (code defaults 300 / 48; 0 wakes = no limit). No sleep is shorter than `minSeconds`, whatever set it (applied
+  in the runtime's sleeping state; the `sleep` tool raises short values, says so, and refuses zero/negative).
+  Past `maxWakesPerDay` wake cycles in a UTC day (restarts and heartbeat wake-ups count), the agent sleeps
+  until the next UTC day without a model call; `--wake-now` does not override this.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule
   `rate.soul_per_wake` (owner-approved under rule 4).
 - **Tool allowlist:** the template's `toolAllowlist` offers only 10 core tools (`exec`, `read_file`,
