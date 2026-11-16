@@ -463,3 +463,16 @@
     Tests: `sub-cent-accounting` (10); `ledger`, `inference-router` and others updated for the
     exact amounts. Baselines: Linux 1934 passed; Windows 1904 passed, 22 known failures, 8 skipped.
     `agent:verify` 106.
+- 2026-11-16: **Testnet runs (owner-started, Base Sepolia, OpenAI).**
+  - **Run 1** (first real run, before the fixes above): worked end to end. OpenAI charged $0.02; the
+    ledger recorded $0.06 (every call rounded up to 1¢). Issues found: `system_synopsis` and
+    `check_balance` called 3 times before acting; an orchestrator goal created instead of
+    `update_soul`; ~10k tokens per turn, mostly tool definitions; "State repo init failed: path
+    outside the sandbox roots"; creator address 0x000…; one-off commands left the sandbox running.
+    Fixed in `09f6f44`, `12d5b04`, `c918070`, `c2ff04a`, `c086b54`, `c745d95`, `922d138`.
+  - **Run 2** (after `922d138`): 2 turns, ~3k tokens each; SOUL.md written with `update_soul`;
+    `write_file` to SOUL.md correctly blocked; slept on its own; cost $0.00311 (exact, millicents).
+    Leftovers: `pnpm agent:down` left the `agent:run` runtime container running ("Network
+    automaton_egress: Resource is still in use"; the owner used `agent:kill`), and `recall_facts`
+    returned a stale fact from run 1 (a `system_synopsis` snapshot with creator 0x000…). Both are
+    fixed in the next commits.

@@ -93,7 +93,23 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         needs the owner's approval (deferred by the owner on 2026-11-11).
   - [ ] **The two price tables could disagree.** The router prices from `ModelRegistry`; the metered client
         prices from `ProviderRegistry`, never below the built-in price. Merging them is cleanup.
+- Real testnet runs (owner-started, Base Sepolia, OpenAI):
+  - [x] **First real run** (2026-11-16). Worked end to end, but: 3 repeated status checks before acting,
+        an orchestrator goal for a one-tool task, ~10k tokens per turn, a state-repo error in container
+        mode, creator 0x000…, costs rounded up to 1¢ per call (ledger $0.06, OpenAI $0.02), and one-off
+        commands left the sandbox running. All seven fixed: `09f6f44`, `12d5b04`, `c918070`, `c2ff04a`,
+        `c086b54`, `c745d95`, `922d138` (see CHANGELOG-FORK.md).
+  - [x] **Second real run** (after `922d138`). 2 turns, ~3k tokens each; SOUL.md written with
+        `update_soul`; `write_file` to SOUL.md correctly blocked; slept on its own; cost $0.00311.
+  - [ ] **`agent:down` leaves the `agent:run` runtime running** ("network still in use"; needed
+        `agent:kill`). Fix: graceful stop of one-off runtime containers, waiting for in-flight model calls
+        to be recorded.
+  - [ ] **Stale status facts.** `system_synopsis` / balance outputs were saved as long-term facts
+        (`recall_facts` returned the run-1 snapshot with creator 0x000…). Fix: stop storing them and
+        delete the stale ones.
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
+  Status after run 2: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
+  exact ledger); restart loses no state — not yet tested (next run).
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
 - Heartbeat scheduler independent of the main loop (exists: `src/heartbeat/`)
