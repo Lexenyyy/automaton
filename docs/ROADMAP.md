@@ -121,7 +121,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         forced sleeps (also the 25-turn limit) last 30 min instead of 2.
   - [x] **No per-wake limit on soul updates.** (fixed, see CHANGELOG) Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`
         (default 2), owner-approved under rule 4.
-  - [ ] **"SOUL.md content changed since last load" after every `update_soul`** (noise).
+  - [x] **"SOUL.md content changed since last load" after every `update_soul`** (noise). (fixed, see CHANGELOG)
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
   Status after run 3: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
   exact ledger); restart loses no state — met (restart test, run 3).

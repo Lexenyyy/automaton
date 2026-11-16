@@ -569,3 +569,11 @@
     the config is read-only to the agent).
   Tests: `soul-per-wake-limit` (4, through the real policy engine and `update_soul`). Baselines: Linux
   1962 passed; Windows 1930 passed, 22 known failures, 10 skipped. `agent:verify` 111.
+- 2026-11-16: **No soul-change warning for the agent's own `update_soul`** (run-3 fix F). "SOUL.md content
+  changed since last load" was logged after every `update_soul`. `soulChangeWarning`
+  (`src/agent/system-prompt.ts`) now compares a new SOUL.md hash with the latest version recorded by
+  `update_soul` in `soul_history`: same hash = the agent's own change, no warning; different hash =
+  "SOUL.md changed outside update_soul (does not match recorded version N)", reported once per new
+  content. Without any soul history (e.g. a wizard-written soul) the upstream check is kept.
+  Tests: `soul-change-warning` (3). Baselines: Linux 1965 passed; Windows 1933 passed, 22 known
+  failures, 10 skipped. `agent:verify` 111.

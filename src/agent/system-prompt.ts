@@ -549,6 +549,32 @@ export function getOrchestratorStatus(db: Database.Database): string {
 }
 
 /**
+ * Fork (run 3): warning for a SOUL.md change, or null.
+ *
+ * Before, every update_soul logged "SOUL.md content changed since last load".
+ * Now a new content hash is fine when it matches the latest version recorded
+ * by update_soul (soul_history); it is a warning only when it does not, i.e.
+ * the file changed outside update_soul. Without any soul_history (e.g. a soul
+ * written by the setup wizard), the upstream check is kept. Each new content
+ * is reported once, not on every turn.
+ */
+export function soulChangeWarning(db: AutomatonDatabase, currentHash: string): string | null {
+  const lastHash = db.getKV("soul_content_hash");
+  if (!lastHash || lastHash === currentHash) return null;
+  let latest: { content_hash: string; version: number } | undefined;
+  try {
+    latest = db.raw
+      .prepare("SELECT content_hash, version FROM soul_history ORDER BY version DESC LIMIT 1")
+      .get() as { content_hash: string; version: number } | undefined;
+  } catch {
+    latest = undefined;
+  }
+  if (!latest) return "SOUL.md content changed since last load";
+  if (latest.content_hash === currentHash) return null; // update_soul made this change
+  return `SOUL.md changed outside update_soul (does not match recorded version ${latest.version})`;
+}
+
+/**
  * Build the complete system prompt for a turn.
  */
 export function buildSystemPrompt(params: {
@@ -601,10 +627,8 @@ Your chain type is ${chainType}.`,
   const soul = loadCurrentSoul(db.raw);
   if (soul) {
     // Track content hash for unauthorized change detection
-    const lastHash = db.getKV("soul_content_hash");
-    if (lastHash && lastHash !== soul.contentHash) {
-      logger.warn("SOUL.md content changed since last load");
-    }
+    const soulWarning = soulChangeWarning(db, soul.contentHash);
+    if (soulWarning) logger.warn(soulWarning);
     db.setKV("soul_content_hash", soul.contentHash);
 
     const soulBlock = [
@@ -627,10 +651,8 @@ Your chain type is ${chainType}.`,
       const sanitized = sanitizeInput(soulContent, "soul", "skill_instruction");
       const truncated = sanitized.content.slice(0, 5000);
       const hash = crypto.createHash("sha256").update(soulContent).digest("hex");
-      const lastHash = db.getKV("soul_content_hash");
-      if (lastHash && lastHash !== hash) {
-        logger.warn("SOUL.md content changed since last load");
-      }
+      const soulWarning = soulChangeWarning(db, hash);
+      if (soulWarning) logger.warn(soulWarning);
       db.setKV("soul_content_hash", hash);
       evolving.push(
         `## Soul [AGENT-EVOLVED CONTENT]\n${truncated}\n## End Soul`,
