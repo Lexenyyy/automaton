@@ -677,3 +677,9 @@
   With the template values the most the agent can spend is about 48 wakes × 0.3¢ ≈ 15¢ a day.
   Tests: `sleep-limits` (8, including a loop run at the cap and the real `sleep` tool). Baselines: Linux
   1986 passed; Windows 1954 passed, 22 known failures, 10 skipped. `agent:verify` 122.
+- 2026-11-16: **Tighter money caps for unattended testnet runs** (Phase 2 prep A2). Template
+  `docker/automaton.testnet.json`: `"modelStrategy": { "hourlyBudgetCents": 5, "dailyBudgetCents": 30 }`
+  (were the code defaults 25¢ / $1; lifetime 500¢ and per-call 5¢ unchanged, other strategy fields keep
+  their defaults). Expected use is at most 2 wakes an hour (30-min sleep floor) at about 0.3¢ each and
+  at most 48 wakes a day (about 15¢), so the caps leave 2–8× headroom and stop a fault within an hour.
+  `agent:verify` 122.

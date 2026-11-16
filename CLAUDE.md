@@ -14,7 +14,8 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 3. **Test money first.** Use Base Sepolia testnet until the roadmap reaches Phase 8. Never move
    real funds or switch to mainnet without the owner's explicit approval.
    **Testing budget: $5 total real money until Phase 8** (this covers model API spend too). Default
-   caps must keep any single day well below that (daily inference cap: $1).
+   caps must keep any single day well below that (daily inference cap: $1). The testnet template is
+   tighter for unattended runs: `modelStrategy` hourly 5¢, daily 30¢ (lifetime $5 and 5¢ per call unchanged).
 4. **Safety is enforced in code, not prompts.** Never weaken the policy engine
    (`src/agent/policy-engine.ts`, `src/agent/policy-rules/`), path protection, the constitution,
    spending limits, or injection defenses. Changes there need the owner's explicit approval.
