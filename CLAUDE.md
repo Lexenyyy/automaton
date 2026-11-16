@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
   `pnpm build` and the full suite in a Linux container. Baseline after the second-agent fixes
-  (Phase 1): 1973 passed, 0 failed. Any failure there is a regression.
+  (Phase 1): 1978 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1941 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1946 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -99,7 +99,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:down`: graceful stop (`docker/down-agent.mjs`): SIGTERM to every runtime container including the
     `agent:run` one (30 s grace; the runtime admits no new model call and waits up to 20 s for in-flight
     calls to be recorded), then the sandbox, then containers and network removed. Volumes kept.
-  - `agent:run`: owner only (rule 6).
+  - `agent:run`: owner only (rule 6). A restart honours a sleep that is still pending (the agent's own or a
+    forced one; the log says until when). `pnpm agent:run --wake-now` wakes the agent immediately.
   - `agent:status`: running runtime containers (any terminal, with uptime), sandbox, and the activity
     report from state.db (runtime `--activity`: state, last turn, turns and inference spend last hour/today,
     sleep, budget pause). Changes nothing.

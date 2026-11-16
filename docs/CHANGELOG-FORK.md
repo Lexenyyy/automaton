@@ -633,3 +633,15 @@
   preflight shows HELD). `agent:verify` +3 (two containers on the shared state.db: refused while held,
   preflight shows HELD, free at once after a graceful stop). Baselines: Linux 1973 passed; Windows 1941
   passed, 22 known failures, 10 skipped. `agent:verify` 122.
+- 2026-11-16: **A restart honours a pending sleep; `--wake-now` overrides** (incident fix 4,
+  owner-approved). Upstream, `--run` cleared `sleep_until` and woke the agent at once: in the incident the
+  agent had chosen a 3600 s sleep at 15:34:42, and the restart 26 s later woke it immediately.
+  - `src/agent/startup-sleep.ts` (new): `pendingStartupSleep` returns a `sleep_until` still in the future
+    (any kind: the agent's `sleep`, loop guard, cycle limit, budget pause), with the reason from
+    `last_wake_end` or `sleep_reason`; none with `--wake-now`. `waitForSleepOrWake` is the existing sleep
+    wait (30 s steps, a wake event ends it early), now shared with the run loop's sleeping state.
+  - `run()`: before the loop, drains stale wake events, sets the state to sleeping, logs "Honouring the
+    pending sleep until ... To wake the agent now, start it with --wake-now (pnpm agent:run --wake-now)"
+    and waits. `pnpm agent:run --wake-now` passes the flag through `run-oneoff`.
+  Tests: `startup-sleep` (5). Baselines: Linux 1978 passed; Windows 1946 passed, 22 known failures,
+  10 skipped. `agent:verify` 122.

@@ -25,6 +25,7 @@ import { bootstrapTopup } from "./conway/topup.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
 import { releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
+import { pendingStartupSleep, waitForSleepOrWake } from "./agent/startup-sleep.js";
 import {
   beginInferenceShutdown,
   getInFlightInferenceCount,
@@ -59,7 +60,9 @@ Conway Automaton v${VERSION}
 Sovereign AI Agent Runtime
 
 Usage:
-  automaton --run          Start the automaton (first run triggers setup wizard)
+  automaton --run          Start the automaton (first run triggers setup wizard).
+                           A sleep still pending from before is honoured;
+                           add --wake-now to wake the agent immediately.
   automaton --setup        Re-run the interactive setup wizard
   automaton --configure    Edit configuration (providers, model, treasury, general)
   automaton --pick-model   Interactively pick the active inference model
@@ -401,6 +404,27 @@ async function run(): Promise<void> {
     });
   }
 
+  // Fork: a restart honours a sleep that is still pending (the agent's own or
+  // a forced one), so restarting does not cost a wake. --wake-now overrides.
+  const wakeNow = process.argv.includes("--wake-now");
+  const pending = pendingStartupSleep((k) => db.getKV(k), Date.now(), wakeNow);
+  if (pending) {
+    // Stale wake events from before this start would end the sleep at once.
+    while (consumeNextWakeEvent(db.raw));
+    db.setAgentState("sleeping");
+    logger.info(
+      `[${new Date().toISOString()}] Honouring the pending sleep until ${new Date(pending.untilMs).toISOString()}` +
+        `${pending.reason ? ` (${pending.reason})` : ""}. To wake the agent now, start it with --wake-now ` +
+        "(pnpm agent:run --wake-now).",
+    );
+    const end = await waitForSleepOrWake(db.raw, pending.untilMs);
+    logger.info(
+      `[${new Date().toISOString()}] ${end.woken ? `Woken by ${end.source}: ${end.reason}` : "Pending sleep is over"}.`,
+    );
+  } else if (wakeNow) {
+    logger.info(`[${new Date().toISOString()}] --wake-now: any pending sleep is ignored.`);
+  }
+
   // ─── Main Run Loop ──────────────────────────────────────────
   // The automaton alternates between running and sleeping.
   // The heartbeat can wake it up.
@@ -457,22 +481,10 @@ async function run(): Promise<void> {
           `[${new Date().toISOString()}] Sleeping for ${Math.round(sleepMs / 1000)}s`,
         );
 
-        // Sleep, but check for wake requests periodically
-        const checkInterval = Math.min(sleepMs, 30_000);
-        let slept = 0;
-        while (slept < sleepMs) {
-          await sleep(checkInterval);
-          slept += checkInterval;
-
-          // Phase 1.1: Check for wake events from wake_events table (atomic consume)
-          const wakeEvent = consumeNextWakeEvent(db.raw);
-          if (wakeEvent) {
-            logger.info(
-              `[${new Date().toISOString()}] Woken by ${wakeEvent.source}: ${wakeEvent.reason}`,
-            );
-            db.deleteKV("sleep_until");
-            break;
-          }
+        // Sleep, but check for wake requests periodically (Phase 1.1 wake_events)
+        const end = await waitForSleepOrWake(db.raw, sleepUntil);
+        if (end.woken) {
+          logger.info(`[${new Date().toISOString()}] Woken by ${end.source}: ${end.reason}`);
         }
 
         // Clear sleep state
