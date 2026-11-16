@@ -33,13 +33,14 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
   `pnpm build` and the full suite in a Linux container. Baseline after the first-run fixes
-  (Phase 1, run-3 fixes): 1945 passed, 0 failed. Any failure there is a regression.
+  (Phase 1, run-3 fixes): 1949 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1915 passed, 22 failed and 8 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1917 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
-  `orchestration/local-worker-harness` (1). The 8 skipped are Linux-only sandbox tests (Unix
-  sockets, `/bin/sh`). Any other Windows failure is a regression.
+  `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
+  sockets, `/bin/sh`) and 2 `soul-path-messages` write_file tests (`/root` path confinement). Any other
+  Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
   (111 checks after the run-2 fixes).

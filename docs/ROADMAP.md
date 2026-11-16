@@ -114,7 +114,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **One-time setup tasks repeat on every wake** (fixed, see CHANGELOG) (the genesis prompt reads like a first-run script;
         nothing says what is already done). Fix: soul version and last-wake reason in the wake-up status;
         reword the template as standing rules.
-  - [ ] **SOUL.md block/not-found messages don't explain** that the soul is managed with
+  - [x] **SOUL.md block/not-found messages don't explain** (fixed, see CHANGELOG) that the soul is managed with
         `update_soul`/`view_soul` and lives outside the sandbox.
   - [ ] **Repeats are not stopped early.** "Repetitive pattern detected" logged 4× without effect.
         Fix: force sleep after 3 denials of one tool or 3 identical calls with identical results;

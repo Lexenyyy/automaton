@@ -530,3 +530,14 @@
     installing or payments).
   Tests: `status-snapshot` (+2), `loop` (wake start and end reason recorded). Baselines: Linux 1945
   passed; Windows 1915 passed, 22 known failures, 8 skipped. `agent:verify` 111.
+- 2026-11-16: **SOUL.md messages explain how the soul is managed** (run-3 fix C). In the restart test
+  `write_file` SOUL.md was tried 12 times and `read_file` SOUL.md said "not found" (the soul lives in
+  the runtime, not the sandbox).
+  - `write_file` to SOUL.md is blocked exactly as before (`isProtectedFile` unchanged); the message now
+    adds "SOUL.md is not a sandbox file: it is managed with update_soul (change) and view_soul (read);
+    it exists (version N, last updated <day>). Don't retry with write_file, read_file or exec."
+    Other protected files keep the plain message.
+  - `read_file` of any path named SOUL.md returns the same explanation without calling the sandbox.
+  Tests: `soul-path-messages` (4; the 2 write_file tests are Linux-only because `/root` confinement
+  uses `path.resolve`, the same cause as the known Windows failures). Baselines: Linux 1949 passed;
+  Windows 1917 passed, 22 known failures, 10 skipped (8 sandbox + 2 new). `agent:verify` 111.

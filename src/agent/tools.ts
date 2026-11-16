@@ -23,8 +23,29 @@ import type { PolicyEngine } from "./policy-engine.js";
 import { sanitizeToolResult, sanitizeInput } from "./injection-defense.js";
 import { getForbiddenCommandMatch } from "./policy-rules/command-safety.js";
 import { createLogger } from "../observability/logger.js";
+import { getSoulState } from "./wake-state.js";
 
 const logger = createLogger("tools");
+
+// ─── SOUL.md guidance (fork, run 3) ───────────────────────────
+// The soul lives in the runtime (~/.automaton/SOUL.md + soul_history), not in
+// the sandbox, and only update_soul may change it. In the restart test the
+// agent tried write_file SOUL.md 12 times and got "not found" from read_file.
+
+/** True for any path whose file name is SOUL.md (any case). */
+export function isSoulPath(filePath: string): boolean {
+  const base = (filePath ?? "").split(/[\\/]/).pop() ?? "";
+  return base.toLowerCase() === "soul.md";
+}
+
+/** "SOUL.md is managed with update_soul / view_soul; it exists (version N)." */
+export function soulPathNote(ctx: Pick<ToolContext, "db">): string {
+  const soul = getSoulState(ctx.db.raw);
+  const state = soul
+    ? `it exists (version ${soul.version}, last updated ${soul.updatedAt.slice(0, 10)})`
+    : "it does not exist yet";
+  return `SOUL.md is not a sandbox file: it is managed with update_soul (change) and view_soul (read); ${state}. Don't retry with write_file, read_file or exec.`;
+}
 
 // ─── Path Confinement ─────────────────────────────────────────
 // write_file is restricted to the sandbox home directory tree.
@@ -185,6 +206,10 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
         // Guard against overwriting protected files (same check as edit_own_file)
         const { isProtectedFile } = await import("../self-mod/code.js");
         if (isProtectedFile(confined)) {
+          // Fork: same block; for SOUL.md also say how it is managed.
+          if (isSoulPath(filePath)) {
+            return `Blocked: Cannot overwrite protected file. This is a hard-coded safety invariant. ${soulPathNote(ctx)}`;
+          }
           return "Blocked: Cannot overwrite protected file. This is a hard-coded safety invariant.";
         }
         await ctx.conway.writeFile(confined, args.content as string);
@@ -215,6 +240,10 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
           basename.startsWith("private-key")
         ) {
           return "Blocked: Cannot read sensitive file. This protects credentials and secrets.";
+        }
+        // Fork: the soul is not a sandbox file; explain instead of "not found".
+        if (isSoulPath(filePath)) {
+          return soulPathNote(ctx);
         }
         try {
           return await ctx.conway.readFile(filePath);
