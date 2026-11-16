@@ -506,3 +506,15 @@
     recognizable; `remember_fact` says not to store current status.
   Tests: `stale-status-facts` (3); `memory` test updated (status output is no longer stored).
   Baselines: Linux 1943 passed; Windows 1913 passed, 22 known failures, 8 skipped. `agent:verify` 111.
+- 2026-11-16: **Testnet run 3: restart test** (owner-started, after `11b1cf0`).
+  - Stopped with `pnpm agent:down` and started again. **State survived**: balance continued at $4.93,
+    soul continued from version 5. ROADMAP Phase 1 "restart loses no state" is met.
+  - **Sandbox held**: `ls /root/.automaton` from the agent's shell got "Permission denied".
+  - **But the run looped for 25 turns (~4.7¢)** until the cycle limit forced sleep: the genesis prompt
+    ("This is your first run… write a short SOUL.md") is read on every wake, so the agent redid the
+    first-run tasks; `write_file` SOUL.md was tried 12 times (correctly blocked), `read_file` SOUL.md
+    said "not found" (the soul lives in the runtime, not the sandbox), `update_soul` ran 8 times in one
+    wake, and "Repetitive pattern detected" was logged 4 times without effect. "SOUL.md content changed
+    since last load" was logged after every `update_soul`. Also found while planning: after the cycle
+    limit the agent slept only 2 minutes, so the loop could restart until the daily cap.
+  - Fixes follow in the next commits (owner-approved plan).

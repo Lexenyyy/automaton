@@ -107,9 +107,24 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **Stale status facts.** (fixed, see CHANGELOG) `system_synopsis` / balance outputs were saved as long-term facts
         (`recall_facts` returned the run-1 snapshot with creator 0x000…). Fix: stop storing them and
         delete the stale ones.
+  - [x] **Third real run: restart test** (after `11b1cf0`). Stopped with `agent:down`, started again:
+        state survived (balance continued at $4.93, soul continued from version 5). Sandbox held
+        (`ls /root/.automaton`: Permission denied). But the run looped for 25 turns (~4.7¢) until the
+        cycle limit forced sleep: 12 blocked `write_file` SOUL.md, 8 `update_soul` in one wake.
+  - [ ] **One-time setup tasks repeat on every wake** (the genesis prompt reads like a first-run script;
+        nothing says what is already done). Fix: soul version and last-wake reason in the wake-up status;
+        reword the template as standing rules.
+  - [ ] **SOUL.md block/not-found messages don't explain** that the soul is managed with
+        `update_soul`/`view_soul` and lives outside the sandbox.
+  - [ ] **Repeats are not stopped early.** "Repetitive pattern detected" logged 4× without effect.
+        Fix: force sleep after 3 denials of one tool or 3 identical calls with identical results;
+        forced sleeps (also the 25-turn limit) last 30 min instead of 2.
+  - [ ] **No per-wake limit on soul updates.** Fix: policy rate rule, `soulConfig.maxUpdatesPerWake`
+        (default 2), owner-approved under rule 4.
+  - [ ] **"SOUL.md content changed since last load" after every `update_soul`** (noise).
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
-  Status after run 2: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
-  exact ledger); restart loses no state — not yet tested (next run).
+  Status after run 3: simple task unaided — met; cost per turn visible — met (`[TOKENS]` log line,
+  exact ledger); restart loses no state — met (restart test, run 3).
 
 ## Phase 2 — Heartbeat, identity & memory (1–2 weeks)
 - Heartbeat scheduler independent of the main loop (exists: `src/heartbeat/`)
