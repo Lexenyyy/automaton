@@ -23,7 +23,8 @@ import { createSocialClient } from "../social/client.js";
 import { PolicyEngine } from "../agent/policy-engine.js";
 import { SpendTracker } from "../agent/spend-tracker.js";
 import { createDefaultRules } from "../agent/policy-rules/index.js";
-import { createBuiltinTools } from "../agent/tools.js";
+import { createBuiltinTools, loadInstalledTools } from "../agent/tools.js";
+import { checkToolAllowlist, filterToolsForAllowlist, resolveToolAllowlist } from "../agent/tool-allowlist.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
 import { activateNetwork, getActiveNetwork } from "../identity/network.js";
@@ -293,6 +294,19 @@ export async function prepareRuntime(
     logger.warn(`[${ts()}] Skills loading failed: ${err.message}`);
   }
 
+  // Fork: refuse a toolAllowlist with unknown names or without "sleep".
+  const allowProblems = checkToolAllowlist(
+    resolveToolAllowlist(config),
+    filterToolsForOrchestration(
+      filterToolsForConwayMode([...createBuiltinTools(config.sandboxId), ...loadInstalledTools(db)], conwayMode),
+      resolveOrchestrationMode(config),
+    ),
+  );
+  if (allowProblems.length) {
+    db.close();
+    throw new Error(`${allowProblems.join("; ")}. Refusing to start.`);
+  }
+
   return {
     config,
     db,
@@ -374,10 +388,13 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     const all = createBuiltinTools(rt.identity.sandboxId);
     const afterConway = filterToolsForConwayMode(all, rt.conwayMode);
     const orchestration = resolveOrchestrationMode(rt.config);
-    const offered = filterToolsForOrchestration(afterConway, orchestration);
+    const afterOrchestration = filterToolsForOrchestration(afterConway, orchestration);
+    const allow = resolveToolAllowlist(rt.config);
+    const offered = filterToolsForAllowlist(afterOrchestration, allow);
     lines.push(
       `INFO  tools: ${offered.length} offered, ${all.length - afterConway.length} Conway-only hidden` +
-        (orchestration === "off" ? `, ${afterConway.length - offered.length} orchestration hidden` : ""),
+        (orchestration === "off" ? `, ${afterConway.length - afterOrchestration.length} orchestration hidden` : "") +
+        (allow ? `, ${afterOrchestration.length - offered.length} not in toolAllowlist` : ""),
     );
     lines.push(`INFO  orchestration: ${orchestration}`);
     lines.push(`INFO  social relay: ${rt.social ? rt.config.socialRelayUrl : "off"}`);

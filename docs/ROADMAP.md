@@ -146,6 +146,9 @@ within the limits, and a Stripe test-mode payment, confirmed by a signed webhook
 - Pick ONE narrow, legal, automatable service
 - Build it in `src/services/<job>/` plus its genesis prompt, skills and config (see CLAUDE.md rule 7)
 - Agent operates, monitors and improves the service; honest, policy-compliant promotion only
+- [ ] Re-enable modify_heartbeat with an owner-set minimum interval (config, read-only to the agent)
+      and a max wake-ups per day, with tests. (Removed from the testnet `toolAllowlist` in Phase 1:
+      it can raise wake-up frequency and burn budget; the default heartbeat is enough for testing.)
 Done when: at least one real paying customer; known whether it covers its own cost.
 
 ## Phase 6 — Self-modification (2–3 weeks)

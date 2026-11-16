@@ -107,6 +107,12 @@ export interface AutomatonConfig {
    */
   orchestration?: "on" | "off";
   /**
+   * Tools offered to the model (fork, Phase 1). Absent = all tools (upstream
+   * behavior). When set, only these are offered and executable; applied after
+   * the Conway and orchestration filters (see src/agent/tool-allowlist.ts).
+   */
+  toolAllowlist?: string[];
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

@@ -592,6 +592,11 @@ Your sandbox ID is ${identity.sandboxId}.
 Your chain type is ${chainType}.`,
   );
 
+  // Fork: soul and worklog change often, so they go after the fixed layers
+  // (genesis, skills, operational). The fixed prefix then stays identical
+  // across turns, which lets provider prompt caching bill it cheaper.
+  const evolving: string[] = [];
+
   // Layer 3: SOUL.md -- structured soul model injection (Phase 2.1)
   const soul = loadCurrentSoul(db.raw);
   if (soul) {
@@ -614,7 +619,7 @@ Your chain type is ${chainType}.`,
     ]
       .filter(Boolean)
       .join("\n\n");
-    sections.push(soulBlock);
+    evolving.push(soulBlock);
   } else {
     // Fallback: try loading raw SOUL.md for legacy support
     const soulContent = loadSoulMd();
@@ -627,7 +632,7 @@ Your chain type is ${chainType}.`,
         logger.warn("SOUL.md content changed since last load");
       }
       db.setKV("soul_content_hash", hash);
-      sections.push(
+      evolving.push(
         `## Soul [AGENT-EVOLVED CONTENT]\n${truncated}\n## End Soul`,
       );
     }
@@ -636,7 +641,7 @@ Your chain type is ${chainType}.`,
   // Layer 3.5: WORKLOG.md -- persistent working context
   const worklogContent = loadWorklog();
   if (worklogContent) {
-    sections.push(
+    evolving.push(
       `--- WORKLOG.md (your persistent working context — UPDATE THIS after each task!) ---\n${worklogContent}\n--- END WORKLOG.md ---\n\nIMPORTANT: After completing any task or making any decision, update WORKLOG.md using write_file.\nThis is how you remember what you were doing across turns. Without it, you lose context and repeat yourself.`,
     );
   }
@@ -669,6 +674,9 @@ Your chain type is ${chainType}.`,
       ? `${OPERATIONAL_CONTEXT}\n\n${ORCHESTRATION_CONTEXT}\n\n${PERSISTENCE_CONTEXT}`
       : `${OPERATIONAL_CONTEXT}\n\n${PERSISTENCE_CONTEXT}\n\nDo your work directly with your tools. Keep tasks small.`,
   );
+
+  // Layers 3 and 3.5 (soul, worklog): after the fixed layers (fork).
+  sections.push(...evolving);
 
   // Layer 7: Dynamic Context
   const turnCount = db.getTurnCount();
@@ -742,14 +750,13 @@ ${orchestratorStatus}
     );
   }
 
-  // Layer 8: Available Tools (JSON schema)
-  const toolDescriptions = tools
-    .map(
-      (t) =>
-        `- ${t.name} (${t.category}): ${t.description}${t.riskLevel === "dangerous" || t.riskLevel === "forbidden" ? ` [${t.riskLevel.toUpperCase()}]` : ""}`,
-    )
-    .join("\n");
-  sections.push(`--- AVAILABLE TOOLS ---\n${toolDescriptions}\n--- END TOOLS ---`);
+  // Layer 8: Tools. Fork: the tool definitions sent with the call already
+  // describe every tool; repeating them here doubled their tokens. Only the
+  // risk markers are kept.
+  const risky = tools.filter((t) => t.riskLevel === "dangerous" || t.riskLevel === "forbidden");
+  if (risky.length > 0) {
+    sections.push(`Dangerous tools (use with care): ${risky.map((t) => t.name).join(", ")}.`);
+  }
 
   // Layer 9: Creator's Initial Message (first run only)
   if (isFirstRun && config.creatorMessage) {

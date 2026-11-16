@@ -420,3 +420,25 @@
     `update_soul` example; the phase is read from the status block instead of a tool call. Preflight
     shows the mode and hidden count. Test: `orchestration-mode` (4). Baselines: Linux 1921 passed;
     Windows 1891 passed, 22 known failures, 8 skipped. `agent:verify` 106.
+  - **Fewer tokens per turn** (fix 3): the first run used ~10k input tokens per turn, mostly tool
+    definitions. Measured with the testnet config (o200k): fixed input per call ~10k before fix 2,
+    7.2k after it (4,261 tool schemas for 56 tools + 2,895 system prompt, of which 1,383 a duplicate
+    text tool list), now ~2.3k (837 for 10 tool schemas + 1,511 system prompt). Changes:
+    - New setting `toolAllowlist` (`src/agent/tool-allowlist.ts`; absent = all tools). Applied after
+      the Conway and orchestration filters, so a tool not listed is neither offered nor executable.
+      Startup (`--run`, `--preflight`) refuses unknown/hidden names or a list without `sleep`.
+    - Testnet template (owner-approved list): `exec`, `read_file`, `write_file`, `check_balance`,
+      `sleep`, `update_soul`, `view_soul`, `remember_fact`, `recall_facts`, `switch_model`. Left out:
+      tools that cannot work in container mode (ports, installs, `git_*` on `~/.automaton`, which
+      closes the fix 4 open point), status tools covered by the wake-up snapshot, later-phase tools.
+      `modify_heartbeat` left out by the owner (could raise wake-up frequency); re-enabling it with
+      an owner-set minimum interval and max wake-ups per day is now a Phase 5b roadmap item.
+    - The system prompt no longer repeats every tool's description (they are in the tool
+      definitions); one line names the dangerous tools.
+    - Fixed prompt layers (rules, constitution, genesis, skills, environment) now come before soul,
+      worklog and status, so the identical prefix is longer for provider prompt caching.
+    - Per-turn `[TOKENS]` log line (system / tools / history+input estimates). Preflight shows how
+      many tools the allowlist hides.
+    Tests: `tool-allowlist` (3), `conway-off` (+allowlist refusal). The template's own list is
+    checked by `agent:verify` (preflight). Baselines: Linux 1924 passed; Windows 1894 passed, 22
+    known failures, 8 skipped. `agent:verify` 106.

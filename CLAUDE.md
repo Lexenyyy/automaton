@@ -69,6 +69,10 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   from the secrets folder (env `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
 - **Orchestration off:** the template sets `"orchestration": "off"`: no orchestrator or local workers,
   no orchestration prompt, goal and child tools hidden. The agent works directly (Phase 7 may turn it on).
+- **Tool allowlist:** the template's `toolAllowlist` offers only 10 core tools (`exec`, `read_file`,
+  `write_file`, `check_balance`, `sleep`, `update_soul`, `view_soul`, `remember_fact`, `recall_facts`,
+  `switch_model`); others are neither offered nor executable. Startup refuses unknown names or a list
+  without `sleep`. `modify_heartbeat` stays out until the Phase 5b roadmap item (owner-set minimum interval).
 - **Settings the agent changes itself** (`update_genesis_prompt`, `switch_model`) are stored in the
   database (`agent_settings`), never in the config, within the owner's `agentSettings` limits in the
   config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day.

@@ -70,7 +70,9 @@ import { MeteredInferenceClient } from "../inference/metered-client.js";
 import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
+import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
+import { filterToolsForAllowlist, resolveToolAllowlist } from "./tool-allowlist.js";
 
 const logger = createLogger("loop");
 const MAX_TOOL_CALLS_PER_TURN = 10;
@@ -107,10 +109,14 @@ export async function runAgentLoop(
   // Fork: with Conway off, Conway-only tools are neither offered nor
   // executable (executeTool looks tools up in this same list).
   // Fork: with orchestration off, goal and child tools are hidden the same way.
+  // Fork: then only the owner's toolAllowlist, when set.
   const orchestrationMode = resolveOrchestrationMode(config);
-  const tools = filterToolsForOrchestration(
-    filterToolsForConwayMode([...builtinTools, ...installedTools], config.conway),
-    orchestrationMode,
+  const tools = filterToolsForAllowlist(
+    filterToolsForOrchestration(
+      filterToolsForConwayMode([...builtinTools, ...installedTools], config.conway),
+      orchestrationMode,
+    ),
+    resolveToolAllowlist(config),
   );
   const toolContext: ToolContext = {
     identity,
@@ -120,6 +126,8 @@ export async function runAgentLoop(
     inference,
     social,
   };
+  const tokenCounter = createTokenCounter();
+  const toolSchemaTokens = tokenCounter.countTokens(JSON.stringify(toolsToInferenceFormat(tools)));
 
   // Initialize inference router (Phase 2.3)
   const modelStrategyConfig: ModelStrategyConfig = {
@@ -650,6 +658,18 @@ export async function runAgentLoop(
       log(config, `[THINK] Routing inference (tier: ${survivalTier}, model: ${inference.getDefaultModel()})...`);
 
       const inferenceTools = toolsToInferenceFormat(tools);
+
+      // Fork: per-turn token split (estimate), to see where input tokens go.
+      try {
+        const systemText = messages.filter((m) => m.role === "system").map((m) => m.content ?? "").join("\n");
+        const restText = messages.filter((m) => m.role !== "system").map((m) => JSON.stringify(m)).join("\n");
+        log(
+          config,
+          `[TOKENS] system≈${tokenCounter.countTokens(systemText)} tools≈${toolSchemaTokens} (${tools.length}) history+input≈${tokenCounter.countTokens(restText)}`,
+        );
+      } catch {
+        // estimate only; never blocks the turn
+      }
       const routerResult = await inferenceRouter.route(
         {
           messages: messages,

@@ -274,6 +274,10 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
     await expect(prepareRuntime({ ...(await setup()), balanceSource: "conway" }, { preflight: true })).rejects.toThrow(
       /balanceSource "conway" needs Conway on/,
     );
+    // toolAllowlist: unknown/hidden names or no "sleep" refuse to start.
+    await expect(prepareRuntime({ ...(await setup()), toolAllowlist: ["exec", "transfer_credits"] }, { preflight: true })).rejects.toThrow(
+      /not available in this mode: transfer_credits.*must include "sleep".*Refusing to start/,
+    );
   });
 
   it("refuses to start without a real creator address; the env value overrides the config", async () => {
