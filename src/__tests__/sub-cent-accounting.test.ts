@@ -142,11 +142,11 @@ describe("migration V14", () => {
     fresh.close();
   });
 
-  it("a new database is at schema 14 with both columns", () => {
+  it("a new database is at schema 14 or later with both columns", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subcent-"));
     const full = createDatabase(path.join(dir, "state.db"));
     try {
-      expect(SCHEMA_VERSION).toBe(14);
+      expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(14);
       const names = (t: string) => (full.raw.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
       expect(names("inference_costs")).toContain("cost_mc");
       expect(names("ledger_entries")).toContain("amount_mc");

@@ -2519,7 +2519,7 @@ Model: ${ctx.inference.getDefaultModel()}
     {
       name: "remember_fact",
       description:
-        "Store a semantic memory (fact). Provide a category, key, and value. Facts are upserted on category+key.",
+        "Store a semantic memory (fact). Provide a category, key, and value. Facts are upserted on category+key. Don't store current status (balance, tier, synopsis); it is given fresh at each wake-up.",
       category: "memory",
       riskLevel: "safe",
       parameters: {

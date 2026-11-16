@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -753,6 +753,22 @@ export function applyMigrationV14(db: {
     }
   }
 }
+
+// === Fork Phase 1 (run-2 leftover): no status snapshots as long-term facts ===
+// Ingestion used to save system_synopsis / check_credits / check_usdc_balance
+// output as facts, which went stale (run 2 recalled a run-1 synopsis with an
+// old creator address). Those three keys were only copies of tool output.
+export const STALE_STATUS_FACT_KEYS: { category: string; key: string }[] = [
+  { category: "self", key: "system_synopsis" },
+  { category: "financial", key: "last_known_balance" },
+  { category: "financial", key: "usdc_balance" },
+];
+
+export const MIGRATION_V15 = `
+  -- Schema version: 15
+  DELETE FROM semantic_memory WHERE
+    ${STALE_STATUS_FACT_KEYS.map((k) => `(category = '${k.category}' AND key = '${k.key}')`).join("\n    OR ")};
+`;
 
 export const MIGRATION_V10 = `
   -- Schema version: 10

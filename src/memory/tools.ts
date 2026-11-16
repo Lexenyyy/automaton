@@ -40,6 +40,15 @@ export function rememberFact(
 /**
  * Search semantic memory by category and/or query.
  */
+/**
+ * Fork: ", updated YYYY-MM-DD" so the agent can tell an old fact from a
+ * current one. Empty when the date is unknown.
+ */
+export function factDate(updatedAt: string | undefined | null): string {
+  const day = (updatedAt ?? "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `, updated ${day}` : "";
+}
+
 export function recallFacts(
   db: Database,
   args: { category?: string; query?: string },
@@ -51,7 +60,7 @@ export function recallFacts(
       const results = semantic.search(args.query, args.category as SemanticCategory | undefined);
       if (results.length === 0) return "No matching facts found.";
       return results
-        .map((r) => `[${r.category}/${r.key}] = ${r.value} (confidence: ${r.confidence})`)
+        .map((r) => `[${r.category}/${r.key}] = ${r.value} (confidence: ${r.confidence}${factDate(r.updatedAt)})`)
         .join("\n");
     }
 
@@ -59,7 +68,7 @@ export function recallFacts(
       const results = semantic.getByCategory(args.category as SemanticCategory);
       if (results.length === 0) return `No facts in category: ${args.category}`;
       return results
-        .map((r) => `[${r.key}] = ${r.value} (confidence: ${r.confidence})`)
+        .map((r) => `[${r.key}] = ${r.value} (confidence: ${r.confidence}${factDate(r.updatedAt)})`)
         .join("\n");
     }
 

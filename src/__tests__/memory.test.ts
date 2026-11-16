@@ -661,16 +661,20 @@ describe("MemoryIngestionPipeline", () => {
     expect(recent[0].eventType).toContain("tool:");
   });
 
-  it("should extract semantic facts from check_credits", () => {
+  it("does not store status output as long-term facts (fork)", () => {
     const turn = makeTurn({
-      toolCalls: [makeToolCallResult({ name: "check_credits", result: "Balance: $5.00 (500 cents)" })],
+      toolCalls: [
+        makeToolCallResult({ name: "check_credits", result: "Balance: $5.00 (500 cents)" }),
+        makeToolCallResult({ name: "system_synopsis", result: "=== SYSTEM SYNOPSIS ===\nCreator: 0x0000" }),
+        makeToolCallResult({ name: "check_usdc_balance", result: "USDC balance: 1.000000 USDC" }),
+      ],
     });
     pipeline.ingest("s1", turn, turn.toolCalls);
 
     const sm = new SemanticMemoryManager(db);
-    const balance = sm.get("financial", "last_known_balance");
-    expect(balance).toBeTruthy();
-    expect(balance!.value).toContain("$5.00");
+    expect(sm.get("financial", "last_known_balance")).toBeFalsy();
+    expect(sm.get("self", "system_synopsis")).toBeFalsy();
+    expect(sm.get("financial", "usdc_balance")).toBeFalsy();
   });
 
   it("should update relationship memory from send_message", () => {

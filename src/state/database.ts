@@ -49,6 +49,7 @@ import {
   MIGRATION_V12,
   MIGRATION_V13,
   applyMigrationV14,
+  MIGRATION_V15,
 } from "./schema.js";
 import type {
   RiskLevel,
@@ -640,6 +641,11 @@ function applyMigrations(db: DatabaseType): void {
       // Fork fix 6: millicent columns (only added where missing).
       version: 14,
       apply: () => applyMigrationV14(db),
+    },
+    {
+      // Fork: remove status snapshots stored as long-term facts.
+      version: 15,
+      apply: () => db.exec(MIGRATION_V15),
     },
   ];
 

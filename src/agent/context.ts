@@ -276,7 +276,9 @@ export function formatMemoryBlock(memories: MemoryRetrievalResult): string {
   if (memories.semanticMemory.length > 0) {
     sections.push("### Known Facts");
     for (const e of memories.semanticMemory) {
-      sections.push(`- [${e.category}/${e.key}] ${e.value}`);
+      // Fork: with the date, so an old fact is recognizable as old.
+      const day = (e.updatedAt ?? "").slice(0, 10);
+      sections.push(`- [${e.category}/${e.key}] ${e.value}${/^\d{4}-\d{2}-\d{2}$/.test(day) ? ` (updated ${day})` : ""}`);
     }
   }
 

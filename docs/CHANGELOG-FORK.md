@@ -493,3 +493,16 @@
   SIGTERM with exit 0, nothing left, network removed, volumes kept, a SIGTERM-ignoring stand-in
   force-stopped and reported). Baselines: Linux 1940 passed; Windows 1910 passed, 22 known failures,
   8 skipped.
+- 2026-11-16: **No status snapshots as long-term facts** (run-2 leftover). Memory ingestion saved the
+  output of `system_synopsis`, `check_credits` and `check_usdc_balance` as permanent facts; run 2's
+  `recall_facts` returned a run-1 synopsis with creator 0x000…, and the memory block also loads
+  "self" facts automatically on turns without input.
+  - Ingestion no longer stores these (status is only true at that moment; the wake-up message
+    carries the current status). Error learning and `discover_agents` are unchanged.
+  - Schema V15 deletes exactly those three keys (`self/system_synopsis`,
+    `financial/last_known_balance`, `financial/usdc_balance`); other facts are kept. On the owner's
+    volume it runs the next time a command opens the database.
+  - `recall_facts` and the memory block show each fact's last-updated day, so old facts are
+    recognizable; `remember_fact` says not to store current status.
+  Tests: `stale-status-facts` (3); `memory` test updated (status output is no longer stored).
+  Baselines: Linux 1943 passed; Windows 1913 passed, 22 known failures, 8 skipped. `agent:verify` 111.

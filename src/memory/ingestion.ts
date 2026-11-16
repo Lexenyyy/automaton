@@ -647,36 +647,12 @@ export class MemoryIngestionPipeline {
           continue;
         }
 
-        // Extract facts from specific tool results
-        if (tc.name === "check_credits" && tc.result) {
-          this.semantic.store({
-            category: "financial",
-            key: "last_known_balance",
-            value: tc.result,
-            confidence: 1.0,
-            source: sessionId,
-          });
-        }
-
-        if (tc.name === "system_synopsis" && tc.result) {
-          this.semantic.store({
-            category: "self",
-            key: "system_synopsis",
-            value: tc.result.slice(0, 500),
-            confidence: 1.0,
-            source: sessionId,
-          });
-        }
-
-        if (tc.name === "check_usdc_balance" && tc.result) {
-          this.semantic.store({
-            category: "financial",
-            key: "usdc_balance",
-            value: tc.result,
-            confidence: 1.0,
-            source: sessionId,
-          });
-        }
+        // Extract facts from specific tool results.
+        // Fork: status output (check_credits, system_synopsis,
+        // check_usdc_balance) is NOT stored as a long-term fact: it is only
+        // true at that moment, and the wake-up message carries the current
+        // status. A run-1 synopsis with an old creator address came back via
+        // recall_facts and the memory block. Schema V15 removes the old rows.
 
         if (tc.name === "discover_agents" && tc.result && !tc.result.includes("No agents")) {
           this.semantic.store({

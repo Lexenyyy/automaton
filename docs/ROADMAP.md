@@ -104,7 +104,7 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
   - [x] **`agent:down` leaves the `agent:run` runtime running** (fixed, see CHANGELOG) ("network still in use"; needed
         `agent:kill`). Fix: graceful stop of one-off runtime containers, waiting for in-flight model calls
         to be recorded.
-  - [ ] **Stale status facts.** `system_synopsis` / balance outputs were saved as long-term facts
+  - [x] **Stale status facts.** (fixed, see CHANGELOG) `system_synopsis` / balance outputs were saved as long-term facts
         (`recall_facts` returned the run-1 snapshot with creator 0x000…). Fix: stop storing them and
         delete the stale ones.
 Done when: agent completes a simple task unaided; restart loses no state; cost per turn visible.
