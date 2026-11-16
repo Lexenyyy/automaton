@@ -6,8 +6,28 @@
  * The automaton's entire identity history is version-controlled and replayable.
  */
 
-import type { ConwayClient, AutomatonDatabase } from "../types.js";
+import type { ConwayClient, AutomatonDatabase, SandboxConfig } from "../types.js";
 import { gitInit, gitCommit, gitStatus, gitLog } from "./tools.js";
+import { isContainerSandbox } from "../sandbox/transport.js";
+
+/**
+ * Fork: start state versioning at startup, or report why it is off.
+ *
+ * In container mode, ~/.automaton lives in the runtime container, which has
+ * no git, while git commands run in the sandbox, which cannot see that folder
+ * (and must not). So versioning is off there; the history the agent needs is
+ * kept in the database (soul_history, modifications, ledger).
+ */
+export async function initStateVersioning(
+  conway: ConwayClient,
+  sandbox: SandboxConfig | undefined,
+): Promise<{ status: "initialized" } | { status: "off"; reason: string }> {
+  if (isContainerSandbox(sandbox)) {
+    return { status: "off", reason: "container mode; history is kept in the database" };
+  }
+  await initStateRepo(conway);
+  return { status: "initialized" };
+}
 
 const AUTOMATON_DIR = "~/.automaton";
 

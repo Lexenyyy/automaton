@@ -384,3 +384,11 @@
     never touched). Volumes are never removed; the runtime's exit code is passed through; Ctrl+C still
     reaches the runtime for a graceful stop. `agent:verify` 106 checks (+4). Baselines unchanged
     (Linux 1908 passed; Windows 1878 passed, 22 known failures, 8 skipped).
+  - **State versioning off in container mode** (fix 4): startup tried to `git init` `~/.automaton`
+    through the sandbox and failed with "path outside the sandbox roots". That folder is in the
+    runtime (no git there by design) and the sandbox must not reach it. New `initStateVersioning`
+    skips it in container mode and logs one info line ("State versioning: off (container mode;
+    history is kept in the database)"); local mode is unchanged. The `commit*` helpers had no callers,
+    so nothing else used the repo. Open point for fix 3: the `git_*` tools still default to
+    `~/.automaton`. Test: `state-versioning-mode` (2). Baselines: Linux 1910 passed; Windows 1880
+    passed, 22 known failures, 8 skipped.

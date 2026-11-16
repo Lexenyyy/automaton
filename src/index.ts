@@ -17,7 +17,7 @@ import { createHeartbeatDaemon } from "./heartbeat/daemon.js";
 import { consumeNextWakeEvent, insertWakeEvent } from "./state/database.js";
 import { runAgentLoop } from "./agent/loop.js";
 import { loadSkills } from "./skills/loader.js";
-import { initStateRepo } from "./git/state-versioning.js";
+import { initStateVersioning } from "./git/state-versioning.js";
 import type { AgentState, Skill } from "./types.js";
 import { createLogger, setGlobalLogLevel, StructuredLogger } from "./observability/logger.js";
 import { prettySink } from "./observability/pretty-sink.js";
@@ -255,10 +255,13 @@ async function run(): Promise<void> {
   } = rt;
   let skills: Skill[] = rt.skills;
 
-  // Initialize state repo (git)
+  // Initialize state repo (git). Fork: off in container mode (no git in the
+  // runtime; the sandbox must not reach ~/.automaton).
   try {
-    await initStateRepo(conway);
-    logger.info(`[${new Date().toISOString()}] State repo initialized.`);
+    const sv = await initStateVersioning(conway, config.sandbox);
+    logger.info(
+      `[${new Date().toISOString()}] ${sv.status === "off" ? `State versioning: off (${sv.reason}).` : "State repo initialized."}`,
+    );
   } catch (err: any) {
     logger.warn(`[${new Date().toISOString()}] State repo init failed: ${err.message}`);
   }
