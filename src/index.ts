@@ -24,6 +24,7 @@ import { prettySink } from "./observability/pretty-sink.js";
 import { bootstrapTopup } from "./conway/topup.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
+import { releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
 import {
   beginInferenceShutdown,
   getInFlightInferenceCount,
@@ -356,6 +357,8 @@ async function run(): Promise<void> {
   // SHUTDOWN_INFERENCE_WAIT_MS, inside Docker's 30 s stop grace) until every
   // call that already ran has its cost recorded, so the ledger never misses one.
   let shuttingDown = false;
+  let stopLeaseHeartbeat: (() => void) | undefined;
+  let leaseLost = false;
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -374,15 +377,29 @@ async function run(): Promise<void> {
       }
     }
     try {
-      db.setAgentState("sleeping");
+      stopLeaseHeartbeat?.();
+      // A runtime that lost its lease leaves the agent state to the new holder.
+      if (!leaseLost) db.setAgentState("sleeping");
+      if (rt.lease) releaseRuntimeLease(db.raw, rt.lease.instanceId);
       db.close();
     } finally {
-      process.exit(0);
+      process.exit(leaseLost ? 3 : 0);
     }
   };
 
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+
+  // Fork: keep the instance lease fresh. If it is no longer ours (this process
+  // stalled past the TTL and another runtime started), stop: never two agents.
+  if (rt.lease) {
+    const leaseId = rt.lease.instanceId;
+    stopLeaseHeartbeat = startLeaseHeartbeat(db.raw, leaseId, (why) => {
+      logger.error(`[${new Date().toISOString()}] Runtime lease lost (${why}). Stopping this runtime.`);
+      leaseLost = true;
+      void shutdown();
+    });
+  }
 
   // ─── Main Run Loop ──────────────────────────────────────────
   // The automaton alternates between running and sleeping.

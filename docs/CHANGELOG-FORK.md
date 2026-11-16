@@ -613,3 +613,23 @@
   Tests: `agent:verify` +3 (images labelled, preflight prints it, `agent:status` flags an older image).
   Baselines unchanged: Linux 1968 passed; Windows 1936 passed, 22 known failures, 10 skipped.
   `agent:verify` 119.
+- 2026-11-16: **Runtime instance lease** (incident fix 3, owner-approved). The script checks from fix 1
+  only cover the pnpm commands; this is the backstop in code, however the runtime was started (e.g. a
+  direct `docker compose run`).
+  - `src/runtime/instance-lease.ts` (new): kv `runtime_lease` = instance ID, host (container ID), pid,
+    build, start time, heartbeat. Acquire, renew and release run in IMMEDIATE transactions. Live = last
+    heartbeat under 90 s (`LEASE_TTL_MS`); renewal every 30 s; a malformed value counts as free.
+  - `prepareRuntime` (`--run` only) takes it right after the database opens, before anything else is
+    written, and refuses to start otherwise: "Another runtime is already running on this database (host,
+    pid, build, started, last heartbeat N s ago) ... Refusing to start." Released again if startup then
+    fails on the tool allowlist.
+  - `run()` renews it; if it is no longer ours (this process stalled past the TTL and another runtime
+    took over), the runtime logs it and shuts down (exit 3) without touching the agent state. Graceful
+    shutdown releases it, so `agent:down` then `agent:run` works at once; after `agent:kill` it expires
+    after 90 s.
+  - `--preflight` prints `runtime lease: free` or `HELD, an agent is running (...)`; it never takes it.
+  - `agent:verify` output is grouped by heading (fix 2 printed one heading three times).
+  Tests: `instance-lease` (5); `conway-off` checks the real startup path (second `--run` refused,
+  preflight shows HELD). `agent:verify` +3 (two containers on the shared state.db: refused while held,
+  preflight shows HELD, free at once after a graceful stop). Baselines: Linux 1973 passed; Windows 1941
+  passed, 22 known failures, 10 skipped. `agent:verify` 122.

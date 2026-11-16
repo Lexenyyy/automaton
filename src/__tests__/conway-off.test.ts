@@ -249,6 +249,17 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
     expect(rt.config.conway).toBe("off");
     expect(rt.social).toBeUndefined();
     expect(rt.db.getIdentity("conwayRegistrationStatus")).toBeUndefined();
+
+    // Fork: instance lease. A second --run on the same database is refused;
+    // preflight reports the lease as held.
+    expect(text).toContain("runtime lease: free");
+    expect(rt.lease).toBeDefined();
+    await expect(prepareRuntime(await setup(), { preflight: false })).rejects.toThrow(
+      /Another runtime is already running on this database .*Refusing to start/,
+    );
+    expect((await runPreflight(await setup())).lines.join("\n")).toContain("runtime lease: HELD");
+    const { releaseRuntimeLease } = await import("../runtime/instance-lease.js");
+    releaseRuntimeLease(rt.db.raw, rt.lease!.instanceId);
     rt.db.close();
 
     expect(conwayRequests).toEqual([]);

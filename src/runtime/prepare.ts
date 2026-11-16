@@ -8,6 +8,7 @@
  */
 
 import fs from "fs";
+import os from "os";
 import { randomUUID } from "crypto";
 import { keccak256, toHex, createPublicClient, http } from "viem";
 import { getWallet, getWalletPath } from "../identity/wallet.js";
@@ -38,6 +39,14 @@ import {
   type ConwayMode,
 } from "../conway/mode.js";
 import { createLogger } from "../observability/logger.js";
+import {
+  acquireRuntimeLease,
+  formatLeaseHolder,
+  formatLeaseRefusal,
+  readRuntimeLease,
+  releaseRuntimeLease,
+  type RuntimeLease,
+} from "./instance-lease.js";
 import type {
   AutomatonConfig,
   AutomatonDatabase,
@@ -95,6 +104,8 @@ export interface PreparedRuntime {
   /** Keys used by the main-loop model client (config first, then env). */
   modelKeys: { openaiApiKey?: string; anthropicApiKey?: string };
   rpcUrlChecked: string | undefined;
+  /** Fork: this runtime's instance lease (`--run` only; undefined in preflight). */
+  lease?: RuntimeLease;
 }
 
 export async function prepareRuntime(
@@ -148,6 +159,23 @@ export async function prepareRuntime(
   // Initialize database
   const dbPath = resolvePath(config.dbPath);
   const db = createDatabase(dbPath);
+
+  // Fork: one agent loop per database (instance lease), taken before anything
+  // else is written. Preflight only reports it.
+  let lease: RuntimeLease | undefined;
+  if (!opts.preflight) {
+    const got = acquireRuntimeLease(db.raw, {
+      host: os.hostname(),
+      pid: process.pid,
+      build: process.env.AUTOMATON_BUILD_COMMIT || "unknown",
+    });
+    if (!got.ok) {
+      db.close();
+      throw new Error(formatLeaseRefusal(got.holder, got.ageMs));
+    }
+    lease = got.lease;
+    logger.info(`[${ts()}] Runtime lease taken (instance ${lease.instanceId}).`);
+  }
 
   // Fork: apply settings the agent changed itself (stored in the database),
   // only where they still meet the owner's current limits.
@@ -303,6 +331,7 @@ export async function prepareRuntime(
     ),
   );
   if (allowProblems.length) {
+    if (lease) releaseRuntimeLease(db.raw, lease.instanceId);
     db.close();
     throw new Error(`${allowProblems.join("; ")}. Refusing to start.`);
   }
@@ -326,6 +355,7 @@ export async function prepareRuntime(
     ollamaBaseUrl,
     modelKeys,
     rpcUrlChecked: rpcUrl,
+    lease,
   };
 }
 
@@ -355,6 +385,12 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     line(true, `creator: ${rt.config.creatorAddress}`);
     line(true, `Conway: ${rt.conwayMode}${rt.conwayMode === "off" ? " (own providers only; no Conway requests)" : ""}`);
     line(true, `database: ${rt.db.raw.name}`);
+    const held = readRuntimeLease(rt.db.raw);
+    lines.push(
+      held?.live
+        ? `INFO  runtime lease: HELD, an agent is running (${formatLeaseHolder(held.lease, held.ageMs)}); --run would be refused`
+        : "INFO  runtime lease: free (no agent running on this database)",
+    );
 
     // Models: each strategy model must have a usable provider (no model call).
     const s = rt.config.modelStrategy;

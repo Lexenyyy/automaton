@@ -291,7 +291,7 @@ console.log(JSON.stringify({ results }));
 // ─── run ───────────────────────────────────────────────────────
 
 function cleanup() {
-  docker(["rm", "-f", PROBE, `${PROJECT}-live`, `${PROJECT}-old`]);
+  docker(["rm", "-f", PROBE, `${PROJECT}-live`, `${PROJECT}-old`, `${PROJECT}-lease`]);
   docker(["rmi", OLD_IMAGE]);
   docker([...COMPOSE, "down", "-v", "--remove-orphans"]);
   fs.rmSync(secretsDir, { recursive: true, force: true });
@@ -490,6 +490,35 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   docker(["rm", "-f", `${PROJECT}-old`]);
   docker(["rmi", OLD_IMAGE]);
 
+  // Runtime instance lease across containers on the shared state.db (the
+  // backstop in code). Lease functions only; the agent loop is never started.
+  const LEASE_JS = `import { createDatabase } from "/app/dist/state/database.js";
+import { acquireRuntimeLease, releaseRuntimeLease } from "/app/dist/runtime/instance-lease.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+const r = acquireRuntimeLease(db.raw, { host: process.argv[1], pid: process.pid, build: "verify" });
+console.log(JSON.stringify({ ok: r.ok, holder: r.ok ? null : r.holder.host }));`;
+  const holderJs = `${LEASE_JS}
+process.on("SIGTERM", () => { if (r.ok) releaseRuntimeLease(db.raw, r.lease.instanceId); db.close(); process.exit(0); });
+setInterval(() => {}, 1000);`;
+  const tryJs = `${LEASE_JS}
+if (r.ok) releaseRuntimeLease(db.raw, r.lease.instanceId);
+db.close();`;
+  const HOLDER = `${PROJECT}-lease`;
+  docker([...COMPOSE, "run", "-d", "--no-deps", "--name", HOLDER, "--entrypoint", "node", "runtime",
+    "--input-type=module", "-e", holderJs, "verify-holder"], { allowFail: false });
+  const tryLease = () => lastJsonLine(docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime",
+    "--input-type=module", "-e", tryJs, "verify-second"]).out) ?? {};
+  let held = {};
+  for (let i = 0; i < 20 && held.holder !== "verify-holder"; i++) held = tryLease(); // holder may still be starting
+  check("runtime lease", "a second runtime container is refused while another holds the lease",
+    held.ok === false && held.holder === "verify-holder", JSON.stringify(held));
+  const preHeld = oneoff(["--needs-sandbox", "--", "--preflight"]);
+  check("runtime lease", "--preflight reports the lease as held", preHeld.stdout.includes("runtime lease: HELD"), `exit ${preHeld.status}`);
+  docker(["stop", "-t", "10", HOLDER]);
+  docker(["rm", "-f", HOLDER]);
+  const freed = tryLease();
+  check("runtime lease", "after a graceful stop the lease is free at once", freed.ok === true, JSON.stringify(freed));
+
   // ─── graceful stop (pnpm agent:down) ─────────────────────────
   // Stand-ins for an agent:run runtime: one-off `compose run` containers of the
   // runtime service (the real agent is never started here). The sandbox is running.
@@ -524,13 +553,17 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   cleanup();
 }
 
-let group = "";
+// Grouped by heading, in order of first appearance.
+const groups = new Map();
 for (const r of results) {
-  if (r.group !== group) {
-    group = r.group;
-    console.log(`\n${group}`);
+  if (!groups.has(r.group)) groups.set(r.group, []);
+  groups.get(r.group).push(r);
+}
+for (const [group, rs] of groups) {
+  console.log(`\n${group}`);
+  for (const r of rs) {
+    console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail && (!r.ok || r.detail.startsWith("address")) ? `  (${r.detail})` : ""}`);
   }
-  console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail && (!r.ok || r.detail.startsWith("address")) ? `  (${r.detail})` : ""}`);
 }
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\nagent:verify: ${results.length - failed} passed, ${failed} failed`);
