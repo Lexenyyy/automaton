@@ -8,6 +8,10 @@
 #   pnpm agent:run      start the agent (owner only)
 #   pnpm agent:down     stop everything (volumes are kept)
 #
+# The pnpm one-off commands go through docker/run-oneoff.mjs: init, ledger and
+# settings never start the sandbox; preflight and run stop it afterwards if
+# they started it (an already running sandbox is left alone).
+#
 # API keys: one file per key in a folder outside the repo, for example
 #   $env:AUTOMATON_SECRETS_DIR = "$env:USERPROFILE\.automaton-secrets"
 # File names: openai_api_key, anthropic_api_key, groq_api_key, together_api_key.

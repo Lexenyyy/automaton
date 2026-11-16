@@ -376,3 +376,11 @@
     `conway-off` (+1). `agent:verify` +2 checks (creator from env; refusal without it).
     Baselines: Linux 1908 passed, 0 failed. Windows 1878 passed, 22 known failures, 8 skipped.
     `agent:verify` 102 checks.
+  - **One-off commands clean up after themselves** (fix 7): `docker compose run` started the sandbox
+    (`depends_on`) and left it running. New `docker/run-oneoff.mjs` wraps every pnpm one-off command:
+    `agent:init`, `agent:ledger*` and `agent:settings*` run with `--no-deps` (they only touch the
+    wallet and `state.db`, so the sandbox is never started); `agent:preflight` and `agent:run` stop and
+    remove the sandbox afterwards, but only if it was not already running (a live agent's sandbox is
+    never touched). Volumes are never removed; the runtime's exit code is passed through; Ctrl+C still
+    reaches the runtime for a graceful stop. `agent:verify` 106 checks (+4). Baselines unchanged
+    (Linux 1908 passed; Windows 1878 passed, 22 known failures, 8 skipped).

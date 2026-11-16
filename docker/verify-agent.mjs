@@ -408,6 +408,27 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const none = spawnSync(process.execPath, [killScript, "--project", `${PROJECT}-nothing-here`], { encoding: "utf-8", env, timeout: 60_000 });
   check("kill command", "with nothing running: exit 0", none.status === 0 && /nothing running/.test(none.stdout), none.stdout.trim());
 
+  // ─── one-off commands (docker/run-oneoff.mjs) ────────────────
+  // Starts from nothing running (after the kill above).
+  console.log("agent:verify: one-off commands ...");
+  const oneoffScript = path.join(ROOT, "docker", "run-oneoff.mjs");
+  const oneoff = (args) => spawnSync(process.execPath, [oneoffScript, "--project", PROJECT, ...args], { encoding: "utf-8", env, timeout: 300_000 });
+  const sandboxIds = (all) => docker([...COMPOSE, "ps", ...(all ? ["-a"] : []), "-q", "sandbox"]).out.trim();
+  const ledgerOneoff = oneoff(["--", "--ledger", "show"]);
+  check("one-off commands", "ledger show works and never creates the sandbox",
+    ledgerOneoff.status === 0 && ledgerOneoff.stdout.includes("Ledger (testnet") && sandboxIds(true) === "",
+    `exit ${ledgerOneoff.status}; sandbox ${sandboxIds(true) || "none"}`);
+  const preOneoff = oneoff(["--needs-sandbox", "--", "--preflight"]);
+  check("one-off commands", "preflight passes and stops the sandbox it started",
+    preOneoff.status === 0 && preOneoff.stdout.includes("PREFLIGHT PASSED") && sandboxIds(true) === "",
+    `exit ${preOneoff.status}; sandbox ${sandboxIds(true) || "none"}`);
+  docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
+  const preKeep = oneoff(["--needs-sandbox", "--", "--preflight"]);
+  check("one-off commands", "preflight leaves an already running sandbox running",
+    preKeep.status === 0 && sandboxIds(false) !== "", `exit ${preKeep.status}`);
+  const failOneoff = oneoff(["--", "--ledger", "grant", "-5"]);
+  check("one-off commands", "passes the runtime's exit code through", failOneoff.status === 1, `exit ${failOneoff.status}`);
+
   exitCode = results.every((r) => r.ok) ? 0 : 1;
 } catch (err) {
   check("verify", "script error", false, err.message);

@@ -79,6 +79,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:kill`: immediate stop of both containers (SIGKILL), volumes kept, safe to run anytime.
   - `agent:down`: graceful stop.
   - `agent:run`: owner only (rule 6).
+  - One-off commands run through `docker/run-oneoff.mjs`: `init`, `ledger`, `settings` use `--no-deps`
+    (sandbox never started); `preflight` and `run` stop and remove the sandbox afterwards, only if
+    they started it.
   - Config template: `docker/automaton.testnet.json` (mounted read-only).
 - Known limits (Phase 5a): `install_skill` and `expose_port` fail because the sandbox has no network.
   Groq is not yet available to the main loop (only to workers).
