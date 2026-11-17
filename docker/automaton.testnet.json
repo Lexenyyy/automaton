@@ -9,7 +9,15 @@
   "orchestration": "off",
   "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
   "maxTurnsPerCycle": 6,
-  "soulConfig": { "maxUpdatesPerWake": 2 },
+  "soulConfig": {
+    "maxUpdatesPerWake": 2,
+    "defaultCorePurpose": "I am automaton-testnet, a test agent on Base Sepolia testnet with test funds only. Each wake I read my status, note anything new, and go back to sleep.",
+    "defaultValues": [
+      "Follow my genesis prompt and my owner's rules",
+      "Spend as little as possible: few turns, then sleep",
+      "Stay honest, legal and within every provider's terms"
+    ]
+  },
   "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
   "modelStrategy": { "hourlyBudgetCents": 5, "dailyBudgetCents": 30 },
   "toolAllowlist": [

@@ -67,6 +67,8 @@
     "agent:watch": "node docker/watch-agent.mjs",
     "agent:settings": "node docker/run-oneoff.mjs -- --settings show",
     "agent:settings:reset": "node docker/run-oneoff.mjs -- --settings reset",
+    "agent:soul": "node docker/run-oneoff.mjs -- --soul show",
+    "agent:soul:reset": "node docker/run-oneoff.mjs -- --soul reset",
     "agent:ledger": "node docker/run-oneoff.mjs -- --ledger show",
     "agent:ledger:grant": "node docker/run-oneoff.mjs -- --ledger grant",
     "clean": "rm -rf dist && pnpm -r clean"

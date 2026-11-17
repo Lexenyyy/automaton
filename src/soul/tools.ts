@@ -75,51 +75,7 @@ export async function updateSoul(
       identity,
     );
 
-    // Validate
-    const validation = validateSoul(merged);
-    if (!validation.valid) {
-      return {
-        success: false,
-        version: current.version,
-        errors: validation.errors,
-      };
-    }
-
-    // Increment version
-    const currentVersion = getCurrentSoulVersion(db);
-    const newVersion = Math.max(currentVersion, current.version) + 1;
-    const newSoul: SoulModel = {
-      ...validation.sanitized,
-      version: newVersion,
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Write to file
-    const content = writeSoulMd(newSoul);
-    const dir = path.dirname(resolvedPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(resolvedPath, content, "utf-8");
-
-    // Get previous version ID
-    const latestHistory = getLatestSoulHistory(db);
-    const previousVersionId = latestHistory?.id || null;
-
-    // Log to soul_history
-    insertSoulHistory(db, {
-      id: ulid(),
-      version: newVersion,
-      content,
-      contentHash: createHash(content),
-      changeSource: source,
-      changeReason: reason || null,
-      previousVersionId,
-      approvedBy: null,
-      createdAt: new Date().toISOString(),
-    });
-
-    return { success: true, version: newVersion };
+    return saveSoulVersion(db, merged, current.version, source, reason, resolvedPath, null);
   } catch (error) {
     logger.error("updateSoul failed", error instanceof Error ? error : undefined);
     return {
@@ -128,6 +84,71 @@ export async function updateSoul(
       errors: [error instanceof Error ? error.message : "Unknown error"],
     };
   }
+}
+
+/** The default soul file path (~/.automaton/SOUL.md). */
+export function defaultSoulPath(): string {
+  return path.join(process.env.HOME || "/root", ".automaton", "SOUL.md");
+}
+
+/**
+ * Validate a complete soul, give it the next version, write SOUL.md and log it
+ * to soul_history. Shared by updateSoul and the owner reset (fork, run 5).
+ */
+export function saveSoulVersion(
+  db: BetterSqlite3.Database,
+  soul: SoulModel,
+  fileVersion: number,
+  source: SoulHistoryRow["changeSource"],
+  reason: string | undefined,
+  resolvedPath: string,
+  approvedBy: string | null,
+): UpdateSoulResult {
+  // Validate
+  const validation = validateSoul(soul);
+  if (!validation.valid) {
+    return {
+      success: false,
+      version: fileVersion,
+      errors: validation.errors,
+    };
+  }
+
+  // Increment version
+  const currentVersion = getCurrentSoulVersion(db);
+  const newVersion = Math.max(currentVersion, fileVersion) + 1;
+  const newSoul: SoulModel = {
+    ...validation.sanitized,
+    version: newVersion,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Write to file
+  const content = writeSoulMd(newSoul);
+  const dir = path.dirname(resolvedPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(resolvedPath, content, "utf-8");
+
+  // Get previous version ID
+  const latestHistory = getLatestSoulHistory(db);
+  const previousVersionId = latestHistory?.id || null;
+
+  // Log to soul_history
+  insertSoulHistory(db, {
+    id: ulid(),
+    version: newVersion,
+    content,
+    contentHash: createHash(content),
+    changeSource: source,
+    changeReason: reason || null,
+    previousVersionId,
+    approvedBy,
+    createdAt: new Date().toISOString(),
+  });
+
+  return { success: true, version: newVersion };
 }
 
 // ─── View Soul ──────────────────────────────────────────────────

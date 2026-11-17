@@ -757,3 +757,21 @@
   `update_soul` tool passes them and accepts only `corePurpose, values, behavioralGuidelines, personality,
   boundaries, strategy` (was: any key, including name/address/version). `view_soul` shows "(not set)" for an
   empty name. Tests: `soul-identity` (4).
+- 2026-11-17: **Owner soul reset; soul defaults as settings; sandbox cleanup** (F4). The soul still carried the
+  first genesis prompt's purpose ("update my SOUL.md … note the main tools") and the upstream values ("Survive:
+  maintain compute resources at all costs", "Create: build things"), injected into every prompt.
+  - `automaton --soul show|reset`, `pnpm agent:soul` / `pnpm agent:soul:reset` (`src/soul/reset.ts`, new; one-off
+    with `--no-deps`, no model call, no network, no wallet file read: the address comes from the `identity` table).
+    Reset writes a fresh soul as the next version: purpose `soulConfig.defaultCorePurpose` (else the genesis
+    prompt), values `soulConfig.defaultValues` (else the upstream four), identity from the runtime, no strategy;
+    `soul_history` keeps every earlier version (change_source `human`, approved_by `owner`). Refused while an
+    agent runs: by `run-oneoff` (like `--init`) and by the runtime lease.
+  - Settings (rule 7): `soulConfig.defaultCorePurpose` (string ≤ 2000) and `defaultValues` (1–10 strings); startup
+    refuses invalid values. Template: a short testnet purpose and three values (follow the genesis prompt and the
+    owner's rules; spend little, few turns, then sleep; honest, legal, within provider terms).
+  - `saveSoulVersion` (validate, version, write, log) now shared by `updateSoul` and the reset.
+  - Sandbox cleanup (owner-approved, done once by hand): removed `READY_NOTICE.txt` and the fake `SOUL.md` that
+    run 5 wrote with `exec echo > …` in the sandbox home (`automaton_sandbox-home`). Left in place: six tool notes
+    from the 2026-11-16 incident run (`MAIN_TOOLS.txt`, `TOOLS*.md/txt`).
+  Tests: `soul-reset` (5); `agent:verify` +3 (reset in a container; refused by run-oneoff and by the lease).
+  Baselines: Linux 2000 passed; Windows 1968 passed, 22 known failures, 10 skipped; `agent:verify` 139.

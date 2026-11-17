@@ -352,6 +352,12 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     settingsShow.code === 0 ? "" : settingsShow.err.trim());
   const settingsReset = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--settings", "reset"]);
   check("entrypoint", "owner command --settings reset works", settingsReset.code === 0 && settingsReset.out.includes("No agent settings to reset."), settingsReset.err.trim());
+  const soulReset = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--soul", "reset"]);
+  check("entrypoint", "owner command --soul reset writes a fresh soul from the template settings, identity from the runtime",
+    soulReset.code === 0 && soulReset.out.includes("Soul reset: version") && soulReset.out.includes("Name: automaton-testnet") &&
+      /Address: 0x[0-9a-fA-F]{40}/.test(soulReset.out) && soulReset.out.includes(`Creator: ${VERIFY_CREATOR}`) &&
+      soulReset.out.includes("- Spend as little as possible: few turns, then sleep"),
+    (soulReset.out + soulReset.err).trim().slice(0, 500));
 
   // Owner ledger commands (throwaway verify volume; the real wallet volume is never touched).
   const ledgerShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "show"]);
@@ -470,6 +476,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   check("one agent per project", "--init is refused while a runtime runs, naming it (exit 1)",
     initRefused.status === 1 && initRefused.stderr.includes("refusing --init") && initRefused.stderr.includes(LIVE),
     `exit ${initRefused.status}: ${initRefused.stderr.trim()}`);
+  const soulRefused = oneoff(["--", "--soul", "reset"]);
+  check("one agent per project", "--soul reset is refused while a runtime runs (exit 1)",
+    soulRefused.status === 1 && soulRefused.stderr.includes("refusing --soul reset"), `exit ${soulRefused.status}: ${soulRefused.stderr.trim()}`);
   const ledgerLive = oneoff(["--", "--ledger", "show"]);
   check("one agent per project", "ledger show still works, with a note that the agent is running",
     ledgerLive.status === 0 && ledgerLive.stderr.includes("note: the agent is running"), `exit ${ledgerLive.status}`);
@@ -520,6 +529,9 @@ db.close();`;
     held.ok === false && held.holder === "verify-holder", JSON.stringify(held));
   const preHeld = oneoff(["--needs-sandbox", "--", "--preflight"]);
   check("runtime lease", "--preflight reports the lease as held", preHeld.stdout.includes("runtime lease: HELD"), `exit ${preHeld.status}`);
+  const soulHeld = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--soul", "reset"]);
+  check("runtime lease", "--soul reset is refused by the runtime while another holds the lease",
+    soulHeld.code === 1 && soulHeld.out.includes("Refusing to reset the soul while an agent is running"), `exit ${soulHeld.code}`);
   docker(["stop", "-t", "10", HOLDER]);
   docker(["rm", "-f", HOLDER]);
   const freed = tryLease();

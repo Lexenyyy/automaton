@@ -1119,6 +1119,13 @@ export interface SoulConfig {
    * (default 2, 0 = no limit). Enforced by policy rule rate.soul_per_wake.
    */
   maxUpdatesPerWake?: number;
+  /**
+   * Fork (run 5): core purpose for a fresh soul (owner reset `--soul reset`).
+   * Default: the genesis prompt.
+   */
+  defaultCorePurpose?: string;
+  /** Fork (run 5): values for a fresh soul. Default: the upstream four values. */
+  defaultValues?: string[];
 }
 
 export const DEFAULT_SOUL_CONFIG: SoulConfig = {

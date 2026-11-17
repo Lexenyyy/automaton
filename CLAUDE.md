@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after run-5 fix F1
-  (Phase 2): 1991 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after run-5 fix F4
+  (Phase 2): 2000 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1959 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1968 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (136 checks after run-5 fix F1).
+  (139 checks after run-5 fix F4).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -102,6 +102,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     `agent:status` marks a runtime on an older image `OLD IMAGE`.
   - `agent:preflight`: startup checks, no model call, agent not started.
   - `agent:settings` / `agent:settings:reset`: owner view/reset of the agent's own settings.
+  - `agent:soul` / `agent:soul:reset`: owner view of the soul / write a fresh one from `soulConfig.defaultCorePurpose`
+    and `defaultValues` (identity from the runtime; history kept; refused while an agent runs).
   - `agent:ledger` / `agent:ledger:grant <dollars>`: owner view of the ledger / add a grant
     (runtime `--ledger show|grant|adjust`, same logic as `automaton-cli ledger`).
   - `agent:kill`: immediate stop of both containers (SIGKILL), volumes kept, safe to run anytime.

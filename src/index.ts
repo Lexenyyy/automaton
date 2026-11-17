@@ -24,7 +24,7 @@ import { prettySink } from "./observability/pretty-sink.js";
 import { bootstrapTopup } from "./conway/topup.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
-import { releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
+import { formatLeaseHolder, readRuntimeLease, releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
 import { pendingStartupSleep, waitForSleepOrWake } from "./agent/startup-sleep.js";
 import { effectiveSleepUntil, resolveSleepSettings } from "./agent/sleep-limits.js";
 import {
@@ -73,6 +73,8 @@ Usage:
   automaton --preflight    Check the startup path (no model call, agent not started)
   automaton --settings show|reset
                            Owner: show or reset settings the agent changed itself
+  automaton --soul show|reset
+                           Owner: show the soul, or write a fresh one from the settings
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
                            Owner: show the ledger or add a grant/adjustment (dollars)
   automaton --activity [--json] [--since <ISO time>]
@@ -160,6 +162,44 @@ Environment:
     console.log(settingsReport(config, db.raw));
     db.close();
     process.exit(0);
+  }
+
+  if (args.includes("--soul")) {
+    // Owner only (pnpm agent:soul / agent:soul:reset): show the soul, or write a
+    // fresh one from soulConfig.defaultCorePurpose/defaultValues (fork, run 5).
+    // No model call, no network, no wallet file read.
+    const sub = args[args.indexOf("--soul") + 1] ?? "show";
+    if (sub !== "show" && sub !== "reset") {
+      logger.error("Usage: automaton --soul show|reset");
+      process.exit(2);
+    }
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const db = createDatabase(resolvePath(config.dbPath));
+    const { resetSoul, soulIdentityFromDb, soulReport } = await import("./soul/reset.js");
+    let code = 0;
+    try {
+      if (sub === "reset") {
+        const held = readRuntimeLease(db.raw);
+        if (held?.live) {
+          console.log(`Refusing to reset the soul while an agent is running (${formatLeaseHolder(held.lease, held.ageMs)}). Stop it first (pnpm agent:down).`);
+          code = 1;
+        } else {
+          const r = resetSoul(db.raw, config, soulIdentityFromDb(db.raw, config));
+          console.log(r.success
+            ? `Soul reset: version ${r.version} written from the owner's settings (earlier versions kept in soul_history).`
+            : `Soul reset failed: ${r.errors?.join("; ")}`);
+          if (!r.success) code = 1;
+        }
+      }
+      console.log(soulReport(db.raw));
+    } finally {
+      db.close();
+    }
+    process.exit(code);
   }
 
   if (args.includes("--ledger")) {
