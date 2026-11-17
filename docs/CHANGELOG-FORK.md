@@ -739,3 +739,12 @@
   prints the wake limits (turns, sleep floor, wakes per day). Tests: `turn-limits` (4); `agent:verify` +1
   (template wake limits in preflight). Baselines: Linux 1991 passed; Windows 1959 passed, 22 known failures,
   10 skipped; `agent:verify` 136.
+- 2026-11-17: **Loop warnings point to sleep; one warning per wake** (F2). The upstream warnings ("LOOP DETECTED
+  … DO SOMETHING DIFFERENT NOW. Pick ONE concrete task … and execute it", "MAINTENANCE LOOP … Write code, create
+  a file, register a service, or build something new") pushed a finished agent into new actions in run 5. Both
+  now end with "If your tasks for this wake are done, call sleep now. Otherwise take one different step that
+  your genesis prompt needs." (`LOOP_WARNING_NEXT_STEP` in `src/agent/loop.ts`). The second loop detection in
+  one wake (repeated pattern or status-only turns) ends the wake with a forced sleep (loopGuard
+  `forcedSleepMinutes`), reason "forced sleep: 2 loop warnings this wake (last: …)", which the watchdog treats as
+  forced. Stricter than before (was: a new warning each time). Tests: `loop.test.ts` (the "enforcement resets"
+  test now asserts the second detection ends the wake; wording checks).

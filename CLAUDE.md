@@ -73,7 +73,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   no orchestration prompt, goal and child tools hidden. The agent works directly (Phase 7 may turn it on).
 - **Loop guard:** `"loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 }` in the template. The loop forces
   sleep when one tool fails 3× in a wake, or is called 3× with the same arguments and result; forced
-  sleeps (this guard, the per-wake turn cap) last 30 min. The next wake-up status says why the last wake ended.
+  sleeps (this guard, the per-wake turn cap, a second loop warning in one wake) last 30 min. Loop warnings tell
+  the agent to sleep if its work is done. The next wake-up status says why the last wake ended.
 - **Per-wake turn cap:** `"maxTurnsPerCycle": 6` in the template (code default 25; startup refuses values
   outside 1..100). The wake ends as "cycle limit" with a forced sleep; the wake status tells the agent the cap.
 - **Runtime instance lease:** `--run` takes kv `runtime_lease` in state.db right after the database opens and

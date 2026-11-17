@@ -82,6 +82,11 @@ const logger = createLogger("loop");
 const MAX_TOOL_CALLS_PER_TURN = 10;
 const MAX_CONSECUTIVE_ERRORS = 5;
 const MAX_REPETITIVE_TURNS = 3;
+/** Fork (run 5): the second loop detection in one wake ends the wake. */
+export const MAX_LOOP_WARNINGS_PER_WAKE = 2;
+/** Fork (run 5): what a loop warning asks for (was: "do something different / build something"). */
+export const LOOP_WARNING_NEXT_STEP =
+  "If your tasks for this wake are done, call sleep now. Otherwise take one different step that your genesis prompt needs.";
 
 export interface AgentLoopOptions {
   identity: AutomatonIdentity;
@@ -390,6 +395,7 @@ export async function runAgentLoop(
   let running = true;
   let lastToolPatterns: string[] = [];
   let loopWarningPattern: string | null = null;
+  let loopWarningsThisWake = 0;
   let idleToolTurns = 0;
   // Fork: why this wake cycle ended; shown in the next wake-up status.
   let wakeEndReason: string | undefined;
@@ -909,7 +915,7 @@ export async function runAgentLoop(
           pendingInput = {
             content:
               `LOOP ENFORCEMENT: You were warned about repeating "${currentPattern}" but continued. ` +
-              `Forcing sleep to prevent credit waste. On next wake, try a DIFFERENT approach.`,
+              `Forcing sleep to prevent credit waste. On the next wake, do only what your genesis prompt asks, then sleep.`,
             source: "system",
           };
           loopWarningPattern = null;
@@ -923,16 +929,20 @@ export async function runAgentLoop(
         }
 
         // Check if the same pattern repeated MAX_REPETITIVE_TURNS times
+        let loopDetected: string | null = null;
         if (
           lastToolPatterns.length === MAX_REPETITIVE_TURNS &&
           lastToolPatterns.every((p) => p === currentPattern)
         ) {
           log(config, `[LOOP] Repetitive pattern detected: ${currentPattern}`);
+          loopDetected = `repeated "${currentPattern}"`;
+          // Fork (run 5): the upstream text ("DO SOMETHING DIFFERENT NOW ... execute
+          // a concrete task") pushed a done agent into new actions; sleep is the answer
+          // when the wake's work is done.
           pendingInput = {
             content:
-              `LOOP DETECTED: You have called "${currentPattern}" ${MAX_REPETITIVE_TURNS} times in a row with similar results. ` +
-              `STOP repeating yourself. You already know your status. DO SOMETHING DIFFERENT NOW. ` +
-              `Pick ONE concrete task from your genesis prompt and execute it.`,
+              `LOOP DETECTED: You have called "${currentPattern}" ${MAX_REPETITIVE_TURNS} times in a row. ` +
+              `Stop repeating it. ${LOOP_WARNING_NEXT_STEP}`,
             source: "system",
           };
           loopWarningPattern = currentPattern;
@@ -946,18 +956,36 @@ export async function runAgentLoop(
           idleToolTurns++;
           if (idleToolTurns >= MAX_REPETITIVE_TURNS && !pendingInput) {
             log(config, `[LOOP] Maintenance loop detected: ${idleToolTurns} consecutive idle-only turns`);
+            loopDetected = `${idleToolTurns} status-check-only turns`;
             pendingInput = {
               content:
                 `MAINTENANCE LOOP DETECTED: Your last ${idleToolTurns} turns only used status-check tools ` +
                 `(${turn.toolCalls.map((tc) => tc.name).join(", ")}). ` +
-                `You already know your status. Review your genesis prompt and SOUL.md, then execute a CONCRETE task. ` +
-                `Write code, create a file, register a service, or build something new.`,
+                `You already know your status. ${LOOP_WARNING_NEXT_STEP}`,
               source: "system",
             };
             idleToolTurns = 0;
           }
         } else {
           idleToolTurns = 0;
+        }
+
+        // Fork (run 5): one loop warning per wake. A second detection in the same
+        // wake ends it with a forced sleep instead of another warning.
+        if (loopDetected) {
+          loopWarningsThisWake++;
+          if (loopWarningsThisWake >= MAX_LOOP_WARNINGS_PER_WAKE) {
+            log(config, `[LOOP] ${loopWarningsThisWake} loop warnings this wake (${loopDetected}). Forcing sleep.`);
+            wakeEndReason = `forced sleep: ${loopWarningsThisWake} loop warnings this wake (last: ${loopDetected})`;
+            pendingInput = undefined;
+            loopWarningPattern = null;
+            lastToolPatterns = [];
+            db.setKV("sleep_until", new Date(Date.now() + forcedSleepMs).toISOString());
+            db.setAgentState("sleeping");
+            onStateChange?.("sleeping");
+            running = false;
+            break;
+          }
         }
       }
 

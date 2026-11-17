@@ -534,6 +534,9 @@ describe("Agent Loop", () => {
     );
     expect(interventionTurn).toBeDefined();
     expect(interventionTurn!.input).toContain("status-check tools");
+    // Fork (run 5): points to sleep, no longer "write code, register a service, build something".
+    expect(interventionTurn!.input).toContain("If your tasks for this wake are done, call sleep now.");
+    expect(interventionTurn!.input).not.toMatch(/Write code|register a service|build something/i);
   });
 
   it("maintenance loop NOT triggered when turns mix idle and productive tools", async () => {
@@ -685,8 +688,8 @@ describe("Agent Loop", () => {
     expect(stateChanges[stateChanges.length - 1]).toBe("sleeping");
   });
 
-  it("loop enforcement resets when agent changes behavior after warning", async () => {
-    // 3 identical exec calls → warning → different tool → 3 more exec calls → warning (not enforcement)
+  it("a second loop detection in one wake ends the wake (fork, run 5), not a second warning", async () => {
+    // 3 identical exec calls → warning → different tool → 3 more exec calls → second detection: forced sleep
     function execResponse(uid: string): ReturnType<typeof toolCallResponse> {
       return {
         id: `resp_${uid}`,
@@ -720,8 +723,8 @@ describe("Agent Loop", () => {
       ]),
       execResponse("r5"),
       execResponse("r6"),
-      execResponse("r7"), // Warning fires again (NOT enforcement — tracker was reset)
-      noToolResponse("Done."),
+      execResponse("r7"), // Second detection this wake: the wake ends here
+      noToolResponse("Never reached."),
     ]);
 
     const turns: AgentTurn[] = [];
@@ -736,18 +739,22 @@ describe("Agent Loop", () => {
       onTurnComplete: (turn) => turns.push(turn),
     });
 
-    // Should have gotten a warning, not enforcement (agent is still running, not force-slept)
-    // The second set of 3 identical patterns gets a NEW warning, not enforcement
+    // Exactly one warning, which points to sleep instead of "do something different"
     const warningTurns = turns.filter(
       (t) => t.input?.includes("LOOP DETECTED"),
     );
-    expect(warningTurns.length).toBeGreaterThanOrEqual(2);
+    expect(warningTurns).toHaveLength(1);
+    expect(warningTurns[0].input).toContain("If your tasks for this wake are done, call sleep now.");
+    expect(warningTurns[0].input).not.toMatch(/DO SOMETHING DIFFERENT|concrete task|build something/i);
 
-    // No enforcement turn should exist
-    const enforcementTurn = turns.find(
-      (t) => t.input?.includes("LOOP ENFORCEMENT"),
+    // The 7th turn ended the wake: no 8th turn, forced sleep of loopGuard.forcedSleepMinutes (30)
+    expect(turns).toHaveLength(7);
+    expect(db.getAgentState()).toBe("sleeping");
+    expect(JSON.parse(db.getKV("last_wake_end")!).reason).toBe(
+      'forced sleep: 2 loop warnings this wake (last: repeated "exec")',
     );
-    expect(enforcementTurn).toBeUndefined();
+    const sleepMs = new Date(db.getKV("sleep_until")!).getTime() - Date.now();
+    expect(sleepMs).toBeGreaterThan(29 * 60_000);
   });
 
   it("discover_agents turns are retained in context (not classified as idle)", { timeout: 180_000 }, async () => {
