@@ -801,3 +801,12 @@
     row"; an offline wake end is not a stop; more than `--max-offline-wakes` (default 4, about 4 h) in a row is.
   Tests: `offline` (9); `agent:verify` +2 (one offline wake passes, five stop the run).
   Baselines: Linux 2012 passed; Windows 1980 passed, 22 known failures, 10 skipped; `agent:verify` 142.
+- 2026-11-17: **`write_file` confined to the workspace with the container sandbox** (F5; owner-approved under
+  rule 4, narrows only). `write_file` confined paths to `/root` (the Conway sandbox home), which our sandbox
+  refuses (roots `/workspace` and its home), so every `write_file` failed (run 5: `note.txt` → `/root/note.txt`,
+  HTTP 403). In container mode it now confines to `sandbox.workspaceDir` (default `/workspace`): relative paths
+  resolve there, `~` is refused (for `exec` it is the sandbox home, outside the workspace), as is any path
+  outside, with a message naming the workspace. The sandbox's own root check and the policy engine's path
+  protection are unchanged; local/Conway mode keeps `/root`. Tests: `write-file-workspace` (3); `agent:verify` +2
+  (relative path written to `/workspace` through the sandbox; `/root` refused).
+  Baselines: Linux 2015 passed; Windows 1983 passed, 22 known failures, 10 skipped; `agent:verify` 144.

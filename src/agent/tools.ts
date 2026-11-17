@@ -6,6 +6,7 @@
  */
 
 import nodePath from "node:path";
+import { isContainerSandbox, workerEditRoot } from "../sandbox/transport.js";
 import { ulid } from "ulid";
 import type {
   AutomatonTool,
@@ -68,6 +69,29 @@ function confinePathToSandbox(filePath: string): string | { error: string } {
   if (resolved !== SANDBOX_HOME && !resolved.startsWith(SANDBOX_HOME + "/")) {
     return {
       error: `Blocked: write_file path "${filePath}" resolves to "${resolved}" which is outside the allowed directory (${SANDBOX_HOME}). Writes are confined to the sandbox home.`,
+    };
+  }
+  return resolved;
+}
+
+/**
+ * Fork (run 5, F5; owner-approved under rule 4, narrows only): with the
+ * container sandbox the confinement root above (/root, the Conway sandbox home)
+ * does not exist, so every write_file failed with a sandbox 403. In container
+ * mode writes are confined to the shared workspace (sandbox.workspaceDir,
+ * default /workspace): relative paths resolve there, "~" is refused (it is the
+ * sandbox home for exec, outside the workspace), and so is anything outside.
+ */
+function confinePathToWorkspace(filePath: string, workspace: string): string | { error: string } {
+  if (filePath.startsWith("~")) {
+    return {
+      error: `Blocked: write_file path "${filePath}": "~" is not in your workspace. Use a path in ${workspace} (relative paths go there).`,
+    };
+  }
+  const resolved = nodePath.posix.resolve(workspace, filePath);
+  if (resolved === workspace || !resolved.startsWith(workspace + "/")) {
+    return {
+      error: `Blocked: write_file path "${filePath}" resolves to "${resolved}", outside your workspace (${workspace}). Writes are confined to the workspace; relative paths go there.`,
     };
   }
   return resolved;
@@ -202,7 +226,10 @@ export function createBuiltinTools(sandboxId: string): AutomatonTool[] {
       execute: async (args, ctx) => {
         const filePath = args.path as string;
         // Path confinement: restrict writes to sandbox home directory
-        const confined = confinePathToSandbox(filePath);
+        // (fork: the workspace with the container sandbox).
+        const confined = isContainerSandbox(ctx.config?.sandbox)
+          ? confinePathToWorkspace(filePath, workerEditRoot(ctx.config?.sandbox, ""))
+          : confinePathToSandbox(filePath);
         if (typeof confined === "object") return confined.error;
         // Guard against overwriting protected files (same check as edit_own_file)
         const { isProtectedFile } = await import("../self-mod/code.js");

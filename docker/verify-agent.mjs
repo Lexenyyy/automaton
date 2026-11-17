@@ -281,6 +281,15 @@ check("sandbox file tool refuses the wallet path", walletRead !== "allowed", wal
 let cfgWrite = "allowed";
 try { await c.writeFile("/home/automaton/.automaton/automaton.json", "{}"); } catch (e) { cfgWrite = e.message; }
 check("sandbox file tool refuses the config path", cfgWrite !== "allowed", cfgWrite);
+// write_file tool (run 5, F5): confined to the workspace, written through the sandbox.
+const { createBuiltinTools } = await import("/app/dist/agent/tools.js");
+const wf = createBuiltinTools("").find((t) => t.name === "write_file");
+const wfCtx = { config: { sandbox: { mode: "container", workspaceDir: "/workspace" } }, conway: c, identity: {}, db: null };
+const wfOut = await wf.execute({ path: "verify-write-file.txt", content: marker }, wfCtx);
+check("write_file tool: a relative path is written to /workspace through the sandbox",
+  wfOut === "File written: /workspace/verify-write-file.txt" && origRead("/workspace/verify-write-file.txt", "utf-8") === marker, wfOut);
+const wfRoot = await wf.execute({ path: "/root/note.txt", content: "x" }, wfCtx);
+check("write_file tool: a path outside the workspace is refused", wfRoot.startsWith("Blocked:") && wfRoot.includes("outside your workspace"), wfRoot);
 let expose = "allowed";
 try { await c.exposePort(8080); } catch (e) { expose = e.message; }
 check("expose_port refused in container mode", expose !== "allowed", expose);

@@ -153,7 +153,17 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
   - [x] **A4 Watchdog** (`3199fa1`): `agent:watch --hours H` stops the agent on a stop rule or at the end.
   - [x] **A5 Provider-side cap:** the OpenAI account is prepaid with auto-reload off (owner).
 - Unattended runs (owner-started, testnet):
-  - [ ] **Run 5: 3 hours**, detached, watchdog on, PC kept awake. Expected about 6 wakes, about 2¢.
+  - [x] **Run 5 (2026-11-17, build 9adf74d): stopped by the watchdog after 1 h 05 min**, 3.74¢. Wake 1 fine
+        (3 turns); wake 2 ran 19 turns in 30 s, driven by upstream "do something different" loop warnings into
+        `remember_fact`, sandbox files and `update_soul` (soul limit and loop guard held; the watchdog's 3¢/hour
+        rule stopped it). Also found: soul parser bug (`Name: address:`), stale soul purpose/values, `write_file`
+        unusable in container mode. Two RPC errors during sleep, no effect. Fixes (one commit each):
+        - [x] F1 per-wake turn cap 6 (`a0fd07a`)  - [x] F2 loop warnings point to sleep, 2nd ends the wake (`678fa8b`)
+        - [x] F3 soul parser + identity from the runtime (`60d837b`)  - [x] F4 `agent:soul:reset`, soul defaults
+          as settings, sandbox cleanup (`dbea0cf`)  - [x] F7 genesis steps, preflight daily-cap warning (`8d78b67`)
+        - [x] F6 offline handling (`edf9b16`)  - [x] F5 `write_file` confined to the workspace (this commit)
+  - [ ] **Run 5b: 3 hours** (rerun after F1–F7, after `pnpm agent:soul:reset`). Expected about 3–6 wakes of
+        2–3 turns, about 1–2¢; no wake over 6 turns.
   - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected at most about 15¢.
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
