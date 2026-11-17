@@ -4,7 +4,8 @@
  *
  *   node docker/watch-agent.mjs [--project <name>] [--hours <h>] [--interval <s>]
  *        [--max-run-cents <c>] [--max-hour-cents <c>] [--max-wake-turns <n>]
- *        [--max-hour-turns <n>] [--max-denials <n>] [--since <ISO time>] [--once]
+ *        [--max-hour-turns <n>] [--max-denials <n>] [--max-offline-wakes <n>]
+ *        [--since <ISO time>] [--once]
  *
  * Every --interval seconds (default 300) it checks Docker (agent:status logic)
  * and the activity report from state.db (`runtime --activity --json --since
@@ -23,6 +24,8 @@
  *   - a wake ended by force: loop guard, cycle limit, budget cap, wake limit,
  *     consecutive errors
  *   - one tool denied by policy --max-denials times (default 3)
+ *   - more than --max-offline-wakes wakes in a row offline (default 4, about
+ *     4 h with the 30/60/120-min backoff); a single offline wake is not a stop
  *   - survival tier low_compute, critical or dead
  *   - any ledger entry other than inference cost (grants, transfers, revenue)
  *   - the activity report unreadable 3 checks in a row
@@ -66,6 +69,7 @@ const limits = {
   maxWakeTurns: num("--max-wake-turns", 6, 1),
   maxHourTurns: num("--max-hour-turns", 20, 1),
   maxDenials: num("--max-denials", 3, 1),
+  maxOfflineWakes: num("--max-offline-wakes", 4, 1),
 };
 const once = args.includes("--once");
 
@@ -136,7 +140,8 @@ function check() {
   out(
     `check: ${runtimes[0].name} build ${runtimes[0].commit} | state ${a.agentState}, tier ${a.tier ?? "?"} | ` +
       `since start: ${s.turns} turns, ${cents(s.spendMc)}c | last hour: ${hourTurns} turns, ${cents(hourSpendMc)}c | ` +
-      `this wake: ${a.turnsThisWake} turns | last wake end: ${wakeEnd?.reason ?? "-"}`,
+      `this wake: ${a.turnsThisWake} turns | last wake end: ${wakeEnd?.reason ?? "-"}` +
+      (a.offlineStreak > 0 ? ` | OFFLINE ${a.offlineStreak} wake(s) in a row` : ""),
   );
 
   if (s.spendMc > limits.maxRunCents * 1000) return `inference spend since start ${cents(s.spendMc)}c > ${limits.maxRunCents}c`;
@@ -154,6 +159,11 @@ function check() {
   if (["low_compute", "critical", "dead"].includes(a.tier) || a.agentState === "dead") {
     return `survival tier ${a.tier}, state ${a.agentState}`;
   }
+  // An offline wake end ("offline: …") is not forced: the agent sleeps and retries
+  // with growing gaps. Only a long outage stops the run.
+  if ((a.offlineStreak ?? 0) > limits.maxOfflineWakes) {
+    return `${a.offlineStreak} wakes in a row could not reach the model API (> ${limits.maxOfflineWakes})`;
+  }
   if (s.otherLedgerEntries > 0) return `${s.otherLedgerEntries} ledger entr${s.otherLedgerEntries === 1 ? "y" : "ies"} other than inference cost`;
   return null;
 }
@@ -161,7 +171,8 @@ function check() {
 out(
   `${WHO}: watching project "${project}" ${limits.hours ? `for ${limits.hours} h` : "until stopped"}, every ${limits.intervalS} s. ` +
     `Limits: run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c, ${limits.maxWakeTurns} turns/wake, ` +
-    `${limits.maxHourTurns} turns/hour, ${limits.maxDenials} denials/tool; counting from ${startIso}. Log: ${logFile}`,
+    `${limits.maxHourTurns} turns/hour, ${limits.maxDenials} denials/tool, ${limits.maxOfflineWakes} offline wakes; ` +
+    `counting from ${startIso}. Log: ${logFile}`,
 );
 if (runningRuntimes(project, WHO).length === 0) {
   out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);

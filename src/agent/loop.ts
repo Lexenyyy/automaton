@@ -73,6 +73,14 @@ import { StatusToolCache } from "./status-snapshot.js";
 import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
 import { admitWake, nextUtcDay, resolveSleepSettings } from "./sleep-limits.js";
 import { resolveMaxTurnsPerWake } from "./turn-limits.js";
+import {
+  clearOfflineStreak,
+  describeNetworkError,
+  getOfflineStreak,
+  isNetworkError,
+  offlineBackoffMs,
+  recordOfflineWake,
+} from "./offline.js";
 import { RepeatGuard, resolveLoopGuard } from "./repeat-guard.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
@@ -743,6 +751,17 @@ export async function runAgentLoop(
         break;
       }
 
+      // Fork (run 5, F6): the router returns a timed-out call (no answer, nothing
+      // spent) instead of throwing; it was handled as a text reply. Treat it as
+      // offline, like a failed connection.
+      if (routerResult.finishReason === "timeout") {
+        const timeoutErr = new Error(routerResult.content || "Inference timeout");
+        timeoutErr.name = "TimeoutError";
+        throw timeoutErr;
+      }
+      // A model call succeeded: the network is back.
+      if (getOfflineStreak(db.raw) > 0) clearOfflineStreak(db.raw);
+
       // Build a compatible response for the rest of the loop
       const response = {
         message: { content: routerResult.content, role: "assistant" as const },
@@ -1097,7 +1116,19 @@ export async function runAgentLoop(
         }
       }
 
-      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      if (isNetworkError(err)) {
+        // Fork (run 5, F6): offline. No more turns this wake (the agent cannot think
+        // and should not act on a half-finished picture); sleep with growing gaps.
+        const streak = recordOfflineWake(db.raw);
+        const sleepMs = offlineBackoffMs(streak, sleepSettings.minSeconds);
+        const why = describeNetworkError(err);
+        log(config, `[OFFLINE] Model API unreachable (${why}). Offline wake ${streak} in a row; retrying in ${Math.round(sleepMs / 60_000)} min.`);
+        wakeEndReason = `offline: model API unreachable (${why}); retry in ${Math.round(sleepMs / 60_000)} min`;
+        db.setKV("sleep_until", new Date(Date.now() + sleepMs).toISOString());
+        db.setAgentState("sleeping");
+        onStateChange?.("sleeping");
+        running = false;
+      } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
         log(
           config,
           `[FATAL] ${MAX_CONSECUTIVE_ERRORS} consecutive errors. Sleeping.`,

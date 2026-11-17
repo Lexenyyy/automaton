@@ -41,6 +41,8 @@ export interface BalanceSnapshot {
   status: BalanceStatus;
   network: string;
   checkedAt: string;
+  /** Fork (run 5): when status is "cached", the time of the last good wallet read. */
+  cachedAt?: string;
 }
 
 export interface BalanceSource {
@@ -100,6 +102,7 @@ export class OwnBalanceSource implements BalanceSource {
 
     let usdc: number | null = null;
     let status: BalanceStatus = "live";
+    let cachedAt: string | undefined;
     try {
       usdc = await this.readWallet(this.address, this.chainType);
       setKv(this.db, cacheKey, JSON.stringify({ usdc, at: new Date().toISOString() }));
@@ -107,9 +110,11 @@ export class OwnBalanceSource implements BalanceSource {
       const cached = getKv(this.db, cacheKey);
       if (cached) {
         try {
-          usdc = Number(JSON.parse(cached).usdc);
+          const parsed = JSON.parse(cached);
+          usdc = Number(parsed.usdc);
           status = Number.isFinite(usdc) ? "cached" : "unavailable";
           if (status === "unavailable") usdc = null;
+          else if (typeof parsed.at === "string") cachedAt = parsed.at;
         } catch {
           usdc = null;
           status = "unavailable";
@@ -130,6 +135,7 @@ export class OwnBalanceSource implements BalanceSource {
       status,
       network: networkLabel,
       checkedAt: new Date().toISOString(),
+      ...(cachedAt ? { cachedAt } : {}),
     };
     writeLegacyBalanceCache(this.db, snapshot);
     return snapshot;
@@ -212,15 +218,22 @@ export function toFinancialState(s: BalanceSnapshot): FinancialState {
     balanceStatus: s.status,
     balanceSource: s.kind,
     network: s.network,
+    ...(s.cachedAt ? { balanceCachedAt: s.cachedAt } : {}),
   };
 }
 
 /** One-line human summary, for tools, logs and prompts. */
-export function formatBalance(s: Pick<FinancialState, "balanceCents" | "creditsCents" | "walletUsdcCents" | "ledgerCents" | "balanceStatus" | "balanceSource" | "network">): string {
+export function formatBalance(s: Pick<FinancialState, "balanceCents" | "creditsCents" | "walletUsdcCents" | "ledgerCents" | "balanceStatus" | "balanceSource" | "network" | "balanceCachedAt">): string {
   const usd = (c: number) => `${c < 0 ? "-" : ""}$${(Math.abs(c) / 100).toFixed(2)}`;
   const total = s.balanceCents ?? s.creditsCents;
   if (s.balanceSource === "conway") return `${usd(total)} Conway credits`;
   const wallet = s.walletUsdcCents === null || s.walletUsdcCents === undefined ? "unknown" : usd(s.walletUsdcCents);
-  const status = s.balanceStatus && s.balanceStatus !== "live" ? ` [${s.balanceStatus}]` : "";
+  // Fork (run 5): say why the wallet figure is not live, so the agent does not act on it.
+  const status =
+    s.balanceStatus === "cached"
+      ? ` [cached: wallet RPC unreachable${s.balanceCachedAt ? `, last read ${s.balanceCachedAt.slice(0, 16).replace("T", " ")} UTC` : ""}]`
+      : s.balanceStatus === "unavailable"
+        ? " [unavailable: wallet RPC unreachable]"
+        : "";
   return `${usd(total)} (wallet ${wallet} USDC on ${s.network ?? "?"} + ledger ${usd(s.ledgerCents ?? 0)})${status}`;
 }

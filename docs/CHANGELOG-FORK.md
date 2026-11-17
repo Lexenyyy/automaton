@@ -785,3 +785,19 @@
     UTC did). A warning, not a failure. `dailyCapStatus` in `src/inference/budget.ts` (same strictest-cap rule
     and UTC day as the budget tracker). Tests: `daily-cap-status` (3); `agent:verify` +1.
   Baselines: Linux 2003 passed; Windows 1971 passed, 22 known failures, 10 skipped; `agent:verify` 140.
+- 2026-11-17: **Offline handling** (F6). Run 5 had two RPC errors during sleep and no model errors, but an outage
+  would have ended each wake after 5 failed calls ("5 consecutive errors", which the watchdog treats as forced)
+  and a model-call timeout was handled as a text reply.
+  - `src/agent/offline.ts` (new): `isNetworkError` (DNS/connection errors, resets, timeouts, `fetch failed`,
+    `AbortError`/`TimeoutError`, open circuit; provider errors such as 401/429 are not offline). The loop ends
+    the wake at the first such error: no more turns or tool calls, reason "offline: model API unreachable (…);
+    retry in N min", sleep 30, 60, then 120 min for offline wakes in a row (never below the sleep floor); the
+    first successful model call resets it (kv `offline_streak`). A router timeout result now goes the same way.
+    Other errors keep the old path.
+  - Balance: a cached wallet figure shows as "[cached: wallet RPC unreachable, last read … UTC]" (was "[cached]"),
+    an unknown one as "[unavailable: wallet RPC unreachable]". Unchanged: the heartbeat keeps the last tier when
+    the balance is unavailable.
+  - Activity report: `offlineStreak` (JSON) and an "Offline:" line. Watchdog: shows "OFFLINE n wake(s) in a
+    row"; an offline wake end is not a stop; more than `--max-offline-wakes` (default 4, about 4 h) in a row is.
+  Tests: `offline` (9); `agent:verify` +2 (one offline wake passes, five stop the run).
+  Baselines: Linux 2012 passed; Windows 1980 passed, 22 known failures, 10 skipped; `agent:verify` 142.

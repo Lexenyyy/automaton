@@ -593,6 +593,23 @@ db.close();`;
   const w1 = watch(["--once"]);
   check(W, "--once with a healthy runtime: all checks pass, the agent is left running",
     w1.status === 0 && w1.stdout.includes("all checks passed") && runtimeIds("running") !== "", (w1.stdout + w1.stderr).trim());
+  // Offline wakes (run 5, F6): kv offline_streak as the loop writes it.
+  const setOffline = (n) => docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+${n > 0 ? `db.setKV("offline_streak", "${n}");` : `db.deleteKV("offline_streak");`}
+db.close();`], { allowFail: false });
+  setOffline(1);
+  const wOff1 = watch(["--once"]);
+  check(W, "one offline wake is reported but does not stop the run",
+    wOff1.status === 0 && wOff1.stdout.includes("OFFLINE 1 wake(s) in a row") && runtimeIds("running") !== "", (wOff1.stdout + wOff1.stderr).trim());
+  setOffline(5);
+  const wOff5 = watch(["--once"]);
+  check(W, "more than 4 offline wakes in a row stop the run (exit 2)",
+    wOff5.status === 2 && wOff5.stdout.includes("STOP: 5 wakes in a row could not reach the model API (> 4)") && runtimeIds("running") === "",
+    (wOff5.stdout + wOff5.stderr).trim());
+  setOffline(0);
+  standInW(`${PROJECT}-w1b`, KEEP);
   const beforeGrant = new Date().toISOString();
   oneoff(["--", "--ledger", "grant", "0.01"]);
   const w2 = watch(["--once", "--since", beforeGrant]);

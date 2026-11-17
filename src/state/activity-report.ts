@@ -25,6 +25,8 @@ export interface ActivityReport {
   /** Turns since the current (or last) wake cycle started. */
   turnsThisWake: number;
   wakeStartedAt: string | null;
+  /** Fork (run 5, F6): wakes in a row that ended offline (model API unreachable); 0 once a call succeeds. */
+  offlineStreak: number;
   /** Totals since a given time (the watchdog's start), when asked for. */
   since?: SinceStats;
 }
@@ -80,6 +82,7 @@ export function getActivityReport(db: Database, now: Date = new Date(), since?: 
     tier: kv(db, "last_tick_tier"),
     turnsThisWake: thisWake,
     wakeStartedAt: wakeStart,
+    offlineStreak: Math.max(0, Number.parseInt(kv(db, "offline_streak") ?? "0", 10) || 0),
     ...(since ? { since: sinceStats(db, since) } : {}),
     agentState: kv(db, "agent_state") ?? "unknown",
     lastTurnAt: last.t,
@@ -126,6 +129,9 @@ export function formatActivityReport(r: ActivityReport, now: Date = new Date()):
     } catch {
       // ignore a malformed value
     }
+  }
+  if (r.offlineStreak > 0) {
+    lines.push(`Offline:           the last ${r.offlineStreak} wake(s) in a row could not reach the model API`);
   }
   if (isFuture(r.budgetPauseUntil, now)) {
     lines.push(`Budget pause:      until ${r.budgetPauseUntil}${r.budgetPauseReason ? `: ${r.budgetPauseReason}` : ""}`);

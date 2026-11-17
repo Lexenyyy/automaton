@@ -322,6 +322,8 @@ export interface FinancialState {
   balanceStatus?: "live" | "cached" | "unavailable";
   balanceSource?: "own" | "conway";
   network?: string;
+  /** Fork (run 5): last good wallet read when balanceStatus is "cached". */
+  balanceCachedAt?: string;
 }
 
 export type SurvivalTier = "dead" | "critical" | "low_compute" | "normal" | "high";
