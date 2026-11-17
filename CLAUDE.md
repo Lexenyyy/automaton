@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after the second-agent fixes
-  (Phase 2 prep): 1987 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after run-5 fix F1
+  (Phase 2): 1991 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1955 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1959 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (135 checks after Phase 2 prep A4).
+  (136 checks after run-5 fix F1).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -73,7 +73,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   no orchestration prompt, goal and child tools hidden. The agent works directly (Phase 7 may turn it on).
 - **Loop guard:** `"loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 }` in the template. The loop forces
   sleep when one tool fails 3× in a wake, or is called 3× with the same arguments and result; forced
-  sleeps (this guard, the 25-turn limit) last 30 min. The next wake-up status says why the last wake ended.
+  sleeps (this guard, the per-wake turn cap) last 30 min. The next wake-up status says why the last wake ended.
+- **Per-wake turn cap:** `"maxTurnsPerCycle": 6` in the template (code default 25; startup refuses values
+  outside 1..100). The wake ends as "cycle limit" with a forced sleep; the wake status tells the agent the cap.
 - **Runtime instance lease:** `--run` takes kv `runtime_lease` in state.db right after the database opens and
   renews it every 30 s; a second `--run` on the same database refuses to start while the holder's heartbeat
   is under 90 s old (however it was started). A runtime that loses its lease stops (exit 3). Graceful stop

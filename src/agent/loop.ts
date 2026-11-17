@@ -72,6 +72,7 @@ import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
 import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
 import { admitWake, nextUtcDay, resolveSleepSettings } from "./sleep-limits.js";
+import { resolveMaxTurnsPerWake } from "./turn-limits.js";
 import { RepeatGuard, resolveLoopGuard } from "./repeat-guard.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
@@ -479,7 +480,7 @@ export async function runAgentLoop(
   const MAX_IDLE_TURNS = 10; // Force sleep after N turns with no real work
   let idleTurnCount = 0;
 
-  const maxCycleTurns = config.maxTurnsPerCycle ?? 25;
+  const maxCycleTurns = resolveMaxTurnsPerWake(config);
   let cycleTurnCount = 0;
 
   let pendingInput: { content: string; source: string } | undefined = {

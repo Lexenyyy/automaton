@@ -338,6 +338,8 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
     preOut.includes("model gpt-4.1-mini: provider openai, key present"));
   check("build commit", "--preflight prints the build commit", preOut.includes(`build: ${BUILD_COMMIT}`));
+  check("entrypoint", "--preflight: template wake limits (6 turns per wake, 1800 s sleep floor, 48 wakes/day)",
+    preOut.includes("wake limits: 6 turns per wake, sleep at least 1800 s, 48 wakes per UTC day"));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
   check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
   const preNoCreator = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_CREATOR_ADDRESS=", "runtime", "--preflight"]);

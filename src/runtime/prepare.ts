@@ -26,6 +26,8 @@ import { SpendTracker } from "../agent/spend-tracker.js";
 import { createDefaultRules } from "../agent/policy-rules/index.js";
 import { createBuiltinTools, loadInstalledTools } from "../agent/tools.js";
 import { checkToolAllowlist, filterToolsForAllowlist, resolveToolAllowlist } from "../agent/tool-allowlist.js";
+import { checkMaxTurnsPerCycle, resolveMaxTurnsPerWake } from "../agent/turn-limits.js";
+import { resolveSleepSettings } from "../agent/sleep-limits.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
 import { activateNetwork, getActiveNetwork } from "../identity/network.js";
@@ -330,6 +332,9 @@ export async function prepareRuntime(
       resolveOrchestrationMode(config),
     ),
   );
+  // Fork (Phase 2): refuse an invalid per-wake turn cap.
+  const turnCapProblem = checkMaxTurnsPerCycle(config);
+  if (turnCapProblem) allowProblems.push(turnCapProblem);
   if (allowProblems.length) {
     if (lease) releaseRuntimeLease(db.raw, lease.instanceId);
     db.close();
@@ -431,6 +436,11 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
       `INFO  tools: ${offered.length} offered, ${all.length - afterConway.length} Conway-only hidden` +
         (orchestration === "off" ? `, ${afterConway.length - afterOrchestration.length} orchestration hidden` : "") +
         (allow ? `, ${afterOrchestration.length - offered.length} not in toolAllowlist` : ""),
+    );
+    const sleep = resolveSleepSettings(rt.config);
+    lines.push(
+      `INFO  wake limits: ${resolveMaxTurnsPerWake(rt.config)} turns per wake, sleep at least ${sleep.minSeconds} s, ` +
+        `${sleep.maxWakesPerDay || "unlimited"} wakes per UTC day`,
     );
     lines.push(`INFO  orchestration: ${orchestration}`);
     lines.push(`INFO  social relay: ${rt.social ? rt.config.socialRelayUrl : "off"}`);

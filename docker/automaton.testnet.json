@@ -8,6 +8,7 @@
   "conway": "off",
   "orchestration": "off",
   "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
+  "maxTurnsPerCycle": 6,
   "soulConfig": { "maxUpdatesPerWake": 2 },
   "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
   "modelStrategy": { "hourlyBudgetCents": 5, "dailyBudgetCents": 30 },

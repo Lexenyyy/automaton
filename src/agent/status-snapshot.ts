@@ -13,6 +13,7 @@ import { formatBalance } from "../survival/balance.js";
 import { getActiveNetwork } from "../identity/network.js";
 import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
 import { getLastWakeEnd, getSoulState } from "./wake-state.js";
+import { resolveMaxTurnsPerWake } from "./turn-limits.js";
 
 export interface BudgetSnapshot {
   /** Exact spend in millicents (1/1000 cent). */
@@ -61,6 +62,7 @@ export function buildStatusSnapshot(params: {
   }
   lines.push(`Active heartbeats: ${heartbeats}`);
   lines.push(`Model: ${config.inferenceModel}`);
+  lines.push(`Turns this wake: at most ${resolveMaxTurnsPerWake(config)} (the wake is ended after that; sleep before it)`);
   // Fork: what is already done, so one-time setup is not repeated every wake.
   const soul = getSoulState(db.raw);
   lines.push(

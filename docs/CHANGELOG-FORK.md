@@ -722,3 +722,20 @@
   A1–A4 with commits, A5 (provider-side cap: the owner's OpenAI account is prepaid with auto-reload off,
   so no code), and the run plan: run 5 (3 h), run 6 (24 h), then 72 h with supervision, plus the review
   checklist after each run.
+- 2026-11-17: **Run 5 (build 9adf74d, 3 h planned, detached, watchdog)**. A false start at 23:00 UTC: the UTC
+  day still held the 43¢ incident, so the daily cap put the agent to sleep and the watchdog stopped it ("a wake
+  ended by force: budget cap reached"). Restarted 00:28 UTC. Wake 1: 3 turns, 0.48¢, slept 1 h. Wake 2
+  (01:28): 19 turns in 30 s, 3.26¢: upstream loop warnings ("DO SOMETHING DIFFERENT NOW … execute a concrete
+  task") pushed it into `remember_fact`, sandbox `exec echo > …` files (a fake SOUL.md) and `update_soul`; the
+  soul rate limit (2/wake) and the loop guard held, and the watchdog stopped the run at 01:33 (3.26¢ in the hour
+  > 3¢). Also found: the soul frontmatter parser reads an empty field's next line (`Name: address:`), the soul
+  still had the old genesis purpose and upstream values, `write_file` confines to `/root` (unusable with the
+  container sandbox). ~4,000 prompt tokens per call, flat. Network: two RPC `fetch failed` errors (01:32,
+  01:33) during sleep, cached balance used; no OpenAI errors; no effect. Fixes F1–F7 below (owner-approved).
+- 2026-11-17: **Per-wake turn cap in the runtime** (F1). `maxTurnsPerCycle` (code default 25) is now 6 in
+  the testnet template, so a wake ends after 6 turns ("cycle limit", 30-min forced sleep) without waiting
+  for the watchdog's 5-minute check. `src/agent/turn-limits.ts` (new): startup refuses a value that is not
+  a whole number 1..100 (was: silently used). The wake status says "Turns this wake: at most N"; preflight
+  prints the wake limits (turns, sleep floor, wakes per day). Tests: `turn-limits` (4); `agent:verify` +1
+  (template wake limits in preflight). Baselines: Linux 1991 passed; Windows 1959 passed, 22 known failures,
+  10 skipped; `agent:verify` 136.
