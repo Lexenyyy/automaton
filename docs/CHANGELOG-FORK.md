@@ -775,3 +775,13 @@
     from the 2026-11-16 incident run (`MAIN_TOOLS.txt`, `TOOLS*.md/txt`).
   Tests: `soul-reset` (5); `agent:verify` +3 (reset in a container; refused by run-oneoff and by the lease).
   Baselines: Linux 2000 passed; Windows 1968 passed, 22 known failures, 10 skipped; `agent:verify` 139.
+- 2026-11-17: **Genesis wording; preflight warns about a used-up daily cap** (F7).
+  - Testnet genesis prompt (844 characters): step (3) is now "if you observed something new, store it with one
+    remember_fact (category self, key last_observation; this replaces the old one), otherwise skip this step";
+    step (4) "then call sleep. Use at most 4 tool calls per wake."; "Never use write_file or exec for SOUL.md"
+    (run 5 wrote a fake one with `exec echo > SOUL.md`); missing space before "Do not try" fixed.
+  - Preflight: `INFO  inference today (UTC): $X of $Y daily cap`, or a `WARN` line when the cap is already reached
+    (a run started then only sleeps until 00:00 UTC and the watchdog stops it, as run 5's first start at 23:00
+    UTC did). A warning, not a failure. `dailyCapStatus` in `src/inference/budget.ts` (same strictest-cap rule
+    and UTC day as the budget tracker). Tests: `daily-cap-status` (3); `agent:verify` +1.
+  Baselines: Linux 2003 passed; Windows 1971 passed, 22 known failures, 10 skipped; `agent:verify` 140.

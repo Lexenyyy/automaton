@@ -43,6 +43,23 @@ export function resolveDailyInferenceCap(
   return limits.length > 0 ? Math.min(...limits) : 0;
 }
 
+/**
+ * Fork (run 5): today's inference spend against the daily cap, for preflight.
+ * Run 5's first start came on a UTC day whose cap an earlier run had used up:
+ * the agent slept at once and the watchdog stopped it ("budget cap reached").
+ */
+export function dailyCapStatus(
+  db: BetterSqlite3.Database,
+  strategy: Pick<ModelStrategyConfig, "dailyBudgetCents">,
+  treasury: Pick<TreasuryPolicy, "maxInferenceDailyCents"> | undefined,
+  now: Date = new Date(),
+): { spentMc: number; capCents: number; reached: boolean; resetsAt: string } {
+  const capCents = resolveDailyInferenceCap(strategy, treasury);
+  const spentMc = inferenceGetDailyCostMc(db, now.toISOString().slice(0, 10));
+  const resetsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  return { spentMc, capCents, reached: capCents > 0 && spentMc >= centsToMcCeil(capCents), resetsAt };
+}
+
 export type BudgetReservation =
   | { allowed: true; release: () => void }
   | { allowed: false; reason: string };

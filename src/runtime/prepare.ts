@@ -59,7 +59,9 @@ import type {
   Skill,
   SocialClientInterface,
 } from "../types.js";
-import { DEFAULT_TREASURY_POLICY } from "../types.js";
+import { DEFAULT_MODEL_STRATEGY_CONFIG, DEFAULT_TREASURY_POLICY } from "../types.js";
+import { dailyCapStatus } from "../inference/budget.js";
+import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
 import type { PrivateKeyAccount } from "viem";
 import type { ChainType } from "../identity/chain.js";
 import type { HeartbeatConfig } from "../types.js";
@@ -443,6 +445,19 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     lines.push(
       `INFO  wake limits: ${resolveMaxTurnsPerWake(rt.config)} turns per wake, sleep at least ${sleep.minSeconds} s, ` +
         `${sleep.maxWakesPerDay || "unlimited"} wakes per UTC day`,
+    );
+    // Fork (run 5): a start on a day whose cap is used up would only sleep.
+    const cap = dailyCapStatus(
+      rt.db.raw,
+      { ...DEFAULT_MODEL_STRATEGY_CONFIG, ...(rt.config.modelStrategy ?? {}) },
+      rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+    );
+    const capText = cap.capCents > 0 ? `${formatUsdMc(cap.spentMc)} of ${formatUsdMc(cap.capCents * MC_PER_CENT)} daily cap` : `${formatUsdMc(cap.spentMc)} (no daily cap)`;
+    lines.push(
+      cap.reached
+        ? `WARN  inference today (UTC): ${capText}, already reached: a run started now only sleeps until ${cap.resetsAt} ` +
+            `(and agent:watch stops it as "budget cap reached"). Start after that time.`
+        : `INFO  inference today (UTC): ${capText}`,
     );
     lines.push(`INFO  orchestration: ${orchestration}`);
     lines.push(`INFO  social relay: ${rt.social ? rt.config.socialRelayUrl : "off"}`);
