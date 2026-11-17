@@ -2440,10 +2440,15 @@ Model: ${ctx.inference.getDefaultModel()}
         required: ["section", "content", "reason"],
       },
       execute: async (args, ctx) => {
-        const { updateSoul } = await import("../soul/tools.js");
+        const { updateSoul, AGENT_SOUL_SECTIONS } = await import("../soul/tools.js");
         const section = args.section as string;
         const content = args.content as string;
         const reason = args.reason as string;
+        // Fork (run 5): only the listed sections; identity fields are set by the runtime.
+        if (!(AGENT_SOUL_SECTIONS as readonly string[]).includes(section)) {
+          return `Soul update failed: unknown section "${section}". Use one of: ${AGENT_SOUL_SECTIONS.join(", ")}. ` +
+            `Name, address and creator are set by the runtime.`;
+        }
 
         const updates: Record<string, unknown> = {};
         if (
@@ -2466,6 +2471,8 @@ Model: ${ctx.inference.getDefaultModel()}
           updates as any,
           "agent",
           reason,
+          undefined,
+          { name: ctx.config.name, address: ctx.identity.address, creator: ctx.config.creatorAddress },
         );
         if (result.success) {
           return `Soul updated: ${section} (version ${result.version}). Reason: ${reason}`;
@@ -2515,7 +2522,7 @@ Model: ${ctx.inference.getDefaultModel()}
         return [
           `Format: ${soul.format} v${soul.version}`,
           `Updated: ${soul.updatedAt}`,
-          `Name: ${soul.name}`,
+          `Name: ${soul.name || "(not set)"}`,
           `Genesis alignment: ${soul.genesisAlignment.toFixed(2)}`,
           `Core purpose: ${soul.corePurpose.slice(0, 200)}${soul.corePurpose.length > 200 ? "..." : ""}`,
           `Values: ${soul.values.length}`,

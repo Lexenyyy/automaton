@@ -748,3 +748,12 @@
   `forcedSleepMinutes`), reason "forced sleep: 2 loop warnings this wake (last: …)", which the watchdog treats as
   forced. Stricter than before (was: a new warning each time). Tests: `loop.test.ts` (the "enforcement resets"
   test now asserts the second detection ends the wake; wording checks).
+- 2026-11-17: **Soul parser fix; identity fields from the runtime** (F3). `parseSoulV1` read frontmatter with
+  `^key:\s*(.+)$`; `\s*` matched the line break, so an empty `name:` took the next line (`address:`), and every
+  rewrite shifted the error down (run 5: `Name: address:`, heading `# address:`). Now `^key:[ \t]*(.*)$`, and a
+  value that is itself another field (`creator: born_at: …`, left by the bug) reads as empty, so the stored soul
+  repairs itself on the next load/write. `updateSoul(…, identity)` takes name, address and creator from the
+  runtime (config name, wallet address, creator address) and ignores them in the agent's updates; the
+  `update_soul` tool passes them and accepts only `corePurpose, values, behavioralGuidelines, personality,
+  boundaries, strategy` (was: any key, including name/address/version). `view_soul` shows "(not set)" for an
+  empty name. Tests: `soul-identity` (4).

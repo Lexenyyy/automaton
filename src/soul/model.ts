@@ -17,6 +17,28 @@ const logger = createLogger("soul");
 
 const SOUL_FORMAT = "soul/v1" as const;
 
+/** A frontmatter value that is really the next field ("address:", "born_at: 2026-..."), from the old parser bug. */
+const SHIFTED_FIELD =
+  /^(format|version|updated_at|name|address|creator|born_at|constitution_hash|genesis_alignment|last_reflected):/;
+
+/** Identity fields the runtime owns (config name, wallet, creator): never set by the agent. */
+export interface SoulIdentity {
+  name: string;
+  address: string;
+  creator: string;
+}
+
+/** The soul with identity fields taken from the runtime (fork, run 5). Empty values are kept as they are. */
+export function applySoulIdentity(soul: SoulModel, identity: SoulIdentity | undefined): SoulModel {
+  if (!identity) return soul;
+  return {
+    ...soul,
+    name: identity.name || soul.name,
+    address: identity.address || soul.address,
+    creator: identity.creator || soul.creator,
+  };
+}
+
 // ─── Hash Utility ───────────────────────────────────────────────
 
 export function createHash(content: string): string {
@@ -91,10 +113,15 @@ function parseSoulV1(
   rawContent: string,
   contentHash: string,
 ): SoulModel {
-  // Parse frontmatter fields
+  // Parse frontmatter fields.
+  // Fork (run 5): was `^key:\s*(.+)$`, where \s* also matched the line break, so an
+  // empty field took the next line ("name: \naddress: " parsed as name "address:"),
+  // and every rewrite shifted the error down. Now only spaces/tabs are skipped,
+  // and a value that is itself "other_key: ..." (left by that bug) reads as empty.
   const getField = (key: string): string => {
-    const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
-    return match ? match[1].trim() : "";
+    const match = frontmatter.match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"));
+    const value = match ? match[1].trim() : "";
+    return SHIFTED_FIELD.test(value) ? "" : value;
   };
 
   const getNumberField = (key: string, fallback: number): number => {

@@ -11,7 +11,18 @@ import fs from "fs";
 import path from "path";
 import type BetterSqlite3 from "better-sqlite3";
 import type { SoulModel, SoulHistoryRow } from "../types.js";
-import { loadCurrentSoul, writeSoulMd, createHash, createDefaultSoul } from "./model.js";
+import { loadCurrentSoul, writeSoulMd, createHash, createDefaultSoul, applySoulIdentity } from "./model.js";
+import type { SoulIdentity } from "./model.js";
+
+/** Sections the agent may change with update_soul (fork, run 5: was any key, including name/address). */
+export const AGENT_SOUL_SECTIONS = [
+  "corePurpose",
+  "values",
+  "behavioralGuidelines",
+  "personality",
+  "boundaries",
+  "strategy",
+] as const;
 import { validateSoul } from "./validator.js";
 import { insertSoulHistory, getCurrentSoulVersion, getLatestSoulHistory, getSoulHistory } from "../state/database.js";
 import { ulid } from "ulid";
@@ -35,6 +46,8 @@ export async function updateSoul(
   source: SoulHistoryRow["changeSource"],
   reason?: string,
   soulPath?: string,
+  /** Fork (run 5): name, address and creator come from the runtime, never from `updates`. */
+  identity?: SoulIdentity,
 ): Promise<UpdateSoulResult> {
   try {
     const home = process.env.HOME || "/root";
@@ -51,13 +64,16 @@ export async function updateSoul(
       );
     }
 
-    // Merge updates into current soul
-    const merged: SoulModel = {
-      ...current,
-      ...updates,
-      format: "soul/v1",
-      updatedAt: new Date().toISOString(),
-    };
+    // Merge updates into current soul; identity fields from the runtime win.
+    const merged: SoulModel = applySoulIdentity(
+      {
+        ...current,
+        ...updates,
+        format: "soul/v1",
+        updatedAt: new Date().toISOString(),
+      },
+      identity,
+    );
 
     // Validate
     const validation = validateSoul(merged);
