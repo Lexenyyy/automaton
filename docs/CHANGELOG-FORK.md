@@ -843,3 +843,17 @@
   - Unchanged: the unused upstream flag `requireCreatorApprovalForPurposeChange`.
   Tests: `soul-owner-only` (4); `soul-per-wake-limit` now updates `strategy` (same rule tested). `agent:verify` +1.
   Baselines: Linux 2024 passed; Windows 1992 passed, 22 known failures, 10 skipped; `agent:verify` 145.
+- 2026-11-18: **Run 5b passed** (build `81ca745`, 13:50–16:50 UTC, detached, `agent:watch --hours 3`). Before it:
+  `agent:soul:reset` (v90, the agent's own purpose → v91 from the template). Watchdog: DONE after 3 h, `agent:down`
+  exit 0, log saved. Read-only review of the log and state.db:
+  - 3 wakes, one per hour (the agent chose 3600 s each time): 1 turn (`sleep`), 2 turns (`remember_fact`
+    "observation_…" + `sleep`), 1 turn (`sleep`). Every wake ended "agent chose sleep"; no loop or repetition
+    warning, no forced sleep, no offline wake.
+  - Spend 1.19¢ (282 + 295 + 305 + 308 millicents); ledger matches `inference_costs` and the watchdog; no
+    ledger entry other than inference. Lifetime $0.61 of $5.00.
+  - No policy decision other than allow (G3 never triggered); soul unchanged at v91 with the template purpose;
+    semantic memory 10 facts (+1).
+  - Tokens per call 6909 → 7127 → 7496 → 7538 (run 5 retry: about 4.5k). The increase is G1: the last turns
+    now carry their tool results. Bounded: at most 20 turns of history (only the newest sleep-only turn is
+    kept), memory retrieval within its token budget. About 0.3¢ per call.
+  - Run 6 (24 h) plan: about 24 wakes, 10–15¢; the watchdog runs with `--hours 24 --max-run-cents 20`.

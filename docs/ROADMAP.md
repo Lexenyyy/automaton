@@ -167,10 +167,14 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         `exec ls`). Cause: tool calls without text were left out of the history, so the model never saw what it
         had done; then the upstream "Move on to BUILDING something" warning led to `exec`. Fixes:
         - [x] G1 tool-only turns shown to the model (`d7b8427`)  - [x] G2 repetition warning points to sleep,
-          `sleep` not counted (`eb64fdc`)  - [x] G3 corePurpose owner-only (`soulConfig.ownerOnlySections`, this commit)
-  - [ ] **Run 5b: 3 hours** (rerun after G1–G3, after `pnpm agent:soul:reset`). Expected about 3–6 wakes of
-        1–3 turns, about 1–2¢; no wake over 6 turns; no corePurpose change.
-  - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected at most about 15¢.
+          `sleep` not counted (`eb64fdc`)  - [x] G3 corePurpose owner-only (`soulConfig.ownerOnlySections`, `81ca745`)
+  - [x] **Run 5b: passed** (2026-11-18 13:50–16:50 UTC, build `81ca745`, after `agent:soul:reset` to v91). Watchdog
+        DONE after 3 h. 3 wakes of 1, 2 and 1 turns (`sleep`; `remember_fact` + `sleep`; `sleep`), each ended by
+        the agent's own sleep (3600 s), 1.19¢ (ledger = watchdog). No policy denials, no soul change (v91), one
+        new fact, no non-inference ledger entry, no errors. Input per call 6.9k → 7.5k tokens (G1 shows tool
+        results; history is capped at 20 turns, so it levels off), about 0.3¢ per call.
+  - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected about 10–15¢ (about 24 wakes,
+        0.3–0.45¢ per call). The watchdog needs `--max-run-cents 20` (the 5¢ default would stop it after about 12 h).
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
   - After each run, review (read-only): wake times vs chosen sleeps, turns and tokens per wake (does context
