@@ -166,7 +166,12 @@ function formatMessage(
 ): Record<string, unknown> {
   const formatted: Record<string, unknown> = {
     role: msg.role,
-    content: msg.content,
+    // Fork (G1): an assistant message with only tool calls has no text;
+    // the chat completions API takes null content there.
+    content:
+      msg.role === "assistant" && !msg.content && msg.tool_calls?.length
+        ? null
+        : msg.content,
   };
 
   if (msg.name) formatted.name = msg.name;

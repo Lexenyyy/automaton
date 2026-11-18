@@ -810,3 +810,13 @@
   protection are unchanged; local/Conway mode keeps `/root`. Tests: `write-file-workspace` (3); `agent:verify` +2
   (relative path written to `/workspace` through the sandbox; `/root` refused).
   Baselines: Linux 2015 passed; Windows 1983 passed, 22 known failures, 10 skipped; `agent:verify` 144.
+- 2026-11-18: **The model sees its own tool calls again** (G1, run 5 retry). Run 5 retry, wake 3: 6 turns
+  (`view_soul`, `update_soul` ×2, `remember_fact`, a denied `update_soul`, `exec`) until the turn cap. Cause:
+  `buildContextMessages` (upstream) rendered a turn's assistant message and tool results only when the turn
+  had text, and gpt-4.1-mini sends tool calls without text (all 333 stored turns had none). The model never
+  saw what it had done or the results, only the wake-up message again on each turn. Now a turn with tool calls
+  is rendered with them and their (truncated) results, with or without text. The OpenAI request sends
+  `content: null` for an assistant message that has only tool calls. Cost: the history now carries the tool
+  results of the last turns (about +0.5-1.5k input tokens per call; the token budget and summary still apply).
+  Tests: `context-tool-only-turns` (3).
+  Baselines: Linux 2018 passed; Windows 1986 passed, 22 known failures, 10 skipped; `agent:verify` 144.

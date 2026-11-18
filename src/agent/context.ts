@@ -165,8 +165,11 @@ export function buildContextMessages(
       });
     }
 
-    // The agent's thinking as assistant message
-    if (turn.thinking) {
+    // The agent's thinking and tool calls as assistant message.
+    // Fork (run 5 retry, G1): also when the model sent tool calls without
+    // text (normal for gpt-4.1-mini). Before, such turns were left out, so
+    // the model never saw its own tool calls or their results.
+    if (turn.thinking || turn.toolCalls.length > 0) {
       const msg: ChatMessage = {
         role: "assistant",
         content: turn.thinking,
