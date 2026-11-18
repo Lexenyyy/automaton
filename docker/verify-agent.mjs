@@ -369,6 +369,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
       /Address: 0x[0-9a-fA-F]{40}/.test(soulReset.out) && soulReset.out.includes(`Creator: ${VERIFY_CREATOR}`) &&
       soulReset.out.includes("- Spend as little as possible: few turns, then sleep"),
     (soulReset.out + soulReset.err).trim().slice(0, 500));
+  check("entrypoint", "template keeps corePurpose owner-only (soulConfig.ownerOnlySections)",
+    soulReset.out.includes("Owner-only sections: corePurpose (the agent cannot change them"),
+    soulReset.out.trim().slice(-300));
 
   // Owner ledger commands (throwaway verify volume; the real wallet volume is never touched).
   const ledgerShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "show"]);

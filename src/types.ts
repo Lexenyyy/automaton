@@ -1128,6 +1128,13 @@ export interface SoulConfig {
   defaultCorePurpose?: string;
   /** Fork (run 5): values for a fresh soul. Default: the upstream four values. */
   defaultValues?: string[];
+  /**
+   * Fork (run 5 retry, G3): soul sections only the owner may change (config
+   * template + `agent:soul:reset`); the agent's update_soul is denied for them
+   * by policy rule authority.soul_owner_only. Default ["corePurpose"];
+   * [] = the agent may change every section. Startup refuses unknown names.
+   */
+  ownerOnlySections?: string[];
 }
 
 export const DEFAULT_SOUL_CONFIG: SoulConfig = {
@@ -1135,6 +1142,7 @@ export const DEFAULT_SOUL_CONFIG: SoulConfig = {
   requireCreatorApprovalForPurposeChange: false,
   enableSoulReflection: true,
   maxUpdatesPerWake: 2,
+  ownerOnlySections: ["corePurpose"],
 };
 
 // === Phase 2.2: Memory System Types ===

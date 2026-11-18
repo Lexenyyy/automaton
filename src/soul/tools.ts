@@ -14,15 +14,7 @@ import type { SoulModel, SoulHistoryRow } from "../types.js";
 import { loadCurrentSoul, writeSoulMd, createHash, createDefaultSoul, applySoulIdentity } from "./model.js";
 import type { SoulIdentity } from "./model.js";
 
-/** Sections the agent may change with update_soul (fork, run 5: was any key, including name/address). */
-export const AGENT_SOUL_SECTIONS = [
-  "corePurpose",
-  "values",
-  "behavioralGuidelines",
-  "personality",
-  "boundaries",
-  "strategy",
-] as const;
+export { AGENT_SOUL_SECTIONS } from "./sections.js";
 import { validateSoul } from "./validator.js";
 import { insertSoulHistory, getCurrentSoulVersion, getLatestSoulHistory, getSoulHistory } from "../state/database.js";
 import { ulid } from "ulid";

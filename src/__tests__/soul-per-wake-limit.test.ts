@@ -52,7 +52,8 @@ function setup(config: AutomatonConfig = createTestConfig()) {
   const update = (n: number) =>
     executeTool(
       "update_soul",
-      { section: "corePurpose", content: `Test purpose ${n}.`, reason: `test ${n}` },
+      // strategy: corePurpose is owner-only by default (G3, soul-owner-only.test.ts).
+      { section: "strategy", content: `Test strategy ${n}.`, reason: `test ${n}` },
       tools,
       ctx,
       engine,

@@ -18,6 +18,7 @@ import { createDefaultSoul, loadCurrentSoul, applySoulIdentity } from "./model.j
 import type { SoulIdentity } from "./model.js";
 import { defaultSoulPath, saveSoulVersion } from "./tools.js";
 import type { UpdateSoulResult } from "./tools.js";
+import { checkOwnerOnlySoulSections, resolveOwnerOnlySoulSections } from "./sections.js";
 
 const MAX_PURPOSE = 2000;
 const MAX_VALUES = 10;
@@ -35,6 +36,8 @@ export function checkSoulDefaults(config: Pick<AutomatonConfig, "soulConfig">): 
       s.defaultValues.some((v) => typeof v !== "string" || !v.trim()))) {
     problems.push(`soulConfig.defaultValues must be 1 to ${MAX_VALUES} non-empty strings`);
   }
+  const ownerOnly = checkOwnerOnlySoulSections(s.ownerOnlySections);
+  if (ownerOnly) problems.push(ownerOnly);
   return problems;
 }
 
@@ -67,10 +70,15 @@ export function resetSoul(
   return saveSoulVersion(db, fresh, current?.version ?? 0, "human", "owner reset (agent:soul:reset)", soulPath, "owner");
 }
 
-/** Owner view of the current soul (text). */
-export function soulReport(db: BetterSqlite3.Database, soulPath: string = defaultSoulPath()): string {
+/** Owner view of the current soul (text); with the config, also the owner-only sections. */
+export function soulReport(
+  db: BetterSqlite3.Database,
+  soulPath: string = defaultSoulPath(),
+  config?: Pick<AutomatonConfig, "soulConfig">,
+): string {
   const soul = loadCurrentSoul(db, soulPath);
   if (!soul) return "No soul yet (SOUL.md does not exist).";
+  const ownerOnly = config ? resolveOwnerOnlySoulSections(config) : undefined;
   const last = db
     .prepare("SELECT change_source, change_reason, created_at FROM soul_history ORDER BY version DESC LIMIT 1")
     .get() as { change_source: string; change_reason: string | null; created_at: string } | undefined;
@@ -82,5 +90,10 @@ export function soulReport(db: BetterSqlite3.Database, soulPath: string = defaul
     `Values:${soul.values.map((v) => `\n  - ${v}`).join("") || " none"}`,
     soul.strategy ? `Strategy: ${soul.strategy}` : "Strategy: not set",
     soul.personality ? `Personality: ${soul.personality}` : "",
+    ownerOnly === undefined
+      ? ""
+      : ownerOnly.length
+        ? `Owner-only sections: ${ownerOnly.join(", ")} (the agent cannot change them; edit soulConfig and run agent:soul:reset)`
+        : "Owner-only sections: none (the agent may change every section)",
   ].filter(Boolean).join("\n");
 }

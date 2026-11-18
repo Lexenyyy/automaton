@@ -161,9 +161,15 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         - [x] F1 per-wake turn cap 6 (`a0fd07a`)  - [x] F2 loop warnings point to sleep, 2nd ends the wake (`678fa8b`)
         - [x] F3 soul parser + identity from the runtime (`60d837b`)  - [x] F4 `agent:soul:reset`, soul defaults
           as settings, sandbox cleanup (`dbea0cf`)  - [x] F7 genesis steps, preflight daily-cap warning (`8d78b67`)
-        - [x] F6 offline handling (`edf9b16`)  - [x] F5 `write_file` confined to the workspace (this commit)
-  - [ ] **Run 5b: 3 hours** (rerun after F1–F7, after `pnpm agent:soul:reset`). Expected about 3–6 wakes of
-        2–3 turns, about 1–2¢; no wake over 6 turns.
+        - [x] F6 offline handling (`edf9b16`)  - [x] F5 `write_file` confined to the workspace (`028d998`)
+  - [x] **Run 5 retry (2026-11-17, build 028d998): stopped by the watchdog after 2 h**, 1.47¢. Wakes 1–2: one
+        `sleep` each. Wake 3 hit the 6-turn cap (`view_soul`, corePurpose rewritten twice, a denied third update,
+        `exec ls`). Cause: tool calls without text were left out of the history, so the model never saw what it
+        had done; then the upstream "Move on to BUILDING something" warning led to `exec`. Fixes:
+        - [x] G1 tool-only turns shown to the model (`d7b8427`)  - [x] G2 repetition warning points to sleep,
+          `sleep` not counted (`eb64fdc`)  - [x] G3 corePurpose owner-only (`soulConfig.ownerOnlySections`, this commit)
+  - [ ] **Run 5b: 3 hours** (rerun after G1–G3, after `pnpm agent:soul:reset`). Expected about 3–6 wakes of
+        1–3 turns, about 1–2¢; no wake over 6 turns; no corePurpose change.
   - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected at most about 15¢.
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).

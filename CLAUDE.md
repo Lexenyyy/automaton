@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after run-5 retry fix G2
-  (Phase 2): 2020 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after run-5 retry fix G3
+  (Phase 2): 2024 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 1988 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 1992 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (144 checks after run-5 fixes F1-F7).
+  (145 checks after run-5 retry fix G3).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -90,6 +90,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   until the next UTC day without a model call; `--wake-now` does not override this.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule
   `rate.soul_per_wake` (owner-approved under rule 4).
+- **Owner-only soul sections:** `"soulConfig": { "ownerOnlySections": ["corePurpose"] }` (the default; `[]` = none).
+  Policy rule `authority.soul_owner_only` denies the agent's `update_soul` there (owner-requested under rule 4); the
+  owner changes them via `soulConfig.defaultCorePurpose` and `pnpm agent:soul:reset`.
 - **Tool allowlist:** the template's `toolAllowlist` offers only 10 core tools (`exec`, `read_file`,
   `write_file`, `check_balance`, `sleep`, `update_soul`, `view_soul`, `remember_fact`, `recall_facts`,
   `switch_model`); others are neither offered nor executable. Startup refuses unknown names or a list

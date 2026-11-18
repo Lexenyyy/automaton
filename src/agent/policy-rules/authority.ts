@@ -11,6 +11,7 @@ import type {
   PolicyRequest,
   PolicyRuleResult,
 } from "../../types.js";
+import { AGENT_SOUL_SECTIONS, resolveOwnerOnlySoulSections } from "../../soul/sections.js";
 
 /** Files protected from external-source self-modification */
 const PROTECTED_PATHS = [
@@ -120,11 +121,41 @@ function createSelfModFromExternalRule(): PolicyRule {
 }
 
 /**
+ * Fork (run 5 retry, G3; owner-requested, only tightens): update_soul is
+ * denied for the sections in soulConfig.ownerOnlySections (default
+ * corePurpose), whatever the input source. The owner changes them through the
+ * config template and `agent:soul:reset`, which does not go through tools.
+ * The config is read-only to the agent.
+ */
+function createSoulOwnerOnlyRule(): PolicyRule {
+  return {
+    id: "authority.soul_owner_only",
+    description: "Deny update_soul on the soul sections the owner keeps (soulConfig.ownerOnlySections)",
+    priority: 400,
+    appliesTo: { by: "name", names: ["update_soul"] },
+    evaluate(request: PolicyRequest): PolicyRuleResult | null {
+      const section = request.args.section;
+      const ownerOnly = resolveOwnerOnlySoulSections((request.context as any)?.config);
+      if (typeof section !== "string" || !ownerOnly.includes(section)) return null;
+      const open = (AGENT_SOUL_SECTIONS as readonly string[]).filter((s) => !ownerOnly.includes(s));
+      return deny(
+        "authority.soul_owner_only",
+        "OWNER_ONLY_SOUL_SECTION",
+        `The soul section "${section}" is set by your owner only; you cannot change it. ` +
+          (open.length ? `You may update: ${open.join(", ")}. ` : "") +
+          `Don't retry.`,
+      );
+    },
+  };
+}
+
+/**
  * Create all authority policy rules.
  */
 export function createAuthorityRules(): PolicyRule[] {
   return [
     createExternalToolRestrictionRule(),
     createSelfModFromExternalRule(),
+    createSoulOwnerOnlyRule(),
   ];
 }

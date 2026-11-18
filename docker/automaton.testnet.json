@@ -11,6 +11,7 @@
   "maxTurnsPerCycle": 6,
   "soulConfig": {
     "maxUpdatesPerWake": 2,
+    "ownerOnlySections": ["corePurpose"],
     "defaultCorePurpose": "I am automaton-testnet, a test agent on Base Sepolia testnet with test funds only. Each wake I read my status, note anything new, and go back to sleep.",
     "defaultValues": [
       "Follow my genesis prompt and my owner's rules",

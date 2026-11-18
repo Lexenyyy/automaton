@@ -829,3 +829,17 @@
   one-turn wakes would otherwise have warned "you have been calling sleep repeatedly" at the next wake.
   Tests: `context-tool-only-turns` +2.
   Baselines: Linux 2020 passed; Windows 1988 passed, 22 known failures, 10 skipped; `agent:verify` 144.
+- 2026-11-18: **corePurpose is owner-only** (G3; owner-requested under rule 4, only tightens). In run 5 retry the
+  agent rewrote its core purpose twice in one wake right after the owner reset it (v88 → v90).
+  - Setting `soulConfig.ownerOnlySections` (default `["corePurpose"]`, also explicit in the template; `[]` = the
+    agent may change every section). Startup and `agent:soul:reset` refuse names that are not soul sections.
+  - New policy rule `authority.soul_owner_only` (priority 400, any input source): `update_soul` on such a section is
+    denied with "Policy denied: OWNER_ONLY_SOUL_SECTION — The soul section "corePurpose" is set by your owner only;
+    you cannot change it. You may update: values, … Don't retry." Nothing is written; the denial is recorded in
+    `policy_decisions` (the watchdog counts it). The owner changes the purpose with `soulConfig.defaultCorePurpose`
+    and `pnpm agent:soul:reset`, which does not go through tools. Reflection never wrote corePurpose.
+  - `agent:soul` / `agent:soul:reset` print "Owner-only sections: …". The `update_soul` parameter text says owner
+    sections are refused. `AGENT_SOUL_SECTIONS` moved to `src/soul/sections.ts` (re-exported from `soul/tools.ts`).
+  - Unchanged: the unused upstream flag `requireCreatorApprovalForPurposeChange`.
+  Tests: `soul-owner-only` (4); `soul-per-wake-limit` now updates `strategy` (same rule tested). `agent:verify` +1.
+  Baselines: Linux 2024 passed; Windows 1992 passed, 22 known failures, 10 skipped; `agent:verify` 145.

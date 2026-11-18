@@ -2452,7 +2452,8 @@ Model: ${ctx.inference.getDefaultModel()}
           section: {
             type: "string",
             description:
-              "Section to update: corePurpose, values, behavioralGuidelines, personality, boundaries, strategy",
+              "Section to update: values, behavioralGuidelines, personality, boundaries, strategy, corePurpose. " +
+              "Sections your owner keeps (by default corePurpose) are refused.",
           },
           content: {
             type: "string",

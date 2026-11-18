@@ -195,7 +195,7 @@ Environment:
           if (!r.success) code = 1;
         }
       }
-      console.log(soulReport(db.raw));
+      console.log(soulReport(db.raw, undefined, config));
     } finally {
       db.close();
     }
