@@ -820,3 +820,12 @@
   results of the last turns (about +0.5-1.5k input tokens per call; the token budget and summary still apply).
   Tests: `context-tool-only-turns` (3).
   Baselines: Linux 2018 passed; Windows 1986 passed, 22 known failures, 10 skipped; `agent:verify` 144.
+- 2026-11-18: **Repetition warning asks to sleep, not to build** (G2). The history warning (upstream; a tool
+  used 3 times in the last 5 turns) said "Move on to BUILDING something. Write code, create files, set up a
+  service." In run 5 retry wake 3 it followed three `update_soul` calls, and the agent ran `exec`. It now ends
+  with the same next step as the loop warnings (F2): "If your tasks for this wake are done, call sleep now.
+  Otherwise take one different step that your genesis prompt needs." (`LOOP_WARNING_NEXT_STEP` moved to
+  `context.ts`, re-exported from `loop.ts`.) `sleep` is no longer counted: one sleep per wake over several
+  one-turn wakes would otherwise have warned "you have been calling sleep repeatedly" at the next wake.
+  Tests: `context-tool-only-turns` +2.
+  Baselines: Linux 2020 passed; Windows 1988 passed, 22 known failures, 10 skipped; `agent:verify` 144.

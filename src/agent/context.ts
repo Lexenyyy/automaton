@@ -22,6 +22,16 @@ import { createTokenCounter } from "../memory/context-manager.js";
 const MAX_CONTEXT_TURNS = 20;
 const SUMMARY_THRESHOLD = 15;
 
+/** Fork (run 5): what a loop or repetition warning asks for (was: "do something different / build something"). */
+export const LOOP_WARNING_NEXT_STEP =
+  "If your tasks for this wake are done, call sleep now. Otherwise take one different step that your genesis prompt needs.";
+
+/**
+ * Fork (G2): tools not counted by the repetition warning. One sleep per wake
+ * across several wakes is the intended pattern, not a repetition.
+ */
+const REPETITION_EXEMPT_TOOLS = new Set(["sleep"]);
+
 let tokenCounter: ReturnType<typeof createTokenCounter> | null = null;
 
 /** Maximum size for individual tool results in characters */
@@ -209,6 +219,7 @@ export function buildContextMessages(
     const toolFrequency: Record<string, number> = {};
     for (const turn of analysisWindow) {
       for (const tc of turn.toolCalls) {
+        if (REPETITION_EXEMPT_TOOLS.has(tc.name)) continue;
         toolFrequency[tc.name] = (toolFrequency[tc.name] || 0) + 1;
       }
     }
@@ -216,12 +227,14 @@ export function buildContextMessages(
       .filter(([, count]) => count >= 3)
       .map(([name]) => name);
     if (repeatedTools.length > 0) {
+      // Fork (G2): was "Move on to BUILDING something. Write code, create
+      // files, set up a service." which pushed the agent to act (run 5 retry:
+      // an exec after three update_soul calls).
       messages.push({
         role: "user",
         content:
           `[system] WARNING: You have been calling ${repeatedTools.join(", ")} repeatedly in recent turns. ` +
-          `You already have this information. Move on to BUILDING something. ` +
-          `Write code, create files, set up a service. Do not check status again.`,
+          `Stop repeating it. ${LOOP_WARNING_NEXT_STEP}`,
       });
     }
   }

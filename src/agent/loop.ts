@@ -54,7 +54,7 @@ import { filterToolsForConwayMode, isConwayHost } from "../conway/mode.js";
 import { MemoryRetriever } from "../memory/retrieval.js";
 import { MemoryIngestionPipeline } from "../memory/ingestion.js";
 import { DEFAULT_MEMORY_BUDGET } from "../types.js";
-import { formatMemoryBlock } from "./context.js";
+import { formatMemoryBlock, LOOP_WARNING_NEXT_STEP } from "./context.js";
 import { createLogger } from "../observability/logger.js";
 import { Orchestrator } from "../orchestration/orchestrator.js";
 import { PlanModeController } from "../orchestration/plan-mode.js";
@@ -92,9 +92,8 @@ const MAX_CONSECUTIVE_ERRORS = 5;
 const MAX_REPETITIVE_TURNS = 3;
 /** Fork (run 5): the second loop detection in one wake ends the wake. */
 export const MAX_LOOP_WARNINGS_PER_WAKE = 2;
-/** Fork (run 5): what a loop warning asks for (was: "do something different / build something"). */
-export const LOOP_WARNING_NEXT_STEP =
-  "If your tasks for this wake are done, call sleep now. Otherwise take one different step that your genesis prompt needs.";
+/** Fork (run 5): what a loop warning asks for. Defined in context.ts (G2: the history warning uses it too). */
+export { LOOP_WARNING_NEXT_STEP };
 
 export interface AgentLoopOptions {
   identity: AutomatonIdentity;

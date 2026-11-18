@@ -50,6 +50,26 @@ describe("context with tool-only turns", () => {
   });
 });
 
+describe("repetition warning (G2)", () => {
+  const call = (name: string, i: number) => turn({ toolCalls: [{ id: `c_${name}_${i}`, name, arguments: {}, result: "ok", durationMs: 0 }] });
+  const warnings = (turns: AgentTurn[]) =>
+    buildContextMessages("SYSTEM", turns).filter((m) => m.role === "user" && m.content.includes("WARNING"));
+
+  it("asks to sleep if done, not to build something", () => {
+    const w = warnings([call("update_soul", 1), call("remember_fact", 2), call("update_soul", 3), call("update_soul", 4)]);
+    expect(w).toHaveLength(1);
+    expect(w[0].content).toBe(
+      "[system] WARNING: You have been calling update_soul repeatedly in recent turns. Stop repeating it. " +
+        "If your tasks for this wake are done, call sleep now. Otherwise take one different step that your genesis prompt needs.",
+    );
+    expect(w[0].content).not.toMatch(/BUILD|Write code|create files/);
+  });
+
+  it("does not count sleep (one sleep per wake over several wakes)", () => {
+    expect(warnings([call("sleep", 1), call("sleep", 2), call("sleep", 3), call("sleep", 4)])).toHaveLength(0);
+  });
+});
+
 describe("OpenAI request for a tool-only assistant message", () => {
   afterEach(() => vi.unstubAllGlobals());
 
