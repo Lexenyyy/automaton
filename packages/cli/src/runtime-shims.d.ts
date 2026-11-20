@@ -107,3 +107,9 @@ declare module "@conway/automaton/state/ledger-command.js" {
   export function parseDollarsToCents(rawAmount: string | undefined): number;
   export function runLedgerCommand(db: unknown, args: readonly string[], opts: { liveOnly: boolean }): LedgerCommandResult;
 }
+
+declare module "@conway/automaton/identity/wallet.js" {
+  import type { PrivateKeyAccount } from "viem/accounts";
+  /** Decrypts an encrypted wallet.json with AUTOMATON_WALLET_PASSPHRASE; null without an EVM wallet. */
+  export function loadWalletAccount(): PrivateKeyAccount | null;
+}

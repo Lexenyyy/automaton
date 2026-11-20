@@ -40,7 +40,7 @@ import {
 } from "./agent-instances.mjs";
 
 const WHO = "run-oneoff";
-/** Runtime commands that must never run next to a live agent (also `--soul reset` and `--facts delete`, checked below). */
+/** Runtime commands that must never run next to a live agent (also `--soul reset`, `--facts delete`, `--wallet encrypt`, checked below). */
 const REFUSED_WHILE_RUNNING = new Set(["--run", "--init"]);
 
 const argv = process.argv.slice(2);
@@ -72,6 +72,7 @@ if (live.length > 0) {
   const sub = (flag) => runtimeArgs.includes(flag) ? runtimeArgs[runtimeArgs.indexOf(flag) + 1] : undefined;
   const command = sub("--soul") === "reset" ? "--soul reset"
     : sub("--facts") === "delete" ? "--facts delete"
+    : sub("--wallet") === "encrypt" ? "--wallet encrypt"
     : runtimeArgs.find((a) => REFUSED_WHILE_RUNNING.has(a));
   if (command) {
     console.error(

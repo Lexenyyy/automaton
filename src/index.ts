@@ -75,6 +75,8 @@ Usage:
                            Owner: show or reset settings the agent changed itself
   automaton --soul show|reset
                            Owner: show the soul, or write a fresh one from the settings
+  automaton --wallet show|encrypt
+                           Owner: show the wallet (no key material), or encrypt it in place
   automaton --facts [list | delete <category/key> ...]
                            Owner: list the agent's facts, or delete some (not while it runs)
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
@@ -102,15 +104,76 @@ Environment:
         initChainType = genesis.chainType;
       }
     } catch {}
-    const { chainIdentity, isNew } = await getWallet(initChainType);
+    // Fork (Phase 3): a new wallet is encrypted when a passphrase is set, and
+    // refused without one when walletEncryption is "required" (or mainnet).
+    const { walletEncryptionRequired } = await import("./identity/wallet-crypto.js");
+    let initResult: Awaited<ReturnType<typeof getWallet>>;
+    try {
+      initResult = await getWallet(initChainType, { requireEncryption: walletEncryptionRequired(loadConfig()) });
+    } catch (err: any) {
+      logger.error(`Init failed: ${err?.message ?? String(err)}`);
+      process.exit(1);
+    }
     logger.info(
       JSON.stringify({
-        address: chainIdentity.address,
-        isNew,
+        address: initResult.chainIdentity.address,
+        isNew: initResult.isNew,
         configDir: getAutomatonDir(),
       }),
     );
     process.exit(0);
+  }
+
+  if (args.includes("--wallet")) {
+    // Owner only (pnpm agent:wallet / agent:wallet:encrypt; fork, Phase 3):
+    // show the wallet (address, encrypted or not; never key material), or
+    // encrypt a plaintext wallet in place with the owner's passphrase.
+    // No model call, no network. Encrypt is refused while an agent runs.
+    const sub = args[args.indexOf("--wallet") + 1] ?? "show";
+    if (sub !== "show" && sub !== "encrypt") {
+      logger.error("Usage: automaton --wallet show|encrypt");
+      process.exit(2);
+    }
+    const { walletInfo, encryptExistingWallet } = await import("./identity/wallet.js");
+    const { walletEncryptionRequired } = await import("./identity/wallet-crypto.js");
+    const config = loadConfig();
+    let code = 0;
+    try {
+      if (sub === "encrypt") {
+        let held: ReturnType<typeof readRuntimeLease> = null;
+        if (config) {
+          const db = createDatabase(resolvePath(config.dbPath));
+          try { held = readRuntimeLease(db.raw); } finally { db.close(); }
+        }
+        if (held?.live) {
+          console.log(`Refusing to encrypt the wallet while an agent is running (${formatLeaseHolder(held.lease, held.ageMs)}). Stop it first (pnpm agent:down).`);
+          code = 1;
+        } else {
+          const r = encryptExistingWallet();
+          console.log(
+            r.status === "encrypted" ? `Wallet encrypted in place (${r.address}). No plaintext copy was kept. Keep an offline copy of the passphrase: without it the wallet is lost.`
+              : r.status === "already" ? `Wallet already encrypted (${r.address}). Nothing changed.`
+              : "No wallet found. Create it with --init (pnpm agent:init).",
+          );
+          if (r.status === "missing") code = 1;
+        }
+      }
+      const info = walletInfo();
+      console.log("=== WALLET ===");
+      if (!info.exists) {
+        console.log("No wallet.");
+      } else {
+        console.log(`Address:    ${info.address}`);
+        console.log(`Chain:      ${info.chainType}`);
+        console.log(`Created:    ${info.createdAt ?? "?"}`);
+        console.log(`Encrypted:  ${info.encrypted ? `yes (${info.kdf})` : "NO (plaintext key in wallet.json)"}`);
+      }
+      console.log(`Setting:    walletEncryption ${config?.walletEncryption ?? "optional (default)"}${walletEncryptionRequired(config) ? " → required" : ""}`);
+    } catch (err: any) {
+      console.log(`Wallet command failed: ${err?.message ?? String(err)}`);
+      code = 1;
+    }
+    process.exit(code);
   }
 
   if (args.includes("--provision")) {

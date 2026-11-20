@@ -30,6 +30,9 @@ const fakeSecretHash = crypto.createHash("sha256").update(fakeSecret).digest("he
 const secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), "automaton-verify-secrets-"));
 fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
+// Fork (Phase 3): the template requires an encrypted wallet; fake passphrase for the throwaway wallet.
+const fakeWalletPassphrase = `verify-fake-passphrase-${crypto.randomBytes(16).toString("hex")}`;
+fs.writeFileSync(path.join(secretsDir, "wallet_passphrase"), fakeWalletPassphrase + "\n");
 
 const VERIFY_CREATOR = "0x000000000000000000000000000000000000dEaD";
 const BUILD_COMMIT = gitBuildCommit(ROOT);
@@ -121,6 +124,7 @@ import dns from "node:dns/promises";
 import { spawnSync } from "node:child_process";
 
 const SECRET = ${JSON.stringify(fakeSecret)};
+const WALLET_PASS = ${JSON.stringify(fakeWalletPassphrase)};
 
 check("runs as uid 10002 (agent), not root", process.getuid() === 10002, process.getuid());
 check("no effective capabilities", /^0+$/.test(field("CapEff")), field("CapEff"));
@@ -136,12 +140,12 @@ check("no wallet.json, automaton.json, state.db or key files anywhere", found.st
 check("fake secret not in own environment", !JSON.stringify(process.env).includes(SECRET));
 let inEnviron = [];
 for (const pid of fs.readdirSync("/proc").filter((p) => /^\d+$/.test(p))) {
-  try { if (fs.readFileSync("/proc/" + pid + "/environ", "latin1").includes(SECRET)) inEnviron.push(pid); } catch {}
+  try { const e = fs.readFileSync("/proc/" + pid + "/environ", "latin1"); if (e.includes(SECRET) || e.includes(WALLET_PASS)) inEnviron.push(pid); } catch {}
 }
-check("fake secret not in any process environment", inEnviron.length === 0, inEnviron.join(","));
-const grep = spawnSync("grep", ["-rIlsF", "--exclude-dir=proc", "--exclude-dir=sys", "--exclude-dir=dev", "-e", SECRET, "/"], { encoding: "utf-8", timeout: 240000 });
+check("fake secret and wallet passphrase not in any process environment", inEnviron.length === 0, inEnviron.join(","));
+const grep = spawnSync("grep", ["-rIlsF", "--exclude-dir=proc", "--exclude-dir=sys", "--exclude-dir=dev", "-e", SECRET, "-e", WALLET_PASS, "/"], { encoding: "utf-8", timeout: 240000 });
 // grep exits 1 (no match) or 2 (no match, but some files were unreadable, as expected).
-check("fake secret not in any readable file", (grep.status === 1 || grep.status === 2) && grep.stdout.trim() === "", (grep.stdout || "").trim() || ("grep exit " + grep.status));
+check("fake secret and wallet passphrase not in any readable file",(grep.status === 1 || grep.status === 2) && grep.stdout.trim() === "", (grep.stdout || "").trim() || ("grep exit " + grep.status));
 
 // Cannot write outside its own areas
 for (const p of ["/etc/automaton-test", "/app/automaton-test", "/usr/local/bin/automaton-test", "/automaton-test"]) {
@@ -323,6 +327,7 @@ try {
   fs.mkdirSync(secretsDir, { recursive: true });
   fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
+  fs.writeFileSync(path.join(secretsDir, "wallet_passphrase"), fakeWalletPassphrase + "\n");
 
   console.log("agent:verify: starting the sandbox ...");
   docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
@@ -333,6 +338,22 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   check("entrypoint", "--init creates a wallet and prints only the address",
     init.code === 0 && /^0x[0-9a-fA-F]{40}$/.test(initJson?.address ?? "") && Object.keys(initJson ?? {}).sort().join() === "address,configDir,isNew",
     initJson ? `address ${initJson.address}` : init.err.trim());
+
+  // Wallet encryption at rest (Phase 3 step 1). Only the JSON field names are printed, never values.
+  const walletKeys = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "-e",
+    "const w=JSON.parse(require('fs').readFileSync(process.env.HOME+'/.automaton/wallet.json','utf-8'));console.log(JSON.stringify({keys:Object.keys(w).sort(),version:w.version}))"]);
+  const wk = lastJsonLine(walletKeys.out) ?? {};
+  check("entrypoint", "--init writes an encrypted wallet (version 2, no privateKey field)",
+    wk.version === 2 && Array.isArray(wk.keys) && !wk.keys.includes("privateKey") && wk.keys.includes("ciphertext"),
+    JSON.stringify(wk) || walletKeys.err.trim());
+  const walletShow = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--wallet", "show"]);
+  check("entrypoint", "owner command --wallet show: encrypted, address shown, no passphrase in the output",
+    walletShow.code === 0 && walletShow.out.includes("Encrypted:  yes (scrypt") && walletShow.out.includes(initJson?.address ?? "?") &&
+      !(walletShow.out + walletShow.err).includes(fakeWalletPassphrase),
+    (walletShow.out + walletShow.err).trim().slice(0, 400));
+  const noPass = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "/app/dist/index.js", "--preflight"]);
+  check("entrypoint", "without the passphrase (entrypoint skipped) the encrypted wallet is refused at startup",
+    noPass.code !== 0 && (noPass.out + noPass.err).includes("encrypted but no passphrase"), `exit ${noPass.code}`);
 
   const statusRun = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--status"]);
   check("entrypoint", "--status shows Base Sepolia (testnet)", statusRun.code === 0 && (statusRun.out + statusRun.err).includes("Base Sepolia (testnet)"), statusRun.code);
@@ -497,6 +518,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const soulRefused = oneoff(["--", "--soul", "reset"]);
   check("one agent per project", "--soul reset is refused while a runtime runs (exit 1)",
     soulRefused.status === 1 && soulRefused.stderr.includes("refusing --soul reset"), `exit ${soulRefused.status}: ${soulRefused.stderr.trim()}`);
+  const walletEncRefused = oneoff(["--", "--wallet", "encrypt"]);
+  check("one agent per project", "--wallet encrypt is refused while a runtime runs (exit 1)",
+    walletEncRefused.status === 1 && walletEncRefused.stderr.includes("refusing --wallet encrypt"), `exit ${walletEncRefused.status}: ${walletEncRefused.stderr.trim()}`);
   const factsRefused = oneoff(["--", "--facts", "delete", "self/x"]);
   check("one agent per project", "--facts delete is refused while a runtime runs (exit 1)",
     factsRefused.status === 1 && factsRefused.stderr.includes("refusing --facts delete"), `exit ${factsRefused.status}: ${factsRefused.stderr.trim()}`);

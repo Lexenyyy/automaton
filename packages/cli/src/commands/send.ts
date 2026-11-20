@@ -8,10 +8,9 @@
  */
 
 import { loadConfig } from "@conway/automaton/config.js";
-import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { loadWalletAccount } from "@conway/automaton/identity/wallet.js";
+import type { PrivateKeyAccount } from "viem/accounts";
 import { keccak256, toBytes } from "viem";
-import fs from "fs";
-import path from "path";
 
 const args = process.argv.slice(3);
 const toAddress = args[0];
@@ -24,21 +23,20 @@ if (!toAddress || !messageText) {
   process.exit(1);
 }
 
-// Load wallet
-const walletPath = path.join(
-  process.env.HOME || "/root",
-  ".automaton",
-  "wallet.json",
-);
-
-if (!fs.existsSync(walletPath)) {
-  console.log("No wallet found at ~/.automaton/wallet.json");
+// Load wallet (fork, Phase 3: shared loader, so an encrypted wallet.json is
+// decrypted with AUTOMATON_WALLET_PASSPHRASE instead of read as plain JSON).
+let account: PrivateKeyAccount | null;
+try {
+  account = loadWalletAccount();
+} catch (err: any) {
+  console.log(`Cannot load the wallet: ${err?.message ?? String(err)}`);
+  process.exit(1);
+}
+if (!account) {
+  console.log("No EVM wallet found at ~/.automaton/wallet.json");
   console.log("Run: automaton --init");
   process.exit(1);
 }
-
-const walletData = JSON.parse(fs.readFileSync(walletPath, "utf-8"));
-const account: PrivateKeyAccount = privateKeyToAccount(walletData.privateKey as `0x${string}`);
 
 // Load config for relay URL
 const config = loadConfig();

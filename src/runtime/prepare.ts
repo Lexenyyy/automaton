@@ -12,6 +12,7 @@ import os from "os";
 import { randomUUID } from "crypto";
 import { keccak256, toHex, createPublicClient, http } from "viem";
 import { getWallet, getWalletPath } from "../identity/wallet.js";
+import { checkWalletEncryptionSetting, walletEncryptionRequired } from "../identity/wallet-crypto.js";
 import { loadApiKeyFromConfig } from "../identity/provision.js";
 import { resolvePath } from "../config.js";
 import { createDatabase } from "../state/database.js";
@@ -112,6 +113,8 @@ export interface PreparedRuntime {
   rpcUrlChecked: string | undefined;
   /** Fork: this runtime's instance lease (`--run` only; undefined in preflight). */
   lease?: RuntimeLease;
+  /** Fork (Phase 3): wallet.json is encrypted at rest. */
+  walletEncrypted: boolean;
 }
 
 export async function prepareRuntime(
@@ -123,8 +126,15 @@ export async function prepareRuntime(
     throw new Error("No wallet found. Create it first with --init (pnpm agent:init).");
   }
 
-  // Load wallet (chain-aware)
-  const { account, chainIdentity, chainType: walletChainType } = await getWallet();
+  // Fork (Phase 3): refuse an invalid walletEncryption setting before touching the wallet.
+  const walletEncProblem = checkWalletEncryptionSetting(config);
+  if (walletEncProblem) throw new Error(`${walletEncProblem}. Refusing to start.`);
+
+  // Load wallet (chain-aware). Fork: decrypted with the owner's passphrase;
+  // a plaintext wallet is refused when walletEncryption is "required" or on mainnet.
+  const { account, chainIdentity, chainType: walletChainType, encrypted: walletEncrypted } = await getWallet(undefined, {
+    requireEncryption: walletEncryptionRequired(config),
+  });
   const resolvedChainType: ChainType = config.chainType || walletChainType || "evm";
 
   // Fork: refuse to start without a real creator address (env or config).
@@ -369,6 +379,7 @@ export async function prepareRuntime(
     modelKeys,
     rpcUrlChecked: rpcUrl,
     lease,
+    walletEncrypted,
   };
 }
 
@@ -395,6 +406,11 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
   try {
     line(true, `network: ${getActiveNetwork().label}, RPC chain id verified (${rt.rpcUrlChecked ? "read-only call" : "skipped"})`);
     line(true, `wallet: ${rt.identity.address}`);
+    lines.push(
+      rt.walletEncrypted
+        ? "INFO  wallet file: encrypted at rest (scrypt + AES-256-GCM)"
+        : "WARN  wallet file: NOT encrypted (set walletEncryption \"required\" and run pnpm agent:wallet:encrypt)",
+    );
     line(true, `creator: ${rt.config.creatorAddress}`);
     line(true, `Conway: ${rt.conwayMode}${rt.conwayMode === "off" ? " (own providers only; no Conway requests)" : ""}`);
     line(true, `database: ${rt.db.raw.name}`);

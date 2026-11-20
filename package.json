@@ -25,6 +25,10 @@
     "./state/ledger-command.js": {
       "types": "./dist/state/ledger-command.d.ts",
       "default": "./dist/state/ledger-command.js"
+    },
+    "./identity/wallet.js": {
+      "types": "./dist/identity/wallet.d.ts",
+      "default": "./dist/identity/wallet.js"
     }
   },
   "bin": {
@@ -69,6 +73,8 @@
     "agent:settings:reset": "node docker/run-oneoff.mjs -- --settings reset",
     "agent:soul": "node docker/run-oneoff.mjs -- --soul show",
     "agent:soul:reset": "node docker/run-oneoff.mjs -- --soul reset",
+    "agent:wallet": "node docker/run-oneoff.mjs -- --wallet show",
+    "agent:wallet:encrypt": "node docker/run-oneoff.mjs -- --wallet encrypt",
     "agent:facts": "node docker/run-oneoff.mjs -- --facts list",
     "agent:facts:delete": "node docker/run-oneoff.mjs -- --facts delete",
     "agent:ledger": "node docker/run-oneoff.mjs -- --ledger show",

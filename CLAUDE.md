@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after run-6 follow-up H3
-  (Phase 2): 2036 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 3 step 1
+  (wallet encryption): 2047 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2004 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2015 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (150 checks after run-6 follow-up H4).
+  (154 checks after Phase 3 step 1).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -59,7 +59,12 @@ Two containers from `docker/compose.agent.yml`, testnet only:
 - They talk only over a Unix socket created by the sandbox; the runtime's mount of it is read-only.
 - **Secrets:** API keys are files in a folder outside the repo, set with
   `$env:AUTOMATON_SECRETS_DIR` (names: `openai_api_key`, `anthropic_api_key`, `groq_api_key`,
-  `together_api_key`). Mounted read-only into the runtime only. Never read that folder.
+  `together_api_key`, `wallet_passphrase`). Mounted read-only into the runtime only. Never read that folder.
+- **Wallet encryption:** `wallet.json` is encrypted at rest (scrypt + AES-256-GCM, `src/identity/wallet-crypto.ts`) with
+  the passphrase from the secrets file `wallet_passphrase`. The template sets `"walletEncryption": "required"` (refuse a
+  plaintext wallet; mainnet always requires it). `pnpm agent:wallet` shows address and state (no key material);
+  `pnpm agent:wallet:encrypt` encrypts an existing plaintext wallet in place (refused while an agent runs). Losing the
+  passphrase loses the wallet: the owner keeps an offline copy.
 - **Creator address:** set `$env:AUTOMATON_CREATOR_ADDRESS` (the owner's own wallet). It overrides
   `creatorAddress` in the template, which stays empty in the repo. `--preflight` and `--run` refuse to
   start without a valid, non-zero address.

@@ -918,3 +918,31 @@
   sandbox …"). Recorded only, never a stop rule; "stats n/a" when Docker cannot report them.
   Tests: `agent:verify` +2 (check line, DONE peaks).
   Baselines: Linux 2036 passed; Windows 2004 passed, 22 known failures, 10 skipped; `agent:verify` 150.
+- 2026-11-21: **Wallet encrypted at rest** (Phase 3 step 1, owner decision 2026-11-20). `wallet.json` held the private
+  key in plain JSON (mode 0600).
+  - `src/identity/wallet-crypto.ts` (new): scrypt (N=32768, r=8, p=1; stored in the file) + AES-256-GCM. The chain type
+    and address stay in clear (status commands need no passphrase) and are bound to the ciphertext as additional
+    authenticated data, so a swapped address fails to decrypt. File format `version: 2`; an unknown version is refused.
+    Passphrase: env `AUTOMATON_WALLET_PASSPHRASE`, in Docker from the secrets file `wallet_passphrase`
+    (`docker/load-secrets.sh`; runtime only, never the sandbox or the config). At least 16 characters. Read once at
+    startup and removed from `process.env` (the container's initial environment block still has it).
+  - `src/identity/wallet.ts`: decrypts on load; a new wallet is written encrypted when a passphrase is set; writes are
+    atomic (temp file + rename, mode 0600). `walletInfo()` (no key material) and `encryptExistingWallet()` (encrypts in
+    place, checks the result decrypts to the same address first, keeps no plaintext copy).
+  - Setting `walletEncryption`: `"required"` refuses to start with, or create, a plaintext wallet; `"optional"` (code
+    default, upstream behavior) accepts one. Mainnet always requires it. Template: `"required"`. Startup refuses other
+    values. Preflight prints `INFO wallet file: encrypted at rest` or a `WARN`.
+  - Owner commands: `automaton --wallet show|encrypt`, `pnpm agent:wallet` / `pnpm agent:wallet:encrypt` (encrypt is
+    refused while an agent runs, by `run-oneoff` and by the runtime lease).
+  - `automaton-cli send` loads the wallet through the shared loader (was: read `privateKey` from the JSON directly).
+  - Protects a copied wallet volume (backup, `docker cp`, a file leak). Does not protect against someone with both the
+    volume and the secrets folder, or the running process's memory. Losing the passphrase loses the wallet.
+  - Migration (owner): create `wallet_passphrase` in the secrets folder, `pnpm agent:build`, `pnpm agent:wallet:encrypt`.
+    Until then `--preflight`/`--run` refuse the plaintext wallet.
+  Tests: `wallet-encryption` (11: round trip, wrong passphrase, swapped address, altered ciphertext, env removal,
+  required/optional, refusal without passphrase, in-place encryption, unknown version, and a leak test that plants a
+  known key and checks preflight output and every log line for it and for the passphrase). `agent:verify` +4 (init
+  writes version 2 with no `privateKey`; `--wallet show`; refused without the passphrase; `--wallet encrypt` refused
+  while a runtime runs); the sandbox checks now also search every process environment and readable file for the
+  passphrase.
+  Baselines: Linux 2047 passed; Windows 2015 passed, 22 known failures, 10 skipped; `agent:verify` 154.

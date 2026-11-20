@@ -5,6 +5,7 @@
   "sandboxId": "",
   "network": "testnet",
   "balanceSource": "own",
+  "walletEncryption": "required",
   "conway": "off",
   "orchestration": "off",
   "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },

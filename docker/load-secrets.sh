@@ -19,6 +19,9 @@ _automaton_load_secret openai_api_key OPENAI_API_KEY
 _automaton_load_secret anthropic_api_key ANTHROPIC_API_KEY
 _automaton_load_secret groq_api_key GROQ_API_KEY
 _automaton_load_secret together_api_key TOGETHER_API_KEY
+# Fork (Phase 3): wallet encryption passphrase. The runtime removes it from its
+# environment right after reading it (src/identity/wallet-crypto.ts).
+_automaton_load_secret wallet_passphrase AUTOMATON_WALLET_PASSPHRASE
 
 unset -f _automaton_load_secret
 unset _automaton_secrets_dir

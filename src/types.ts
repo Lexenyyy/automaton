@@ -134,6 +134,15 @@ export interface AutomatonConfig {
    */
   heartbeatHistoryDays?: number;
   /**
+   * Wallet encryption at rest (fork, Phase 3; see src/identity/wallet-crypto.ts).
+   * "required": refuse to start with (or create) a plaintext wallet.json.
+   * "optional" (default, upstream behavior): plaintext is accepted; new wallets
+   * are still encrypted when a passphrase is set. Mainnet always requires it.
+   * The passphrase comes from AUTOMATON_WALLET_PASSPHRASE (secrets file
+   * wallet_passphrase in Docker), never from this config.
+   */
+  walletEncryption?: "required" | "optional";
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.
