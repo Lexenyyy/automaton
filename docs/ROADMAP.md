@@ -178,9 +178,9 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         ended by the agent's own sleep, 13.14¢ (ledger = watchdog). No denials, no errors, no offline wake; soul v91;
         facts still 10. Input per call leveled at 12.4–13.0k tokens, about 0.52¢ per call. UTC midnight crossing
         clean (spend and wake count split by day, heartbeat fine). Heartbeat 1,168 runs, 0 failures. DB 2.65 MB.
-        Follow-ups before the 72 h run (small): prune `heartbeat_history` (never pruned, ~125 KiB/day); skip
-        `check_social_inbox` with Conway off (62% of heartbeat runs); owner command to drop 7 stale facts;
-        `docker stats` in the watchdog log (memory/CPU not measured yet).
+        Follow-ups before the 72 h run, all done 2026-11-20: [x] H1 prune `heartbeat_history` (`ec54a88`);
+        [x] H2 no `check_social_inbox` without a social relay (`500c557`); [x] H3 `agent:facts` /
+        `agent:facts:delete` (`471231d`); [x] H4 memory/CPU in the watchdog log.
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
   - After each run, review (read-only): wake times vs chosen sleeps, turns and tokens per wake (does context

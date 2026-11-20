@@ -29,6 +29,9 @@
  *   - survival tier low_compute, critical or dead
  *   - any ledger entry other than inference cost (grants, transfers, revenue)
  *   - the activity report unreadable 3 checks in a row
+ * Each check line also shows memory and CPU of the runtime and sandbox
+ * (`docker stats`); the DONE/STOP line shows the peaks. Recorded only, never a
+ * stop rule; "stats n/a" if Docker cannot report them.
  * Stopping the watchdog (Ctrl+C) does not stop the agent.
  * --once: check once and exit (0 ok, 2 tripped; agent:down still runs on a trip).
  */
@@ -37,7 +40,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PROJECT, isValidProject, logDir, runActivity, runningRuntimes } from "./agent-instances.mjs";
+import { DEFAULT_PROJECT, docker, isValidProject, logDir, runActivity, runningContainers, runningRuntimes } from "./agent-instances.mjs";
 
 const WHO = "agent:watch";
 const args = process.argv.slice(2);
@@ -92,8 +95,44 @@ const out = (line) => {
 };
 const cents = (mc) => (mc / 1000).toFixed(3);
 
+// ─── container memory/CPU (run 6 follow-up H4) ───────────────────
+// Recorded on every check line and as peaks at the end; never a stop rule.
+const UNIT_MIB = { b: 1 / 1048576, kib: 1 / 1024, mib: 1, gib: 1024, kb: 1e3 / 1048576, mb: 1e6 / 1048576, gb: 1e9 / 1048576 };
+/** "85.3MiB / 7.6GiB" → 85.3 (MiB); NaN if unreadable. */
+function parseMemMib(memUsage) {
+  const m = /^\s*([\d.]+)\s*([a-z]+)/i.exec(String(memUsage ?? ""));
+  const f = m ? UNIT_MIB[m[2].toLowerCase()] : undefined;
+  return f ? Number(m[1]) * f : NaN;
+}
+const peaks = {}; // role → { memMib, cpuPct }
+
+/** " | runtime 85MiB 0.1% cpu, sandbox 12MiB 0.0% cpu", or " | stats n/a". */
+function resourceText(runtimeName) {
+  const roles = [["runtime", runtimeName], ...runningContainers(project, "sandbox", WHO).slice(0, 1).map((c) => ["sandbox", c.name])];
+  const r = docker(["stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}", ...roles.map(([, n]) => n)], 60_000);
+  if (r.code !== 0 || !r.out) return " | stats n/a";
+  const byName = new Map(r.out.split("\n").map((l) => l.split("\t")).map(([n, cpu, mem]) => [n, { cpu, mem }]));
+  const parts = [];
+  for (const [role, name] of roles) {
+    const s = byName.get(name);
+    if (!s) continue;
+    const memMib = parseMemMib(s.mem);
+    const cpuPct = parseFloat(s.cpu);
+    const p = (peaks[role] ??= { memMib: 0, cpuPct: 0 });
+    if (memMib > p.memMib) p.memMib = memMib;
+    if (cpuPct > p.cpuPct) p.cpuPct = cpuPct;
+    parts.push(`${role} ${Number.isFinite(memMib) ? memMib.toFixed(0) : "?"}MiB ${s.cpu} cpu`);
+  }
+  return parts.length ? ` | ${parts.join(", ")}` : " | stats n/a";
+}
+
+function peakText() {
+  const e = Object.entries(peaks);
+  return e.length ? `Peak: ${e.map(([role, p]) => `${role} ${p.memMib.toFixed(0)}MiB, ${p.cpuPct.toFixed(1)}% cpu`).join("; ")}.` : "Peak: no stats.";
+}
+
 function stopAgent(why, code) {
-  out(`${code === 0 ? "DONE" : "STOP"}: ${why}. Running agent:down ...`);
+  out(`${code === 0 ? "DONE" : "STOP"}: ${why}. ${peakText()} Running agent:down ...`);
   const down = path.join(path.dirname(fileURLToPath(import.meta.url)), "down-agent.mjs");
   const r = spawnSync(process.execPath, [down, "--project", project], { encoding: "utf-8", timeout: 240_000 });
   for (const l of `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n")) if (l) out(`  ${l}`);
@@ -141,7 +180,8 @@ function check() {
     `check: ${runtimes[0].name} build ${runtimes[0].commit} | state ${a.agentState}, tier ${a.tier ?? "?"} | ` +
       `since start: ${s.turns} turns, ${cents(s.spendMc)}c | last hour: ${hourTurns} turns, ${cents(hourSpendMc)}c | ` +
       `this wake: ${a.turnsThisWake} turns | last wake end: ${wakeEnd?.reason ?? "-"}` +
-      (a.offlineStreak > 0 ? ` | OFFLINE ${a.offlineStreak} wake(s) in a row` : ""),
+      (a.offlineStreak > 0 ? ` | OFFLINE ${a.offlineStreak} wake(s) in a row` : "") +
+      resourceText(runtimes[0].name),
   );
 
   if (s.spendMc > limits.maxRunCents * 1000) return `inference spend since start ${cents(s.spendMc)}c > ${limits.maxRunCents}c`;

@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (148 checks after run-6 follow-up H3).
+  (150 checks after run-6 follow-up H4).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -131,7 +131,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     --json --since <start>`); on a stop rule it runs `agent:down` and exits 2; after `--hours` it stops the
     agent and exits 0. Default rules: no/several/old-image runtime; spend > 5¢ since start or > 3¢ in an hour;
     > 6 turns in a wake or > 20 in an hour; a forced wake end; 3 policy denials of one tool; tier not normal;
-    any non-inference ledger entry; more than 4 offline wakes in a row (one offline wake is not a stop). Log: `~/.automaton-logs/watch-*.log`. Ctrl+C stops only the watchdog.
+    any non-inference ledger entry; more than 4 offline wakes in a row (one offline wake is not a stop). Each check line
+    also records runtime/sandbox memory and CPU (`docker stats`), the last line the peaks (never a stop rule). Log: `~/.automaton-logs/watch-*.log`. Ctrl+C stops only the watchdog.
   - One-off commands run through `docker/run-oneoff.mjs`: `init`, `ledger`, `settings` use `--no-deps`
     (sandbox never started); `preflight` and `run` stop and remove the sandbox afterwards, only if
     they started it and no other runtime is running. **One agent per project:** `run` and `init` are

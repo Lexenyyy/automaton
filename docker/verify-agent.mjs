@@ -615,6 +615,8 @@ db.close();`;
   const w1 = watch(["--once"]);
   check(W, "--once with a healthy runtime: all checks pass, the agent is left running",
     w1.status === 0 && w1.stdout.includes("all checks passed") && runtimeIds("running") !== "", (w1.stdout + w1.stderr).trim());
+  check(W, "the check line shows the runtime's memory and CPU (docker stats)",
+    /\| runtime \d+MiB [\d.]+% cpu/.test(w1.stdout), w1.stdout.split("\n").find((l) => l.includes("check:")) ?? w1.stdout.trim());
   // Offline wakes (run 5, F6): kv offline_streak as the loop writes it.
   const setOffline = (n) => docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
     `import { createDatabase } from "/app/dist/state/database.js";
@@ -642,6 +644,8 @@ db.close();`], { allowFail: false });
   const w3 = watch(["--hours", "0.001", "--interval", "10"]);
   check(W, "--hours: stops the agent gracefully at the end of the run (exit 0)",
     w3.status === 0 && w3.stdout.includes("DONE: run complete") && runtimeIds("running") === "", (w3.stdout + w3.stderr).trim());
+  check(W, "the DONE line reports peak memory and CPU",
+    /DONE: run complete[^\n]*Peak: runtime \d+MiB, [\d.]+% cpu/.test(w3.stdout), w3.stdout.split("\n").find((l) => l.includes("DONE")) ?? "");
   standInW(`${PROJECT}-w3`, "setTimeout(()=>process.exit(0),4000)");
   const w4 = watch(["--hours", "0.02", "--interval", "10"]);
   check(W, "a runtime that exits is noticed and cleaned up (exit 2)",

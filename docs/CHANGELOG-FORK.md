@@ -912,3 +912,9 @@
   while an agent runs, by `run-oneoff` (like `--soul reset`) and by the runtime lease.
   Tests: `facts-command` (5); `agent:verify` +3 (list in a container; delete refused by run-oneoff and by the lease).
   Baselines: Linux 2036 passed; Windows 2004 passed, 22 known failures, 10 skipped; `agent:verify` 148.
+- 2026-11-20: **Watchdog records container memory and CPU** (run 6 follow-up H4). Run 6's review could not say how much
+  memory the containers used. Every `agent:watch` check line now ends with `| runtime NNMiB x.x% cpu, sandbox NNMiB
+  x.x% cpu` (`docker stats --no-stream`), and the DONE/STOP line gives the peaks ("Peak: runtime NNMiB, x.x% cpu;
+  sandbox …"). Recorded only, never a stop rule; "stats n/a" when Docker cannot report them.
+  Tests: `agent:verify` +2 (check line, DONE peaks).
+  Baselines: Linux 2036 passed; Windows 2004 passed, 22 known failures, 10 skipped; `agent:verify` 150.
