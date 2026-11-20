@@ -904,3 +904,11 @@
   Tests: `heartbeat-social-off` (2).
   Baselines: Linux 2031 passed; Windows 1999 passed, 22 known failures, 10 skipped; `agent:verify` 145 (not rerun:
   no sandbox/Docker change).
+- 2026-11-20: **Owner facts command** (run 6 follow-up H3). Seven stale facts from runs 1–5 stay in `semantic_memory`
+  and the agent has no tool to delete facts (its shell cannot reach state.db). New `automaton --facts list |
+  delete <category/key> ...`, `pnpm agent:facts` and `pnpm agent:facts:delete <category/key> ...`
+  (`src/memory/facts-command.ts`; one-off with `--no-deps`, no model call, no network, no wallet file read). Delete
+  takes exact `category/key` pairs (split at the first `/`), all or nothing: one unknown key deletes nothing. Refused
+  while an agent runs, by `run-oneoff` (like `--soul reset`) and by the runtime lease.
+  Tests: `facts-command` (5); `agent:verify` +3 (list in a container; delete refused by run-oneoff and by the lease).
+  Baselines: Linux 2036 passed; Windows 2004 passed, 22 known failures, 10 skipped; `agent:verify` 148.

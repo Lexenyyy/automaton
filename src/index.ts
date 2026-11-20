@@ -75,6 +75,8 @@ Usage:
                            Owner: show or reset settings the agent changed itself
   automaton --soul show|reset
                            Owner: show the soul, or write a fresh one from the settings
+  automaton --facts [list | delete <category/key> ...]
+                           Owner: list the agent's facts, or delete some (not while it runs)
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
                            Owner: show the ledger or add a grant/adjustment (dollars)
   automaton --activity [--json] [--since <ISO time>]
@@ -200,6 +202,30 @@ Environment:
       db.close();
     }
     process.exit(code);
+  }
+
+  if (args.includes("--facts")) {
+    // Owner only (pnpm agent:facts / agent:facts:delete): list the agent's
+    // long-term facts or delete some (fork, run 6 follow-up H3). Delete is
+    // refused while an agent runs. No model call, no network, no wallet read.
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    const db = createDatabase(resolvePath(config.dbPath));
+    const { runFactsCommand } = await import("./memory/facts-command.js");
+    let result: { code: number; output: string };
+    try {
+      const held = readRuntimeLease(db.raw);
+      result = runFactsCommand(db.raw, args.slice(args.indexOf("--facts") + 1), {
+        agentRunning: held?.live ? formatLeaseHolder(held.lease, held.ageMs) : null,
+      });
+    } finally {
+      db.close();
+    }
+    console.log(result.output);
+    process.exit(result.code);
   }
 
   if (args.includes("--ledger")) {

@@ -373,6 +373,10 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     soulReset.out.includes("Owner-only sections: corePurpose (the agent cannot change them"),
     soulReset.out.trim().slice(-300));
 
+  const factsList = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--facts", "list"]);
+  check("entrypoint", "owner command --facts list works",
+    factsList.code === 0 && factsList.out.includes("=== FACTS (semantic_memory)"), (factsList.out + factsList.err).trim().slice(0, 300));
+
   // Owner ledger commands (throwaway verify volume; the real wallet volume is never touched).
   const ledgerShow = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--ledger", "show"]);
   check("entrypoint", "owner command --ledger show works (testnet ledger)",
@@ -493,6 +497,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const soulRefused = oneoff(["--", "--soul", "reset"]);
   check("one agent per project", "--soul reset is refused while a runtime runs (exit 1)",
     soulRefused.status === 1 && soulRefused.stderr.includes("refusing --soul reset"), `exit ${soulRefused.status}: ${soulRefused.stderr.trim()}`);
+  const factsRefused = oneoff(["--", "--facts", "delete", "self/x"]);
+  check("one agent per project", "--facts delete is refused while a runtime runs (exit 1)",
+    factsRefused.status === 1 && factsRefused.stderr.includes("refusing --facts delete"), `exit ${factsRefused.status}: ${factsRefused.stderr.trim()}`);
   const ledgerLive = oneoff(["--", "--ledger", "show"]);
   check("one agent per project", "ledger show still works, with a note that the agent is running",
     ledgerLive.status === 0 && ledgerLive.stderr.includes("note: the agent is running"), `exit ${ledgerLive.status}`);
@@ -546,6 +553,9 @@ db.close();`;
   const soulHeld = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--soul", "reset"]);
   check("runtime lease", "--soul reset is refused by the runtime while another holds the lease",
     soulHeld.code === 1 && soulHeld.out.includes("Refusing to reset the soul while an agent is running"), `exit ${soulHeld.code}`);
+  const factsHeld = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--facts", "delete", "self/x"]);
+  check("runtime lease", "--facts delete is refused by the runtime while another holds the lease",
+    factsHeld.code === 1 && factsHeld.out.includes("Refusing to delete facts while an agent is running"), `exit ${factsHeld.code}`);
   docker(["stop", "-t", "10", HOLDER]);
   docker(["rm", "-f", HOLDER]);
   const freed = tryLease();

@@ -40,7 +40,7 @@ import {
 } from "./agent-instances.mjs";
 
 const WHO = "run-oneoff";
-/** Runtime commands that must never run next to a live agent (also `--soul reset`, checked below). */
+/** Runtime commands that must never run next to a live agent (also `--soul reset` and `--facts delete`, checked below). */
 const REFUSED_WHILE_RUNNING = new Set(["--run", "--init"]);
 
 const argv = process.argv.slice(2);
@@ -69,8 +69,10 @@ const COMPOSE = ["compose", "-f", COMPOSE_FILE, ...(projectOpt ? ["-p", projectO
 const live = runningRuntimes(project, WHO);
 if (live.length > 0) {
   const list = live.map((c) => `  ${describeContainer(c)}`).join("\n");
-  const soulReset = runtimeArgs.includes("--soul") && runtimeArgs[runtimeArgs.indexOf("--soul") + 1] === "reset";
-  const command = soulReset ? "--soul reset" : runtimeArgs.find((a) => REFUSED_WHILE_RUNNING.has(a));
+  const sub = (flag) => runtimeArgs.includes(flag) ? runtimeArgs[runtimeArgs.indexOf(flag) + 1] : undefined;
+  const command = sub("--soul") === "reset" ? "--soul reset"
+    : sub("--facts") === "delete" ? "--facts delete"
+    : runtimeArgs.find((a) => REFUSED_WHILE_RUNNING.has(a));
   if (command) {
     console.error(
       `${WHO}: refusing ${command}: ${live.length} runtime container(s) of project "${project}" already running:\n${list}\n` +
