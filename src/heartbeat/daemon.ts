@@ -49,6 +49,28 @@ export interface HeartbeatDaemon {
   forceRun(taskName: string): Promise<void>;
 }
 
+/** Heartbeat tasks that only make sense with a social relay. */
+export const SOCIAL_HEARTBEAT_TASKS: readonly string[] = ["check_social_inbox"];
+
+/**
+ * The task functions the scheduler may run. Fork (run 6 follow-up): without a
+ * social client (no relay configured, or a Conway relay with Conway off),
+ * check_social_inbox is left out. Upstream ran it every 2 minutes as a no-op
+ * (62% of all heartbeat runs in run 6). A task with no function is never
+ * executed or recorded; its schedule row stays as it is.
+ */
+export function buildHeartbeatTaskMap(
+  tasks: Record<string, HeartbeatTaskFn>,
+  social: SocialClientInterface | undefined,
+): Map<string, HeartbeatTaskFn> {
+  const taskMap = new Map<string, HeartbeatTaskFn>();
+  for (const [name, fn] of Object.entries(tasks)) {
+    if (!social && SOCIAL_HEARTBEAT_TASKS.includes(name)) continue;
+    taskMap.set(name, fn);
+  }
+  return taskMap;
+}
+
 /**
  * Create and return the heartbeat daemon.
  *
@@ -70,11 +92,8 @@ export function createHeartbeatDaemon(
     social,
   };
 
-  // Build task map from BUILTIN_TASKS
-  const taskMap = new Map<string, HeartbeatTaskFn>();
-  for (const [name, fn] of Object.entries(BUILTIN_TASKS)) {
-    taskMap.set(name, fn);
-  }
+  const taskMap = buildHeartbeatTaskMap(BUILTIN_TASKS, social);
+  if (!social) logger.info("Social inbox check off (no social relay).");
 
   // Seed heartbeat_schedule from config entries if not already present
   for (const entry of heartbeatConfig.entries) {

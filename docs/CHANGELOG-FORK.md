@@ -896,3 +896,11 @@
   start removes the rows from before 2026-11-13 (none) and then keeps about 8,000 rows.
   Tests: `heartbeat-history-retention` (5).
   Baselines: Linux 2029 passed; Windows 1997 passed, 22 known failures, 10 skipped; `agent:verify` 145.
+- 2026-11-20: **No social inbox check without a social relay** (run 6 follow-up H2). The heartbeat ran
+  `check_social_inbox` every 2 minutes as a no-op (721 of 1,168 runs in run 6), because the task returns at once
+  when there is no social client. Without one (no `socialRelayUrl`, or a Conway relay with Conway off) the daemon
+  now leaves the task out of its task map (`buildHeartbeatTaskMap` in `src/heartbeat/daemon.ts`), so it is never
+  executed or recorded; the log says "Social inbox check off (no social relay)." With a relay nothing changes.
+  Tests: `heartbeat-social-off` (2).
+  Baselines: Linux 2031 passed; Windows 1999 passed, 22 known failures, 10 skipped; `agent:verify` 145 (not rerun:
+  no sandbox/Docker change).
