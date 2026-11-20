@@ -28,6 +28,7 @@ import { createBuiltinTools, loadInstalledTools } from "../agent/tools.js";
 import { checkToolAllowlist, filterToolsForAllowlist, resolveToolAllowlist } from "../agent/tool-allowlist.js";
 import { checkMaxTurnsPerCycle, resolveMaxTurnsPerWake } from "../agent/turn-limits.js";
 import { resolveSleepSettings } from "../agent/sleep-limits.js";
+import { checkHeartbeatHistoryDays } from "../heartbeat/history-retention.js";
 import { checkSoulDefaults } from "../soul/reset.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
@@ -338,6 +339,9 @@ export async function prepareRuntime(
   // Fork (Phase 2): refuse an invalid per-wake turn cap.
   const turnCapProblem = checkMaxTurnsPerCycle(config);
   if (turnCapProblem) allowProblems.push(turnCapProblem);
+  // Fork (after run 6): refuse an invalid heartbeat history retention.
+  const historyDaysProblem = checkHeartbeatHistoryDays(config);
+  if (historyDaysProblem) allowProblems.push(historyDaysProblem);
   allowProblems.push(...checkSoulDefaults(config));
   if (allowProblems.length) {
     if (lease) releaseRuntimeLease(db.raw, lease.instanceId);

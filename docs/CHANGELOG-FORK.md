@@ -888,3 +888,11 @@
   - Not measured: container memory/CPU (the watchdog does not record `docker stats`; containers removed at the end).
   - Follow-ups (not blocking, before the 72 h run): prune `heartbeat_history`; skip `check_social_inbox` when
     Conway is off; owner command to remove stale facts; `docker stats` in the watchdog log.
+- 2026-11-20: **Heartbeat history is pruned** (run 6 follow-up H1). `heartbeat_history` grew by about 1,170 rows a
+  day and was never pruned (upstream `pruneHistory` had no caller). New setting `heartbeatHistoryDays` (default 7,
+  0 = keep all, also 7 in the template; startup refuses values outside whole numbers 0..365). The heartbeat
+  scheduler deletes older rows (successes and failures) from its tick, at most once an hour, and logs how many
+  (`src/heartbeat/history-retention.ts`, `DurableScheduler.maybePruneHistory`). The first prune after the next
+  start removes the rows from before 2026-11-13 (none) and then keeps about 8,000 rows.
+  Tests: `heartbeat-history-retention` (5).
+  Baselines: Linux 2029 passed; Windows 1997 passed, 22 known failures, 10 skipped; `agent:verify` 145.

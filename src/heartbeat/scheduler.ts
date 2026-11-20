@@ -29,6 +29,7 @@ import {
   insertWakeEvent,
 } from "../state/database.js";
 import { createLogger } from "../observability/logger.js";
+import { HEARTBEAT_PRUNE_INTERVAL_MS, resolveHeartbeatHistoryDays } from "./history-retention.js";
 
 type DatabaseType = BetterSqlite3.Database;
 const logger = createLogger("heartbeat.scheduler");
@@ -68,6 +69,8 @@ function tierMeetsMinimum(currentTier: string, minimumTier: string): boolean {
 export class DurableScheduler {
   private tickInProgress = false;
   private readonly ownerId: string;
+  /** Fork: last heartbeat_history prune (ms since epoch; 0 = not yet). */
+  private lastHistoryPruneMs = 0;
 
   constructor(
     private readonly db: DatabaseType,
@@ -121,6 +124,7 @@ export class DurableScheduler {
 
       // Periodic cleanup
       pruneExpiredDedupKeys(this.db);
+      this.maybePruneHistory();
     } catch (err: any) {
       logger.error("Tick failed", err instanceof Error ? err : undefined);
     } finally {
@@ -318,12 +322,27 @@ export class DurableScheduler {
   /**
    * Prune old history entries.
    */
-  pruneHistory(retentionDays: number): number {
-    const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString();
+  pruneHistory(retentionDays: number, nowMs: number = Date.now()): number {
+    const cutoff = new Date(nowMs - retentionDays * 86400000).toISOString();
     const result = this.db.prepare(
       "DELETE FROM heartbeat_history WHERE started_at < ?",
     ).run(cutoff);
     return result.changes;
+  }
+
+  /**
+   * Fork (after run 6): prune heartbeat_history to config.heartbeatHistoryDays
+   * (0 = keep all), at most once per HEARTBEAT_PRUNE_INTERVAL_MS. Returns the
+   * number of rows deleted (0 when skipped).
+   */
+  maybePruneHistory(nowMs: number = Date.now()): number {
+    if (this.lastHistoryPruneMs && nowMs - this.lastHistoryPruneMs < HEARTBEAT_PRUNE_INTERVAL_MS) return 0;
+    this.lastHistoryPruneMs = nowMs;
+    const days = resolveHeartbeatHistoryDays(this.legacyContext.config);
+    if (days === 0) return 0;
+    const deleted = this.pruneHistory(days, nowMs);
+    if (deleted > 0) logger.info(`Pruned ${deleted} heartbeat history row(s) older than ${days} day(s).`);
+    return deleted;
   }
 
   /**

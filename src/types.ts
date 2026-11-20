@@ -128,6 +128,12 @@ export interface AutomatonConfig {
    */
   sleepConfig?: { minSeconds?: number; maxWakesPerDay?: number };
   /**
+   * Days of heartbeat_history to keep (fork, after run 6; see
+   * src/heartbeat/history-retention.ts). Default 7, 0 = keep all. Older rows
+   * are deleted by the heartbeat scheduler at most once an hour.
+   */
+  heartbeatHistoryDays?: number;
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.
