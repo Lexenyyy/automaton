@@ -857,3 +857,34 @@
     now carry their tool results. Bounded: at most 20 turns of history (only the newest sleep-only turn is
     kept), memory retrieval within its token budget. About 0.3¢ per call.
   - Run 6 (24 h) plan: about 24 wakes, 10–15¢; the watchdog runs with `--hours 24 --max-run-cents 20`.
+- 2026-11-20: **Run 6 passed** (build `12d6995`, 2026-11-18 19:21 UTC – 2026-11-19 19:21 UTC, detached,
+  `agent:watch --hours 24 --max-run-cents 20`). Watchdog: DONE after 24 h, `agent:down` exit 0 (graceful, 1.7 s),
+  log saved; no stop rule tripped. Read-only review of the saved log and a copy of state.db (opened in a no-network
+  container from a read-only mount; no other file read):
+  - 24 wakes, one per hour (the agent chose 3600 s every time; actual interval 3600 s + 1–3 s). 20 wakes of one
+    turn (`sleep`), 4 of two (`remember_fact` `self/last_observation` + `sleep`, at 00:22, 04:22, 07:22, 16:23).
+    28 turns, every wake ended "agent chose sleep"; no loop/repetition warning, no forced sleep, no offline wake,
+    no WARN/ERROR line in the runtime log.
+  - Spend 13.141¢ (28 calls); ledger = `inference_costs` = watchdog; no ledger entry other than inference.
+    Ledger balance at the end $4.25 (lifetime ledger spend about 75¢ of $5.00, including the run-1 rounding).
+  - Context leveled: input per call 7.9k → 13.0k tokens (peak 16:23), then 12.4–13.0k from 08:23 on (history cap
+    of 20 turns reached; the system part also grew 2.5k → 3.3k while working memory filled to its 20 entries).
+    Cost per call 0.33¢ → about 0.52¢, flat for the last 11 hours. Expect about 12.5¢ a day at hourly wakes.
+  - UTC midnight: the 00:22 wake was normal; spend split 1.843¢ (5 calls, 11-18) / 11.298¢ (23 calls, 11-19), far
+    below the 30¢ daily cap; `wake_count_day` restarted at 2026-11-19 (19 wakes by the end, as expected); the
+    00:00 heartbeat ran all six tasks without error; the watchdog's hour figures stayed correct.
+  - Policy: 28 decisions, all allow (all-time denials unchanged: 165, last 2026-11-17). Soul unchanged at v91.
+  - Facts: `semantic_memory` still 10 (the genesis step keeps one `last_observation` key, updated 4 times). Seven
+    stale facts from runs 1–5 remain (`tool_error:write_file:*` 161×/12×, `tool_error:update_soul:RATE_LIMIT`,
+    $4.44 balance notes, `genesis_task_progress`). Working memory 20 entries (capped).
+  - Heartbeat: 1,168 runs, 0 failures (`fail_count` 0 for all six tasks). `check_social_inbox` every 2 min is 721 of
+    them (62%), with Conway and social features off. `heartbeat_history` is never pruned (`pruneHistory` in
+    `src/heartbeat/scheduler.ts` has no caller): about 1,170 rows / 125 KiB a day.
+  - Database: 2.65 MB, WAL checkpointed at shutdown, no free pages. Largest: `turns` ~472 KiB, `tool_calls`
+    ~348 KiB, `heartbeat_history` ~170 KiB, `soul_history` ~154 KiB (90 versions, mostly from the incident).
+    Estimated growth about 0.2 MB a day.
+  - Upstream noise: the memory classifier filed one sleep reason as `knowledge_store` `financial/pricing:reason`
+    and wrote 17 `event_stream` rows (`knowledge`, `market_signal`) from sleep reasons that mention dollars. Small.
+  - Not measured: container memory/CPU (the watchdog does not record `docker stats`; containers removed at the end).
+  - Follow-ups (not blocking, before the 72 h run): prune `heartbeat_history`; skip `check_social_inbox` when
+    Conway is off; owner command to remove stale facts; `docker stats` in the watchdog log.

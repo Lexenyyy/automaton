@@ -173,8 +173,14 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         the agent's own sleep (3600 s), 1.19¢ (ledger = watchdog). No policy denials, no soul change (v91), one
         new fact, no non-inference ledger entry, no errors. Input per call 6.9k → 7.5k tokens (G1 shows tool
         results; history is capped at 20 turns, so it levels off), about 0.3¢ per call.
-  - [ ] **Run 6: 24 hours**, same setup, Windows Update paused. Expected about 10–15¢ (about 24 wakes,
-        0.3–0.45¢ per call). The watchdog needs `--max-run-cents 20` (the 5¢ default would stop it after about 12 h).
+  - [x] **Run 6: passed** (2026-11-18 19:21 – 11-19 19:21 UTC, build `12d6995`, `--hours 24 --max-run-cents 20`).
+        Watchdog DONE after 24 h. 24 hourly wakes, 28 turns (20 × `sleep`; 4 × `remember_fact` + `sleep`), every wake
+        ended by the agent's own sleep, 13.14¢ (ledger = watchdog). No denials, no errors, no offline wake; soul v91;
+        facts still 10. Input per call leveled at 12.4–13.0k tokens, about 0.52¢ per call. UTC midnight crossing
+        clean (spend and wake count split by day, heartbeat fine). Heartbeat 1,168 runs, 0 failures. DB 2.65 MB.
+        Follow-ups before the 72 h run (small): prune `heartbeat_history` (never pruned, ~125 KiB/day); skip
+        `check_social_inbox` with Conway off (62% of heartbeat runs); owner command to drop 7 stale facts;
+        `docker stats` in the watchdog log (memory/CPU not measured yet).
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
   - After each run, review (read-only): wake times vs chosen sleeps, turns and tokens per wake (does context
