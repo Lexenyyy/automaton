@@ -965,3 +965,20 @@
   Tests: `payment-limits` (7, including the template); `authority-rules` skips the new list field in its "all numbers"
   check. `agent:verify` +1 (preflight payments line).
   Baselines: Linux 2054 passed; Windows 2022 passed, 22 known failures, 10 skipped; `agent:verify` 155.
+- 2026-11-21: **`send_usdc` tool** (Phase 3 step 3). The only payment tool was Conway's `transfer_credits`.
+  - `src/agent/usdc-transfer.ts` (new), `sendUsdc()`: before anything is signed, in code: amount in whole cents
+    1..`maxSingleTransferCents` (1 cent = 0.01 USDC = 10,000 base units); reason required (max 200 characters);
+    recipient a valid address on the resolved `transferAllowlist`, never the agent's own; the UTC-hour and UTC-day
+    windows (`spend_tracking`, category `transfer`, the same windows `SpendTracker` uses); the token reports 6 decimals;
+    a fresh on-chain USDC balance >= amount + `minimumReserveCents`; ETH >= twice the estimated fee. Unreadable balances
+    refuse. Active network only (Base Sepolia unless the owner approved mainnet).
+  - Accounting: the spend is recorded before the broadcast and removed only if nothing was sent or the transaction
+    reverted; an unconfirmed one (90 s) stays `pending` and keeps counting ("Do not send it again"). Each broadcast is a
+    row in `onchain_transactions` (`usdc_transfer`, pending → confirmed/failed, gas used, metadata with recipient,
+    amount, reason). No ledger entry: the wallet balance is read on chain. One transfer at a time per process.
+  - Tool `send_usdc` (financial, dangerous; `src/agent/tools.ts`) with a viem client (`createViemUsdcChain`; RPC from
+    `rpcUrl`/`AUTOMATON_RPC_URL`). `usdcAddressFor()` exported from `src/conway/x402.ts`.
+  - Not in the template `toolAllowlist`: the agent can neither see nor call it until the limits test (step 7).
+  Tests: `usdc-transfer` (24: 16 refusals with nothing signed or recorded, exact base units, reserve edge, broadcast
+  error, revert, pending, one at a time, registration, not allowlisted).
+  Baselines: Linux 2078 passed; Windows 2046 passed, 22 known failures, 10 skipped; `agent:verify` 155.

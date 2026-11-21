@@ -32,6 +32,11 @@ const CHAINS: Record<string, any> = {
 };
 type NetworkId = keyof typeof USDC_ADDRESSES;
 
+/** Fork (Phase 3): the USDC contract on a CAIP-2 network, or undefined when unsupported. */
+export function usdcAddressFor(caip2: string): Address | undefined {
+  return USDC_ADDRESSES[caip2];
+}
+
 const BALANCE_OF_ABI = [
   {
     inputs: [{ name: "account", type: "address" }],

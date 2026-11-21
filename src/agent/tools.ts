@@ -1157,6 +1157,51 @@ Model: ${ctx.inference.getDefaultModel()}
       },
     },
 
+    // ── Financial: Send USDC (fork, Phase 3 step 3) ──
+    {
+      name: "send_usdc",
+      description:
+        "Send USDC from your wallet on the active network to an address on your owner's recipient list. " +
+        "Limits are enforced in code: per payment, per hour, per day, a reserve that must stay in the wallet, " +
+        "and only listed recipients. amount_cents is in cents of USDC (100 = 1 USDC).",
+      category: "financial",
+      riskLevel: "dangerous",
+      parameters: {
+        type: "object",
+        properties: {
+          to_address: { type: "string", description: "Recipient address (must be on the owner's list)" },
+          amount_cents: { type: "number", description: "Whole cents of USDC, e.g. 10 = 0.10 USDC" },
+          reason: { type: "string", description: "Why this payment is made (required, max 200 characters)" },
+        },
+        required: ["to_address", "amount_cents", "reason"],
+      },
+      execute: async (args, ctx) => {
+        if ((ctx.identity.chainType ?? "evm") !== "evm") return "Blocked: send_usdc supports EVM wallets only.";
+        const { sendUsdc, createViemUsdcChain } = await import("./usdc-transfer.js");
+        const { getActiveNetwork } = await import("../identity/network.js");
+        const { DEFAULT_TREASURY_POLICY } = await import("../types.js");
+        const network = getActiveNetwork();
+        let chain;
+        try {
+          chain = createViemUsdcChain(ctx.identity.account, network, ctx.config.rpcUrl || process.env.AUTOMATON_RPC_URL);
+        } catch (err: any) {
+          return `Blocked: ${err?.message ?? err}`;
+        }
+        const r = await sendUsdc({
+          db: ctx.db.raw,
+          policy: ctx.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+          creatorAddress: ctx.config.creatorAddress,
+          from: ctx.identity.address as `0x${string}`,
+          to: args.to_address as string,
+          amountCents: args.amount_cents,
+          reason: args.reason,
+          network,
+          chain,
+        });
+        return r.message;
+      },
+    },
+
     // ── Skills Tools ──
     {
       name: "install_skill",

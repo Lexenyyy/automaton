@@ -3,7 +3,8 @@
  *
  * The limits live in config.treasuryPolicy (read-only to the agent):
  *   - maxSingleTransferCents / maxHourlyTransferCents / maxDailyTransferCents:
- *     per transfer, rolling hour, rolling day (cents of USDC: 100 = 1 USDC)
+ *     per transfer, per UTC clock hour, per UTC day (spend_tracking windows;
+ *     cents of USDC: 100 = 1 USDC)
  *   - minimumReserveCents: wallet USDC that must stay after any transfer
  *   - maxTransfersPerTurn
  *   - transferAllowlist: the only recipients of on-chain payments. Empty (the
