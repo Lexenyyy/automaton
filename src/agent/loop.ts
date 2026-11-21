@@ -82,6 +82,7 @@ import {
   recordOfflineWake,
 } from "./offline.js";
 import { RepeatGuard, resolveLoopGuard } from "./repeat-guard.js";
+import { TRANSFER_TOOLS } from "./policy-rules/financial.js";
 import { createTokenCounter } from "../memory/context-manager.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "./orchestration-mode.js";
 import { filterToolsForAllowlist, resolveToolAllowlist } from "./tool-allowlist.js";
@@ -817,7 +818,8 @@ export async function runAgentLoop(
             policyEngine,
             spendTracker ? {
               inputSource: currentInputSource,
-              turnToolCallCount: turn.toolCalls.filter(t => t.name === "transfer_credits").length,
+              // Fork (Phase 3 step 4): every fund-moving tool counts toward maxTransfersPerTurn.
+              turnToolCallCount: turn.toolCalls.filter(t => TRANSFER_TOOLS.includes(t.name)).length,
               sessionSpend: spendTracker,
             } : undefined,
           );

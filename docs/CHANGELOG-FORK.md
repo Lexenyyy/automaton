@@ -982,3 +982,22 @@
   Tests: `usdc-transfer` (24: 16 refusals with nothing signed or recorded, exact base units, reserve edge, broadcast
   error, revert, pending, one at a time, registration, not allowlisted).
   Baselines: Linux 2078 passed; Windows 2046 passed, 22 known failures, 10 skipped; `agent:verify` 155.
+- 2026-11-21: **Policy rules for `send_usdc`; minimum reserve enforced** (Phase 3 step 4; owner-approved under rule 4
+  on 2026-11-20, tightening only). A second, independent layer in front of the tool's own checks.
+  - `TRANSFER_TOOLS = ["transfer_credits", "send_usdc"]` (`src/agent/policy-rules/financial.ts`): the per-transfer,
+    hourly, daily, per-turn and confirmation rules now cover both.
+  - New rule `financial.transfer_recipient_allowlist` (send_usdc): denies a recipient not on the resolved
+    `transferAllowlist` (`RECIPIENT_NOT_ALLOWED`), and every payment when the list is empty (`PAYMENTS_OFF`).
+  - `financial.minimum_reserve` was a declaration that always allowed. For send_usdc it now denies when the payment
+    would leave less than `minimumReserveCents` in the wallet (`RESERVE`), judged on the wallet USDC balance the
+    heartbeat last read (kv `wallet_usdc_cache:<network>:<address>`; rules are synchronous), and denies when no balance
+    has been read yet (`RESERVE_UNKNOWN`, fail closed). The tool re-reads the balance on chain before signing. Conway
+    tools (`transfer_credits`, `fund_child`, `x402_fetch`) keep the upstream behaviour: Conway credits, hidden while
+    Conway is off.
+  - Transfers per turn: the loop and the general harness count every tool in `TRANSFER_TOOLS` (was:
+    `transfer_credits` only). The harness's SPEC alias path now counts too (upstream did not, so an alias could skip
+    the per-turn limit).
+  Tests: `send-usdc-policy` (11: allow; recipient; payments off; per transfer; hour; per turn; reserve edge; unknown
+  balance; decision logged; rule set; a denied call through `executeTool` never runs the tool). `financial` rule count
+  9 → 10.
+  Baselines: Linux 2089 passed; Windows 2057 passed, 22 known failures, 10 skipped; `agent:verify` 155.

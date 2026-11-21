@@ -11,6 +11,16 @@ import type {
   PolicyRuleResult,
   TreasuryPolicy,
 } from "../../types.js";
+import { isAddress } from "viem";
+import { resolveTransferAllowlist } from "../payment-limits.js";
+import { getActiveNetwork } from "../../identity/network.js";
+
+/**
+ * Fork (Phase 3 step 4, owner-approved under rule 4, tightening only): the
+ * tools that move funds and share the transfer limits. The loop and the
+ * general harness count both toward maxTransfersPerTurn.
+ */
+export const TRANSFER_TOOLS = ["transfer_credits", "send_usdc"];
 
 function deny(
   rule: string,
@@ -99,7 +109,7 @@ function createTransferMaxSingleRule(policy: TreasuryPolicy): PolicyRule {
     id: "financial.transfer_max_single",
     description: `Deny transfers above ${policy.maxSingleTransferCents} cents`,
     priority: 500,
-    appliesTo: { by: "name", names: ["transfer_credits"] },
+    appliesTo: { by: "name", names: TRANSFER_TOOLS },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
       const amount = request.args.amount_cents as number | undefined;
       if (amount === undefined) return null;
@@ -125,7 +135,7 @@ function createTransferHourlyCapRule(policy: TreasuryPolicy): PolicyRule {
     id: "financial.transfer_hourly_cap",
     description: `Deny if hourly transfers exceed ${policy.maxHourlyTransferCents} cents`,
     priority: 500,
-    appliesTo: { by: "name", names: ["transfer_credits"] },
+    appliesTo: { by: "name", names: TRANSFER_TOOLS },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
       const amount = request.args.amount_cents as number | undefined;
       if (amount === undefined) return null;
@@ -154,7 +164,7 @@ function createTransferDailyCapRule(policy: TreasuryPolicy): PolicyRule {
     id: "financial.transfer_daily_cap",
     description: `Deny if daily transfers exceed ${policy.maxDailyTransferCents} cents`,
     priority: 500,
-    appliesTo: { by: "name", names: ["transfer_credits"] },
+    appliesTo: { by: "name", names: TRANSFER_TOOLS },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
       const amount = request.args.amount_cents as number | undefined;
       if (amount === undefined) return null;
@@ -177,6 +187,15 @@ function createTransferDailyCapRule(policy: TreasuryPolicy): PolicyRule {
 
 /**
  * Deny any financial operation that would bring balance below minimum reserve.
+ *
+ * Fork (Phase 3 step 4, owner-approved under rule 4): enforced for send_usdc
+ * against the wallet USDC balance the heartbeat last read (kv
+ * wallet_usdc_cache:<network>:<address>; rules are synchronous, so no chain
+ * call here). No cached balance = denied (fail closed). The tool re-reads the
+ * balance on chain before signing, so a stale cache can only make this
+ * stricter or equal, never the only check. Conway tools (transfer_credits,
+ * fund_child, x402_fetch) keep the upstream behaviour: their balance is
+ * Conway credits, and they are hidden while Conway is off.
  */
 function createMinimumReserveRule(policy: TreasuryPolicy): PolicyRule {
   return {
@@ -185,24 +204,65 @@ function createMinimumReserveRule(policy: TreasuryPolicy): PolicyRule {
     priority: 500,
     appliesTo: {
       by: "name",
-      names: ["transfer_credits", "x402_fetch", "fund_child"],
+      names: ["transfer_credits", "x402_fetch", "fund_child", "send_usdc"],
     },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
-      // For transfer_credits and fund_child, we can check from args
-      const amount = request.args.amount_cents as number | undefined;
-      if (amount === undefined) return null;
+      if (request.tool.name !== "send_usdc") return null;
+      const amount = request.args.amount_cents;
+      if (typeof amount !== "number" || !Number.isFinite(amount)) return null; // the tool refuses it
+      const address = String(request.context.identity?.address ?? "").toLowerCase();
+      const key = `wallet_usdc_cache:${getActiveNetwork().caip2}:${address}`;
+      let usdcCents: number | null = null;
+      try {
+        const row = request.context.db.raw.prepare("SELECT value FROM kv WHERE key = ?").get(key) as { value: string } | undefined;
+        const usdc = row ? Number(JSON.parse(row.value).usdc) : NaN;
+        usdcCents = Number.isFinite(usdc) ? Math.floor(usdc * 100 + 1e-6) : null;
+      } catch {
+        usdcCents = null;
+      }
+      if (usdcCents === null) {
+        return deny(
+          "financial.minimum_reserve",
+          "RESERVE_UNKNOWN",
+          "Wallet balance not known yet (no balance read on this network); payment refused. Try again after the next balance check.",
+        );
+      }
+      if (usdcCents - amount < policy.minimumReserveCents) {
+        return deny(
+          "financial.minimum_reserve",
+          "RESERVE",
+          `Payment of ${amount} cents would leave ${usdcCents - amount} cents in the wallet, below the ${policy.minimumReserveCents} cents reserve. Don't retry.`,
+        );
+      }
+      return null;
+    },
+  };
+}
 
-      // We need the current balance from context
-      // The balance check is done inside the tool execute function,
-      // but we can check spend tracker totals as an additional guard
-      const spendTracker = request.turnContext.sessionSpend;
-      const hourlySpend = spendTracker.getHourlySpend("transfer");
-      const dailySpend = spendTracker.getDailySpend("transfer");
-
-      // This rule is a declaration — actual balance checking
-      // requires the async getCreditsBalance call which happens
-      // inside the tool execution. The tool itself has a guard
-      // (cannot transfer more than half balance).
+/**
+ * Fork (Phase 3 step 4, owner-approved under rule 4): send_usdc may only pay
+ * recipients on the owner's transferAllowlist ("creator" resolved from the
+ * config). Empty list = every payment denied. The tool checks the same list.
+ */
+function createTransferRecipientAllowlistRule(policy: TreasuryPolicy): PolicyRule {
+  return {
+    id: "financial.transfer_recipient_allowlist",
+    description: "Deny send_usdc to recipients not on the owner's transferAllowlist",
+    priority: 500,
+    appliesTo: { by: "name", names: ["send_usdc"] },
+    evaluate(request: PolicyRequest): PolicyRuleResult | null {
+      const to = request.args.to_address;
+      const allowed = resolveTransferAllowlist(policy, request.context.config?.creatorAddress);
+      if (allowed.length === 0) {
+        return deny("financial.transfer_recipient_allowlist", "PAYMENTS_OFF", "Payments are off: the owner's recipient list is empty.");
+      }
+      if (typeof to !== "string" || !isAddress(to, { strict: false }) || !allowed.includes(to.toLowerCase())) {
+        return deny(
+          "financial.transfer_recipient_allowlist",
+          "RECIPIENT_NOT_ALLOWED",
+          `Recipient ${JSON.stringify(to)} is not on the owner's recipient list. Don't retry.`,
+        );
+      }
       return null;
     },
   };
@@ -217,7 +277,7 @@ function createTurnTransferLimitRule(policy: TreasuryPolicy): PolicyRule {
     id: "financial.turn_transfer_limit",
     description: `Deny more than ${policy.maxTransfersPerTurn} transfers per turn`,
     priority: 500,
-    appliesTo: { by: "name", names: ["transfer_credits"] },
+    appliesTo: { by: "name", names: TRANSFER_TOOLS },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
       const count = request.turnContext.turnToolCallCount;
 
@@ -275,7 +335,7 @@ function createRequireConfirmationRule(policy: TreasuryPolicy): PolicyRule {
     id: "financial.require_confirmation",
     description: `Quarantine transfers above ${policy.requireConfirmationAboveCents} cents for confirmation`,
     priority: 500,
-    appliesTo: { by: "name", names: ["transfer_credits"] },
+    appliesTo: { by: "name", names: TRANSFER_TOOLS },
     evaluate(request: PolicyRequest): PolicyRuleResult | null {
       const amount = request.args.amount_cents as number | undefined;
       if (amount === undefined) return null;
@@ -307,6 +367,7 @@ export function createFinancialRules(
     createTransferHourlyCapRule(treasuryPolicy),
     createTransferDailyCapRule(treasuryPolicy),
     createMinimumReserveRule(treasuryPolicy),
+    createTransferRecipientAllowlistRule(treasuryPolicy),
     createTurnTransferLimitRule(treasuryPolicy),
     createInferenceDailyCapRule(treasuryPolicy),
     createRequireConfirmationRule(treasuryPolicy),

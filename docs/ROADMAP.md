@@ -65,10 +65,9 @@ Goal: Think → Act → Observe loop running safe tools, remembering what happen
         `skills-hardening` (12), `command-injection` (5), `tools-security` (3), `path-protection` (1),
         `orchestration/local-worker-harness` (1). The Linux run showed that all 22 pass on Linux, so they
         are Windows-only. Fix them only if running on Windows matters; the VPS runs Linux. Low priority.
-  - [ ] **Enforce the minimum reserve in code.** `financial.minimum_reserve` (`src/agent/policy-rules/financial.ts`)
-        only states the limit and always returns `null`. The only real guard is "max half the balance" inside
-        `transfer_credits`. Needs the balance source from change 3. This is a policy-engine change, so it needs
-        the owner's approval.
+  - [x] **Enforce the minimum reserve in code.** Done in Phase 3 step 4 (owner-approved): enforced for `send_usdc` in
+        the tool (fresh on-chain balance) and in `financial.minimum_reserve` (cached balance, fail closed). Conway
+        tools keep the upstream "max half the balance" guard (hidden while Conway is off).
   - [ ] **Old saved config overrides the new defaults.** `saveConfig` writes the whole `treasuryPolicy` to
         `~/.automaton/automaton.json`, and `loadConfig` lets saved values win. A config created before the
         tightened defaults keeps the old, looser limits. Options: warn when a saved limit is looser than the
@@ -193,7 +192,7 @@ Plan (owner-approved 2026-11-20; one commit per step):
         setting, `agent:wallet` / `agent:wallet:encrypt`, leak test). Owner migration: passphrase file + encrypt.
   - [x] 2. Payment limits as settings (per transfer / hour / day, minimum reserve, recipient allowlist).
   - [x] 3. `send_usdc` tool (ERC-20 transfer on the active network; all limits checked in code before signing).
-  - [ ] 4. Policy rules for `send_usdc` and the minimum reserve enforced (approved under rule 4, tightening only).
+  - [x] 4. Policy rules for `send_usdc` and the minimum reserve enforced (approved under rule 4, tightening only).
   - [ ] 5. `pnpm agent:wallet` with ETH/USDC balances, limits and recent transfers.
   - [ ] 6. Owner: faucet funds (Base Sepolia ETH for gas, small test USDC) to the agent address.
   - [ ] 7. Limits test: unit tests, a no-model one-off through the policy engine, one real wake.

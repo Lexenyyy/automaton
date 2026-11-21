@@ -521,8 +521,8 @@ describe("Financial Policy Rules", () => {
   });
 
   describe("Rules are registered", () => {
-    it("creates 9 financial rules (7 Phase 0 + 2 Phase 1)", () => {
-      expect(rules.length).toBe(9);
+    it("creates 10 financial rules (7 Phase 0 + 2 Phase 1 + fork transfer_recipient_allowlist)", () => {
+      expect(rules.length).toBe(10);
     });
 
     it("all rules have priority 500", () => {

@@ -7,6 +7,7 @@ import { sanitizeToolResult } from "../injection-defense.js";
 import { executeTool } from "../tools.js";
 import { getForbiddenCommandMatch, isForbiddenCommand } from "../policy-rules/command-safety.js";
 import { isSensitiveFile } from "../policy-rules/path-protection.js";
+import { TRANSFER_TOOLS } from "../policy-rules/financial.js";
 
 const MAX_EXEC_TIMEOUT_MS = 30_000;
 const MAX_READ_SIZE = 10_000;
@@ -302,7 +303,8 @@ When calling task_done, provide:
             sessionSpend: this.context.spendTracker ?? NOOP_SPEND_TRACKER,
           },
         );
-        if (tool.name === "transfer_credits") {
+        // Fork (Phase 3 step 4): every fund-moving tool counts toward maxTransfersPerTurn.
+        if (TRANSFER_TOOLS.includes(tool.name)) {
           this.transferToolCallCount += 1;
         }
 
@@ -350,6 +352,10 @@ When calling task_done, provide:
                 sessionSpend: this.context.spendTracker ?? NOOP_SPEND_TRACKER,
               },
             );
+            // Fork (Phase 3 step 4): an alias of a fund-moving tool counts too.
+            if (TRANSFER_TOOLS.includes(targetName)) {
+              this.transferToolCallCount += 1;
+            }
 
             if (result.error) {
               return `Error: ${result.error}`;
