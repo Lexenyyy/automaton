@@ -1001,3 +1001,10 @@
   balance; decision logged; rule set; a denied call through `executeTool` never runs the tool). `financial` rule count
   9 → 10.
   Baselines: Linux 2089 passed; Windows 2057 passed, 22 known failures, 10 skipped; `agent:verify` 155.
+- 2026-11-21: **`pnpm agent:wallet` shows balances, limits and transfers** (Phase 3 step 5). `--wallet show` (and the
+  report after `--wallet encrypt`) now adds: the active network; live USDC and ETH balances (two read-only RPC calls,
+  nothing signed; "unavailable (…)" when the RPC cannot be reached); the payment limits and recipients; what was sent
+  this UTC hour and today; the last 5 `send_usdc` transfers (time, amount, recipient, status, tx hash). No key material.
+  `src/agent/wallet-report.ts` (new: `readWalletBalances`, `walletReport`).
+  Tests: `wallet-report` (4); `agent:verify` +1 (network, balances or "unavailable", limits, no transfers).
+  Baselines: Linux 2093 passed; Windows 2061 passed, 22 known failures, 10 skipped; `agent:verify` 156.

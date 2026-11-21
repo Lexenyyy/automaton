@@ -76,7 +76,8 @@ Usage:
   automaton --soul show|reset
                            Owner: show the soul, or write a fresh one from the settings
   automaton --wallet show|encrypt
-                           Owner: show the wallet (no key material), or encrypt it in place
+                           Owner: show the wallet (balances, limits, recent transfers; no key material),
+                           or encrypt it in place
   automaton --facts [list | delete <category/key> ...]
                            Owner: list the agent's facts, or delete some (not while it runs)
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
@@ -158,17 +159,34 @@ Environment:
           if (r.status === "missing") code = 1;
         }
       }
+      // Fork (Phase 3 step 5): live balances (read-only RPC), limits, sent amounts, recent transfers.
       const info = walletInfo();
-      console.log("=== WALLET ===");
-      if (!info.exists) {
-        console.log("No wallet.");
-      } else {
-        console.log(`Address:    ${info.address}`);
-        console.log(`Chain:      ${info.chainType}`);
-        console.log(`Created:    ${info.createdAt ?? "?"}`);
-        console.log(`Encrypted:  ${info.encrypted ? `yes (${info.kdf})` : "NO (plaintext key in wallet.json)"}`);
+      const { walletReport, readWalletBalances } = await import("./agent/wallet-report.js");
+      const { activateNetwork } = await import("./identity/network.js");
+      const { DEFAULT_TREASURY_POLICY } = await import("./types.js");
+      let network: import("./identity/network.js").NetworkInfo | null = null;
+      let networkError: string | undefined;
+      let balances: Awaited<ReturnType<typeof readWalletBalances>> | null = null;
+      if (info.exists && info.chainType === "evm" && info.address) {
+        try {
+          network = activateNetwork({ network: config?.network, walletAddress: info.address });
+          balances = await readWalletBalances(info.address as `0x${string}`, network, config?.rpcUrl || process.env.AUTOMATON_RPC_URL);
+        } catch (err: any) {
+          networkError = err?.message ?? String(err);
+        }
       }
-      console.log(`Setting:    walletEncryption ${config?.walletEncryption ?? "optional (default)"}${walletEncryptionRequired(config) ? " → required" : ""}`);
+      const reportDb = config ? createDatabase(resolvePath(config.dbPath)) : null;
+      try {
+        console.log(walletReport({
+          info, network, networkError, balances,
+          policy: config?.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+          creatorAddress: config?.creatorAddress,
+          encryptionSetting: `${config?.walletEncryption ?? "optional (default)"}${walletEncryptionRequired(config) ? " → required" : ""}`,
+          db: reportDb?.raw ?? null,
+        }));
+      } finally {
+        reportDb?.close();
+      }
     } catch (err: any) {
       console.log(`Wallet command failed: ${err?.message ?? String(err)}`);
       code = 1;

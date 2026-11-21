@@ -351,6 +351,11 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     walletShow.code === 0 && walletShow.out.includes("Encrypted:  yes (scrypt") && walletShow.out.includes(initJson?.address ?? "?") &&
       !(walletShow.out + walletShow.err).includes(fakeWalletPassphrase),
     (walletShow.out + walletShow.err).trim().slice(0, 400));
+  check("entrypoint", "--wallet show reports the network, USDC/ETH balances (or 'unavailable'), limits and transfers",
+    walletShow.out.includes("Network:    Base Sepolia (testnet)") && /USDC: {7}(\d+\.\d\d USDC|unavailable)/.test(walletShow.out) &&
+      /ETH: {8}(\d+\.\d{6} ETH|unavailable)/.test(walletShow.out) && walletShow.out.includes("Payments:   per transfer $0.25") &&
+      walletShow.out.includes("Recent transfers: none"),
+    walletShow.out.trim().slice(0, 600));
   const noPass = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "/app/dist/index.js", "--preflight"]);
   check("entrypoint", "without the passphrase (entrypoint skipped) the encrypted wallet is refused at startup",
     noPass.code !== 0 && (noPass.out + noPass.err).includes("encrypted but no passphrase"), `exit ${noPass.code}`);
