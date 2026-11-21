@@ -374,6 +374,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preOut.includes("INFO  inference today (UTC): $0.00 of $0.30 daily cap"));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
   check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
+  check("entrypoint", "--preflight shows the template's payment limits; only the creator may receive payments",
+    preOut.includes(`INFO  payments: per transfer $0.25, hour $0.50, day $1.00, reserve $1.00, 1/turn; recipients: creator ${VERIFY_CREATOR.toLowerCase()}`),
+    preOut.split("\n").find((l) => l.includes("payments:")) ?? "no payments line");
   const preNoCreator = docker([...COMPOSE, "run", "--rm", "-T", "-e", "AUTOMATON_CREATOR_ADDRESS=", "runtime", "--preflight"]);
   check("entrypoint", "--preflight refuses without a creator address",
     preNoCreator.code !== 0 && (preNoCreator.out + preNoCreator.err).includes("No creator address"), `exit ${preNoCreator.code}`);

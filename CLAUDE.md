@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after Phase 3 step 1
-  (wallet encryption): 2047 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 3 step 2
+  (payment limits): 2054 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2015 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2022 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (154 checks after Phase 3 step 1).
+  (155 checks after Phase 3 step 2).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -65,6 +65,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   plaintext wallet; mainnet always requires it). `pnpm agent:wallet` shows address and state (no key material);
   `pnpm agent:wallet:encrypt` encrypts an existing plaintext wallet in place (refused while an agent runs). Losing the
   passphrase loses the wallet: the owner keeps an offline copy.
+- **Payment limits:** `treasuryPolicy` in the template: per transfer 25¢, hour 50¢, day $1, reserve $1 left in the
+  wallet, 1 transfer/turn, recipients `transferAllowlist: ["creator"]` (code default `[]` = no payments). Startup refuses
+  invalid limits or recipients (`src/agent/payment-limits.ts`); preflight prints them.
 - **Creator address:** set `$env:AUTOMATON_CREATOR_ADDRESS` (the owner's own wallet). It overrides
   `creatorAddress` in the template, which stays empty in the repo. `--preflight` and `--run` refuse to
   start without a valid, non-zero address.

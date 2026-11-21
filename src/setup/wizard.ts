@@ -142,6 +142,7 @@ export async function runSetupWizard(): Promise<AutomatonConfig> {
     x402AllowedDomains: DEFAULT_TREASURY_POLICY.x402AllowedDomains,
     transferCooldownMs: DEFAULT_TREASURY_POLICY.transferCooldownMs,
     maxTransfersPerTurn: DEFAULT_TREASURY_POLICY.maxTransfersPerTurn,
+    transferAllowlist: [...DEFAULT_TREASURY_POLICY.transferAllowlist],
     maxInferenceDailyCents: await promptWithDefault(
       "Max daily inference spend (cents)", DEFAULT_TREASURY_POLICY.maxInferenceDailyCents),
     requireConfirmationAboveCents: await promptWithDefault(

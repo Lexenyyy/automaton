@@ -14,6 +14,8 @@
 !scripts/
 !docker/runtime-entrypoint.sh
 !docker/load-secrets.sh
+# Config template (no secrets; creatorAddress empty): tests check its limits. Not copied into the agent images.
+!docker/automaton.testnet.json
 
 **/node_modules
 **/dist

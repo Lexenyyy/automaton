@@ -693,6 +693,12 @@ export interface TreasuryPolicy {
   maxTransfersPerTurn: number;
   maxInferenceDailyCents: number;
   requireConfirmationAboveCents: number;
+  /**
+   * Fork (Phase 3): the only recipients of on-chain payments (EVM addresses,
+   * or "creator" for the owner's creator address). Empty = no payments.
+   * See src/agent/payment-limits.ts.
+   */
+  transferAllowlist: string[];
 }
 
 // Fork defaults (Lexenyyy/automaton): tightened for minimum cost and small
@@ -710,6 +716,7 @@ export const DEFAULT_TREASURY_POLICY: TreasuryPolicy = {
   maxTransfersPerTurn: 1,
   maxInferenceDailyCents: 100, // $1/day during testing (CLAUDE.md rule 3)
   requireConfirmationAboveCents: 100,
+  transferAllowlist: [], // fork, Phase 3: no on-chain payments unless the owner lists recipients
 };
 
 // ─── Phase 1: Inbox Message Status ──────────────────────────────

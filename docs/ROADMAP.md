@@ -191,7 +191,7 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
 Plan (owner-approved 2026-11-20; one commit per step):
   - [x] **1. Wallet encrypted at rest** (scrypt + AES-256-GCM, passphrase from the secrets folder, `walletEncryption`
         setting, `agent:wallet` / `agent:wallet:encrypt`, leak test). Owner migration: passphrase file + encrypt.
-  - [ ] 2. Payment limits as settings (per transfer / hour / day, minimum reserve, recipient allowlist).
+  - [x] 2. Payment limits as settings (per transfer / hour / day, minimum reserve, recipient allowlist).
   - [ ] 3. `send_usdc` tool (ERC-20 transfer on the active network; all limits checked in code before signing).
   - [ ] 4. Policy rules for `send_usdc` and the minimum reserve enforced (approved under rule 4, tightening only).
   - [ ] 5. `pnpm agent:wallet` with ETH/USDC balances, limits and recent transfers.

@@ -946,3 +946,22 @@
   while a runtime runs); the sandbox checks now also search every process environment and readable file for the
   passphrase.
   Baselines: Linux 2047 passed; Windows 2015 passed, 22 known failures, 10 skipped; `agent:verify` 154.
+- 2026-11-21: **Owner migrated the main wallet** (`agent:wallet:encrypt`; preflight "encrypted at rest"; passphrase
+  backed up offline).
+- 2026-11-21: **Payment limits as settings** (Phase 3 step 2). Settings only; the checks before a payment come with
+  `send_usdc` (step 3) and the policy rules (step 4).
+  - `treasuryPolicy.transferAllowlist` (new): the only recipients of on-chain payments, EVM addresses (EIP-55 checksum
+    when mixed case, not zero) or `"creator"` for the creator address, at most 20. Code default `[]` = no payments.
+  - `src/agent/payment-limits.ts` (new): startup refuses transfer limits that are not whole numbers >= 0, per transfer
+    > per hour, per hour > per day, and bad recipients (`checkPaymentLimits`); `resolveTransferAllowlist`;
+    `describePaymentLimits`. Preflight prints `INFO payments: per transfer …, recipients: creator 0x…` and a `WARN`
+    for limits looser than the code defaults.
+  - `loadConfig` no longer replaces an invalid payment limit with the (possibly looser) default; it keeps the value so
+    startup refuses it. Other treasury values keep the upstream fallback.
+  - Template: per transfer 25¢, hour 50¢, day $1, reserve $1 left in the wallet, 1 transfer per turn, confirmation
+    above 25¢, recipients `["creator"]`. The reserve is below the code default ($10) so that a few test USDC can move;
+    preflight warns about it.
+  - `.dockerignore`: the template is in the build context so the Linux tests can check it (not copied into images).
+  Tests: `payment-limits` (7, including the template); `authority-rules` skips the new list field in its "all numbers"
+  check. `agent:verify` +1 (preflight payments line).
+  Baselines: Linux 2054 passed; Windows 2022 passed, 22 known failures, 10 skipped; `agent:verify` 155.

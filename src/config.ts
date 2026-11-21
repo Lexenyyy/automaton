@@ -15,6 +15,11 @@ import { createLogger } from "./observability/logger.js";
 import type { ChainType } from "./identity/chain.js";
 
 const logger = createLogger("config");
+/** Fork (Phase 3): validated at startup by checkPaymentLimits, never replaced here. */
+const PAYMENT_LIMIT_KEYS = new Set([
+  "maxSingleTransferCents", "maxHourlyTransferCents", "maxDailyTransferCents",
+  "minimumReserveCents", "maxTransfersPerTurn", "requireConfirmationAboveCents",
+]);
 const CONFIG_FILENAME = "automaton.json";
 
 export function getConfigPath(): string {
@@ -41,9 +46,12 @@ export function loadConfig(): AutomatonConfig | null {
       ...(raw.treasuryPolicy ?? {}),
     };
 
-    // Validate all treasury values are positive numbers
+    // Upstream: invalid numbers fall back to the default with a warning. Fork
+    // (Phase 3): payment limits are kept as written, so startup refuses them
+    // (checkPaymentLimits) instead of silently using a possibly looser default.
     for (const [key, value] of Object.entries(treasuryPolicy)) {
-      if (key === "x402AllowedDomains") continue; // array, not number
+      if (key === "x402AllowedDomains" || key === "transferAllowlist") continue; // arrays, not numbers
+      if (PAYMENT_LIMIT_KEYS.has(key)) continue;
       if (typeof value === "number" && (value < 0 || !Number.isFinite(value))) {
         logger.warn(`Invalid treasury value for ${key}: ${value}, using default`);
         (treasuryPolicy as any)[key] = (DEFAULT_TREASURY_POLICY as any)[key];
