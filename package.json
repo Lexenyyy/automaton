@@ -75,6 +75,7 @@
     "agent:soul:reset": "node docker/run-oneoff.mjs -- --soul reset",
     "agent:wallet": "node docker/run-oneoff.mjs -- --wallet show",
     "agent:wallet:encrypt": "node docker/run-oneoff.mjs -- --wallet encrypt",
+    "agent:payment-test": "node docker/run-oneoff.mjs -- --payment-test",
     "agent:facts": "node docker/run-oneoff.mjs -- --facts list",
     "agent:facts:delete": "node docker/run-oneoff.mjs -- --facts delete",
     "agent:ledger": "node docker/run-oneoff.mjs -- --ledger show",

@@ -1176,29 +1176,8 @@ Model: ${ctx.inference.getDefaultModel()}
         required: ["to_address", "amount_cents", "reason"],
       },
       execute: async (args, ctx) => {
-        if ((ctx.identity.chainType ?? "evm") !== "evm") return "Blocked: send_usdc supports EVM wallets only.";
-        const { sendUsdc, createViemUsdcChain } = await import("./usdc-transfer.js");
-        const { getActiveNetwork } = await import("../identity/network.js");
-        const { DEFAULT_TREASURY_POLICY } = await import("../types.js");
-        const network = getActiveNetwork();
-        let chain;
-        try {
-          chain = createViemUsdcChain(ctx.identity.account, network, ctx.config.rpcUrl || process.env.AUTOMATON_RPC_URL);
-        } catch (err: any) {
-          return `Blocked: ${err?.message ?? err}`;
-        }
-        const r = await sendUsdc({
-          db: ctx.db.raw,
-          policy: ctx.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
-          creatorAddress: ctx.config.creatorAddress,
-          from: ctx.identity.address as `0x${string}`,
-          to: args.to_address as string,
-          amountCents: args.amount_cents,
-          reason: args.reason,
-          network,
-          chain,
-        });
-        return r.message;
+        const { executeSendUsdc } = await import("./usdc-transfer.js");
+        return (await executeSendUsdc(args, ctx)).message;
       },
     },
 

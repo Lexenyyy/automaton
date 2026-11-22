@@ -41,7 +41,7 @@ import {
 
 const WHO = "run-oneoff";
 /** Runtime commands that must never run next to a live agent (also `--soul reset`, `--facts delete`, `--wallet encrypt`, checked below). */
-const REFUSED_WHILE_RUNNING = new Set(["--run", "--init"]);
+const REFUSED_WHILE_RUNNING = new Set(["--run", "--init", "--payment-test"]);
 
 const argv = process.argv.slice(2);
 const sep = argv.indexOf("--");

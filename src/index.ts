@@ -78,6 +78,8 @@ Usage:
   automaton --wallet show|encrypt
                            Owner: show the wallet (balances, limits, recent transfers; no key material),
                            or encrypt it in place
+  automaton --payment-test Owner: send_usdc limits test (one real 0.10 USDC transfer to the creator,
+                           then refusals; testnet only, no model call, not while an agent runs)
   automaton --facts [list | delete <category/key> ...]
                            Owner: list the agent's facts, or delete some (not while it runs)
   automaton --ledger [show | grant <amount> | adjust <±amount> --memo "..."]
@@ -245,6 +247,57 @@ Environment:
     console.log(settingsReport(config, db.raw));
     db.close();
     process.exit(0);
+  }
+
+  if (args.includes("--payment-test")) {
+    // Owner only (pnpm agent:payment-test; fork, Phase 3 step 7): send_usdc
+    // through executeTool + the policy engine, no model call. One real 0.10 USDC
+    // transfer to the creator, then refusals. Testnet only; refused while an agent runs.
+    const config = loadConfig();
+    if (!config) {
+      logger.error("Automaton is not configured.");
+      process.exit(1);
+    }
+    let code = 0;
+    let rt: Awaited<ReturnType<typeof prepareRuntime>> | undefined;
+    try {
+      rt = await prepareRuntime(config, { preflight: true });
+      const held = readRuntimeLease(rt.db.raw);
+      if (held?.live) {
+        console.log(`Refusing the payment test while an agent is running (${formatLeaseHolder(held.lease, held.ageMs)}). Stop it first (pnpm agent:down).`);
+        code = 1;
+      } else {
+        const { getActiveNetwork } = await import("./identity/network.js");
+        const { createViemUsdcChain } = await import("./agent/usdc-transfer.js");
+        const { createBuiltinTools } = await import("./agent/tools.js");
+        const { runPaymentTest, paymentTestPreconditions, formatPaymentTest } = await import("./agent/payment-test.js");
+        const { DEFAULT_TREASURY_POLICY } = await import("./types.js");
+        const network = getActiveNetwork();
+        const deps = {
+          db: rt.db.raw,
+          ctx: { identity: rt.identity, config: rt.config, db: rt.db, conway: rt.conway, inference: rt.inference, social: rt.social },
+          sendTool: createBuiltinTools(rt.config.sandboxId).find((t) => t.name === "send_usdc")!,
+          network,
+          chain: createViemUsdcChain(rt.account, network, rt.config.rpcUrl || process.env.AUTOMATON_RPC_URL),
+          policy: rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+        };
+        const problems = await paymentTestPreconditions(deps);
+        if (problems.length) {
+          console.log(`Payment test not started:\n${problems.map((p) => `  - ${p}`).join("\n")}`);
+          code = 1;
+        } else {
+          const result = await runPaymentTest(deps);
+          console.log(formatPaymentTest(result));
+          code = result.ok ? 0 : 1;
+        }
+      }
+    } catch (err: any) {
+      console.log(`Payment test failed: ${err?.message ?? String(err)}`);
+      code = 1;
+    } finally {
+      rt?.db.close();
+    }
+    process.exit(code);
   }
 
   if (args.includes("--soul")) {

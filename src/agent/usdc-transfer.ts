@@ -23,8 +23,8 @@
 import { ulid } from "ulid";
 import { createPublicClient, createWalletClient, http, isAddress, type Address, type PrivateKeyAccount } from "viem";
 import type BetterSqlite3 from "better-sqlite3";
-import type { TreasuryPolicy } from "../types.js";
-import type { NetworkInfo } from "../identity/network.js";
+import { DEFAULT_TREASURY_POLICY, type ToolContext, type TreasuryPolicy } from "../types.js";
+import { getActiveNetwork, type NetworkInfo } from "../identity/network.js";
 import { usdcAddressFor } from "../conway/x402.js";
 import { SpendTracker } from "./spend-tracker.js";
 import { resolveTransferAllowlist } from "./payment-limits.js";
@@ -211,6 +211,39 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
   } finally {
     inFlight = false;
   }
+}
+
+/**
+ * The send_usdc tool body: active network, the owner's treasury policy and
+ * creator from the config, the runtime's wallet. `chain` is injected by the
+ * owner's payment test (and unit tests); otherwise a viem client is built.
+ */
+export async function executeSendUsdc(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  chain?: UsdcChain,
+): Promise<SendUsdcResult> {
+  if ((ctx.identity.chainType ?? "evm") !== "evm") return refuse("EVM_ONLY", "send_usdc supports EVM wallets only.");
+  const network = getActiveNetwork();
+  let c = chain;
+  if (!c) {
+    try {
+      c = createViemUsdcChain(ctx.identity.account, network, ctx.config.rpcUrl || process.env.AUTOMATON_RPC_URL);
+    } catch (err: any) {
+      return refuse("NO_USDC", String(err?.message ?? err));
+    }
+  }
+  return sendUsdc({
+    db: ctx.db.raw,
+    policy: ctx.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+    creatorAddress: ctx.config.creatorAddress,
+    from: ctx.identity.address as Address,
+    to: args.to_address as string,
+    amountCents: args.amount_cents,
+    reason: args.reason,
+    network,
+    chain: c,
+  });
 }
 
 /** Tests only. */

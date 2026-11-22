@@ -1008,3 +1008,23 @@
   `src/agent/wallet-report.ts` (new: `readWalletBalances`, `walletReport`).
   Tests: `wallet-report` (4); `agent:verify` +1 (network, balances or "unavailable", limits, no transfers).
   Baselines: Linux 2093 passed; Windows 2061 passed, 22 known failures, 10 skipped; `agent:verify` 156.
+- 2026-11-22: **Owner funded the agent wallet** (Phase 3 step 6): 2.00 test USDC and 0.0005 ETH on Base Sepolia
+  (`agent:wallet`: recipients creator).
+- 2026-11-22: **Owner payment-limits test** (Phase 3 step 7, part 1). `automaton --payment-test`,
+  `pnpm agent:payment-test` (`src/agent/payment-test.ts`): `send_usdc` through `executeTool` and the policy engine
+  with the default rules (the loop's path), no model call. Testnet only; refused while an agent runs (run-oneoff and
+  the runtime lease); preconditions: creator on the recipient list, USDC >= 0.10 + reserve, some ETH.
+  - One real transfer inside the limits: 0.10 USDC to the creator.
+  - Refused with the configured limits: 26 cents (per transfer), a recipient not on the list (the burn address,
+    1 cent), a second transfer in the same turn.
+  - Refused with tightened copies of the configured limits (each value only stricter): hourly and daily limit set to
+    what was already sent this hour/today, reserve raised to the current balance. A 2 USDC wallet cannot exceed the
+    real windows without being drained; the windows themselves are the configured ones.
+  - The tool's own checks without the policy engine: recipient and per-transfer limit (second layer).
+  - Each case must match: a refusal may not sign (broadcasts counted) or add a transaction or spend row. The command
+    refreshes the cached wallet balance the reserve rule reads (same kv key and format as the heartbeat).
+  - The `send_usdc` tool body moved to `executeSendUsdc(args, ctx, chain?)` (same behaviour; the test injects the chain).
+  Tests: `payment-test` (3: full run against a stateful fake chain with 2.00 USDC, a refusal that signs is reported
+  FAIL, preconditions). `agent:verify` +2 (unfunded throwaway wallet stops at the preconditions; refused while a
+  runtime runs).
+  Baselines: Linux 2096 passed; Windows 2064 passed, 22 known failures, 10 skipped; `agent:verify` 158.

@@ -356,6 +356,11 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
       /ETH: {8}(\d+\.\d{6} ETH|unavailable)/.test(walletShow.out) && walletShow.out.includes("Payments:   per transfer $0.25") &&
       walletShow.out.includes("Recent transfers: none"),
     walletShow.out.trim().slice(0, 600));
+  const payTest = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "runtime", "--payment-test"]);
+  check("entrypoint", "--payment-test on the unfunded throwaway wallet stops at its preconditions (nothing sent)",
+    payTest.code === 1 && payTest.out.includes("Payment test not started") &&
+      /wallet has 0\.00 USDC|cannot read balances/.test(payTest.out) && !payTest.out.includes("PAYMENT TEST"),
+    (payTest.out + payTest.err).trim().slice(0, 400));
   const noPass = docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "/app/dist/index.js", "--preflight"]);
   check("entrypoint", "without the passphrase (entrypoint skipped) the encrypted wallet is refused at startup",
     noPass.code !== 0 && (noPass.out + noPass.err).includes("encrypted but no passphrase"), `exit ${noPass.code}`);
@@ -526,6 +531,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const soulRefused = oneoff(["--", "--soul", "reset"]);
   check("one agent per project", "--soul reset is refused while a runtime runs (exit 1)",
     soulRefused.status === 1 && soulRefused.stderr.includes("refusing --soul reset"), `exit ${soulRefused.status}: ${soulRefused.stderr.trim()}`);
+  const payRefused = oneoff(["--", "--payment-test"]);
+  check("one agent per project", "--payment-test is refused while a runtime runs (exit 1)",
+    payRefused.status === 1 && payRefused.stderr.includes("refusing --payment-test"), `exit ${payRefused.status}: ${payRefused.stderr.trim()}`);
   const walletEncRefused = oneoff(["--", "--wallet", "encrypt"]);
   check("one agent per project", "--wallet encrypt is refused while a runtime runs (exit 1)",
     walletEncRefused.status === 1 && walletEncRefused.stderr.includes("refusing --wallet encrypt"), `exit ${walletEncRefused.status}: ${walletEncRefused.stderr.trim()}`);
