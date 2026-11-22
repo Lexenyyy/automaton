@@ -47,6 +47,7 @@ const env = {
   AUTOMATON_LOG_DIR: logsDir,
 };
 delete env.AUTOMATON_MAINNET_APPROVED;
+delete env.AUTOMATON_CONFIG_TEMPLATE; // verify always uses the normal template (checks below select others explicitly)
 
 const results = [];
 const check = (group, name, ok, detail = "") => results.push({ group, name, ok: Boolean(ok), detail: String(detail) });
@@ -384,6 +385,8 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preOut.includes("INFO  inference today (UTC): $0.00 of $0.30 daily cap"));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
   check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
+  check("entrypoint", "--preflight with the normal template: no payment tool offered to the agent",
+    preOut.includes("INFO  payment tools offered: none"), preOut.split("\n").find((l) => l.includes("payment tools")) ?? "no line");
   check("entrypoint", "--preflight shows the template's payment limits; only the creator may receive payments",
     preOut.includes(`INFO  payments: per transfer $0.25, hour $0.50, day $1.00, reserve $1.00, 1/turn; recipients: creator ${VERIFY_CREATOR.toLowerCase()}`),
     preOut.split("\n").find((l) => l.includes("payments:")) ?? "no payments line");
@@ -505,6 +508,17 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const preKeep = oneoff(["--needs-sandbox", "--", "--preflight"]);
   check("one-off commands", "preflight leaves an already running sandbox running",
     preKeep.status === 0 && sandboxIds(false) !== "", `exit ${preKeep.status}`);
+  // Config template switch (AUTOMATON_CONFIG_TEMPLATE, Phase 3 step 7).
+  const withTemplate = (value, args) => spawnSync(process.execPath, [oneoffScript, "--project", PROJECT, ...args],
+    { encoding: "utf-8", env: { ...env, AUTOMATON_CONFIG_TEMPLATE: value }, timeout: 300_000 });
+  const badTpl = withTemplate("../compose.agent.yml", ["--", "--ledger", "show"]);
+  check("one-off commands", "AUTOMATON_CONFIG_TEMPLATE outside ./automaton.<name>.json is refused before compose runs (exit 2)",
+    badTpl.status === 2 && badTpl.stderr.includes("AUTOMATON_CONFIG_TEMPLATE must look like"), `exit ${badTpl.status}: ${badTpl.stderr.trim()}`);
+  const payTpl = withTemplate("./automaton.paytest.json", ["--needs-sandbox", "--", "--preflight"]);
+  check("one-off commands", "the paytest template: noted, preflight passes, send_usdc offered",
+    payTpl.status === 0 && payTpl.stderr.includes("note: config template ./automaton.paytest.json") &&
+      payTpl.stdout.includes("PREFLIGHT PASSED") && payTpl.stdout.includes("INFO  payment tools offered: send_usdc"),
+    `exit ${payTpl.status}; ${(payTpl.stdout.split("\n").find((l) => l.includes("payment tools")) ?? payTpl.stdout.slice(-300)).trim()}`);
   const failOneoff = oneoff(["--", "--ledger", "grant", "-5"]);
   check("one-off commands", "passes the runtime's exit code through", failOneoff.status === 1, `exit ${failOneoff.status}`);
 

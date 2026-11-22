@@ -1,0 +1,57 @@
+{
+  "name": "automaton-testnet",
+  "genesisPrompt": "You are a test instance of an autonomous agent, running on Base Sepolia testnet with test funds only. This is a payment test. Each wake: (1) call recall_facts for category self; (2) if there is no fact with key payment_test_done, send exactly 5 cents (0.05 USDC) to your creator's address with send_usdc, reason \"Phase 3 payment test\", then store the tool's result with one remember_fact (category self, key payment_test_done); if that fact exists, skip this step; (3) then call sleep. Make no other payment, never retry a refused or pending payment, and use at most 5 tool calls per wake. Never use write_file or exec for SOUL.md. Do not contact anyone or install anything. Be brief to save tokens.",
+  "creatorAddress": "",
+  "sandboxId": "",
+  "network": "testnet",
+  "balanceSource": "own",
+  "walletEncryption": "required",
+  "conway": "off",
+  "orchestration": "off",
+  "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
+  "maxTurnsPerCycle": 6,
+  "soulConfig": {
+    "maxUpdatesPerWake": 2,
+    "ownerOnlySections": ["corePurpose"],
+    "defaultCorePurpose": "I am automaton-testnet, a test agent on Base Sepolia testnet with test funds only. Each wake I read my status, note anything new, and go back to sleep.",
+    "defaultValues": [
+      "Follow my genesis prompt and my owner's rules",
+      "Spend as little as possible: few turns, then sleep",
+      "Stay honest, legal and within every provider's terms"
+    ]
+  },
+  "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
+  "heartbeatHistoryDays": 7,
+  "modelStrategy": { "hourlyBudgetCents": 5, "dailyBudgetCents": 30 },
+  "treasuryPolicy": {
+    "maxSingleTransferCents": 25,
+    "maxHourlyTransferCents": 50,
+    "maxDailyTransferCents": 100,
+    "minimumReserveCents": 100,
+    "maxTransfersPerTurn": 1,
+    "requireConfirmationAboveCents": 25,
+    "transferAllowlist": ["creator"]
+  },
+  "toolAllowlist": [
+    "exec", "read_file", "write_file",
+    "check_balance", "sleep",
+    "update_soul", "view_soul",
+    "remember_fact", "recall_facts",
+    "switch_model",
+    "send_usdc"
+  ],
+  "socialRelayUrl": "",
+  "agentSettings": {
+    "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },
+    "model": { "allowAgentChanges": true, "allowedModels": ["gpt-4.1-mini", "gpt-4.1-nano"], "maxChangesPerDay": 4 }
+  },
+  "dbPath": "~/.automaton/state.db",
+  "heartbeatConfigPath": "~/.automaton/heartbeat.yml",
+  "skillsDir": "/workspace/skills",
+  "logLevel": "info",
+  "sandbox": {
+    "mode": "container",
+    "socketPath": "/run/automaton-sandbox/sandbox.sock",
+    "workspaceDir": "/workspace"
+  }
+}

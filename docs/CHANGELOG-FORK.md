@@ -1028,3 +1028,21 @@
   FAIL, preconditions). `agent:verify` +2 (unfunded throwaway wallet stops at the preconditions; refused while a
   runtime runs).
   Baselines: Linux 2096 passed; Windows 2064 passed, 22 known failures, 10 skipped; `agent:verify` 158.
+- 2026-11-22: **Payment test passed on Base Sepolia** (owner ran `pnpm agent:payment-test`, build `6d31d3a`): all 9
+  cases as expected; the one real transfer was 0.10 USDC to the creator (tx `0x56234ca9…`).
+- 2026-11-22: **Config template switch and the payment-test template** (Phase 3 step 7, part 2, for the real agent
+  wake).
+  - `AUTOMATON_CONFIG_TEMPLATE` selects the runtime's config file in `docker/compose.agent.yml`; unset = the normal
+    `./automaton.testnet.json`. `configTemplate()` (`docker/agent-instances.mjs`) accepts only `./automaton.<name>.json`
+    files that exist in `docker/`; `run-oneoff` refuses anything else (exit 2) before compose runs and prints a note
+    whenever another template is in use; the status/watchdog activity read mounts the same file; the watchdog's first
+    log line names it; `agent:verify` always uses the normal template.
+  - `docker/automaton.paytest.json` (new): the normal template plus `send_usdc` in `toolAllowlist` and a one-time
+    genesis prompt (recall `self/payment_test_done`; if absent, send exactly 0.05 USDC to the creator with reason "Phase
+    3 payment test" and store the result; then sleep; no other payment, never retry a refused or pending one, at most 5
+    tool calls). Every other setting is identical (a test enforces this).
+  - Preflight prints `INFO payment tools offered: …` (`none` with the normal template).
+  Tests: `payment-limits` +1 (paytest = normal template except genesis prompt and `send_usdc`). `agent:verify` +3
+  (normal template offers no payment tool; a bad template value refused; paytest template noted, preflight passes,
+  `send_usdc` offered).
+  Baselines: Linux 2097 passed; Windows 2065 passed, 22 known failures, 10 skipped; `agent:verify` 161.

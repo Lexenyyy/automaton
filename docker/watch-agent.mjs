@@ -40,7 +40,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PROJECT, docker, isValidProject, logDir, runActivity, runningContainers, runningRuntimes } from "./agent-instances.mjs";
+import { configTemplate, DEFAULT_PROJECT, docker, isValidProject, logDir, runActivity, runningContainers, runningRuntimes } from "./agent-instances.mjs";
 
 const WHO = "agent:watch";
 const args = process.argv.slice(2);
@@ -212,7 +212,7 @@ out(
   `${WHO}: watching project "${project}" ${limits.hours ? `for ${limits.hours} h` : "until stopped"}, every ${limits.intervalS} s. ` +
     `Limits: run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c, ${limits.maxWakeTurns} turns/wake, ` +
     `${limits.maxHourTurns} turns/hour, ${limits.maxDenials} denials/tool, ${limits.maxOfflineWakes} offline wakes; ` +
-    `counting from ${startIso}. Log: ${logFile}`,
+    `counting from ${startIso}. Config template: ${configTemplate().value ?? "invalid"}. Log: ${logFile}`,
 );
 if (runningRuntimes(project, WHO).length === 0) {
   out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);

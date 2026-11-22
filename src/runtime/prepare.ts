@@ -31,6 +31,7 @@ import { checkMaxTurnsPerCycle, resolveMaxTurnsPerWake } from "../agent/turn-lim
 import { resolveSleepSettings } from "../agent/sleep-limits.js";
 import { checkHeartbeatHistoryDays } from "../heartbeat/history-retention.js";
 import { checkPaymentLimits, describePaymentLimits, looserThanDefaults } from "../agent/payment-limits.js";
+import { TRANSFER_TOOLS } from "../agent/policy-rules/financial.js";
 import { checkSoulDefaults } from "../soul/reset.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
@@ -468,6 +469,9 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
         (orchestration === "off" ? `, ${afterConway.length - afterOrchestration.length} orchestration hidden` : "") +
         (allow ? `, ${afterOrchestration.length - offered.length} not in toolAllowlist` : ""),
     );
+    // Fork (Phase 3 step 7): say plainly whether the agent can move funds.
+    const payTools = offered.filter((t) => TRANSFER_TOOLS.includes(t.name)).map((t) => t.name);
+    lines.push(`INFO  payment tools offered: ${payTools.length ? payTools.join(", ") : "none"}`);
     const sleep = resolveSleepSettings(rt.config);
     lines.push(
       `INFO  wake limits: ${resolveMaxTurnsPerWake(rt.config)} turns per wake, sleep at least ${sleep.minSeconds} s, ` +

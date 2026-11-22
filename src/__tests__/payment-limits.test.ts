@@ -62,6 +62,18 @@ describe("payment limits", () => {
     ]);
   });
 
+  it("the paytest template equals the testnet template except the genesis prompt and send_usdc in the allowlist", () => {
+    const read = (f: string) => JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "docker", f), "utf-8"));
+    const normal = read("automaton.testnet.json");
+    const pay = read("automaton.paytest.json");
+    expect(normal.toolAllowlist).not.toContain("send_usdc");
+    expect(pay.toolAllowlist).toEqual([...normal.toolAllowlist, "send_usdc"]);
+    expect(pay.genesisPrompt).toMatch(/exactly 5 cents \(0\.05 USDC\) to your creator's address with send_usdc/);
+    expect(pay.genesisPrompt).toMatch(/Make no other payment/);
+    const strip = ({ genesisPrompt, toolAllowlist, ...rest }: any) => rest;
+    expect(strip(pay)).toEqual(strip(normal));
+  });
+
   it("the testnet template is valid, tighter than the defaults except the reserve, and pays only the creator", () => {
     const tpl = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "docker", "automaton.testnet.json"), "utf-8"));
     const policy = p(tpl.treasuryPolicy);

@@ -77,7 +77,9 @@ services:
       AUTOMATON_CREATOR_ADDRESS: ${AUTOMATON_CREATOR_ADDRESS:-}
     volumes:
       - automaton-home:/home/automaton/.automaton
-      - ./automaton.testnet.json:/home/automaton/.automaton/automaton.json:ro
+      # Config template: AUTOMATON_CONFIG_TEMPLATE selects another ./automaton.<name>.json in this
+      # folder (e.g. ./automaton.paytest.json); the pnpm commands check the value first.
+      - ${AUTOMATON_CONFIG_TEMPLATE:-./automaton.testnet.json}:/home/automaton/.automaton/automaton.json:ro
       - agent-workspace:/workspace:ro
       - sandbox-socket:/run/automaton-sandbox:ro
       - ${AUTOMATON_SECRETS_DIR:-./no-secrets}:/run/secrets/automaton:ro

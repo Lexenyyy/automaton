@@ -34,9 +34,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
   `pnpm build` and the full suite in a Linux container. Baseline after Phase 3 step 7
-  (payment test): 2096 passed, 0 failed. Any failure there is a regression.
+  (config template switch): 2097 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2064 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2065 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -44,7 +44,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (158 checks after Phase 3 step 7).
+  (161 checks after Phase 3 step 7).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -151,7 +151,10 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     (sandbox never started); `preflight` and `run` stop and remove the sandbox afterwards, only if
     they started it and no other runtime is running. **One agent per project:** `run` and `init` are
     refused while any runtime container of the project is running; other commands print a note.
-  - Config template: `docker/automaton.testnet.json` (mounted read-only).
+  - Config template: `docker/automaton.testnet.json` (mounted read-only). `$env:AUTOMATON_CONFIG_TEMPLATE =
+    "./automaton.<name>.json"` selects another file in `docker/` (only that form is accepted; run-oneoff notes it);
+    `docker/automaton.paytest.json` = the normal template + `send_usdc` + a one-time 0.05 USDC payment-test genesis
+    prompt. Remove the variable afterwards. Preflight shows `payment tools offered`.
 - Known limits (Phase 5a): `install_skill` and `expose_port` fail because the sandbox has no network.
   Groq is not yet available to the main loop (only to workers).
 

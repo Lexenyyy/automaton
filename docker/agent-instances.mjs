@@ -17,6 +17,24 @@ import { fileURLToPath } from "node:url";
 export const COMPOSE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "compose.agent.yml");
 export const DEFAULT_PROJECT = "automaton";
 
+/**
+ * Config template (fork, Phase 3 step 7): AUTOMATON_CONFIG_TEMPLATE selects
+ * another template in this folder, written as compose resolves it:
+ * "./automaton.<name>.json" (letters, digits, "-"). Unset = the normal
+ * testnet template. Returns { value, file, isDefault } or { error }.
+ */
+export const DEFAULT_CONFIG_TEMPLATE = "./automaton.testnet.json";
+export function configTemplate(env = process.env) {
+  const raw = (env.AUTOMATON_CONFIG_TEMPLATE ?? "").trim();
+  const value = raw || DEFAULT_CONFIG_TEMPLATE;
+  if (!/^\.\/automaton\.[a-z0-9-]+\.json$/.test(value)) {
+    return { error: `AUTOMATON_CONFIG_TEMPLATE must look like ./automaton.<name>.json (a file in docker/), got ${JSON.stringify(raw)}` };
+  }
+  const file = path.join(path.dirname(COMPOSE_FILE), value.slice(2));
+  if (!fs.existsSync(file)) return { error: `config template ${value} does not exist in docker/` };
+  return { value, file, isDefault: value === DEFAULT_CONFIG_TEMPLATE };
+}
+
 export function isValidProject(name) {
   return typeof name === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(name);
 }
@@ -125,7 +143,9 @@ export function runActivity(project, extraArgs = []) {
   if (docker(["volume", "inspect", volume]).code !== 0) {
     return { code: null, out: "", err: `no state volume ${volume} (run pnpm agent:init first)` };
   }
-  const configFile = path.join(path.dirname(COMPOSE_FILE), "automaton.testnet.json");
+  const tpl = configTemplate();
+  if (tpl.error) return { code: null, out: "", err: tpl.error };
+  const configFile = tpl.file;
   const r = spawnSync(
     "docker",
     [

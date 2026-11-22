@@ -31,6 +31,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   COMPOSE_FILE,
+  configTemplate,
   DEFAULT_PROJECT,
   describeContainer,
   docker,
@@ -64,6 +65,15 @@ const needsSandbox = opts.includes("--needs-sandbox");
 const tty = opts.includes("--tty");
 
 const COMPOSE = ["compose", "-f", COMPOSE_FILE, ...(projectOpt ? ["-p", projectOpt] : [])];
+
+// Config template (AUTOMATON_CONFIG_TEMPLATE): refuse a bad value before compose
+// would mount it; say so whenever a non-default template is in use.
+const tpl = configTemplate();
+if (tpl.error) {
+  console.error(`${WHO}: ${tpl.error}`);
+  process.exit(2);
+}
+if (!tpl.isDefault) console.error(`${WHO}: note: config template ${tpl.value} (AUTOMATON_CONFIG_TEMPLATE), not the normal one`);
 
 // ─── one agent per project ────────────────────────────────────
 const live = runningRuntimes(project, WHO);
