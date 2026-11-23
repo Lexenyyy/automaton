@@ -410,6 +410,14 @@ export async function runAgentLoop(
   let wakeEndReason: string | undefined;
   // blockedGoalTurns removed — replaced by immediate sleep + exponential backoff
 
+  // Fork (Phase 4 step 3, F1): no agent loop and no model call while dead.
+  // Only the heartbeat's survival watch leaves dead (balance above $0 again);
+  // the run loop waits for that (survival/dead-state.ts). This is the second guard.
+  if (db.getAgentState() === "dead") {
+    log(config, "[DEAD] Agent state is dead: no wake, no model call. Waiting for the balance to be above $0.");
+    return;
+  }
+
   // Drain any stale wake events from before this loop started,
   // so they don't re-wake the agent after its first sleep.
   let drained = 0;
@@ -586,6 +594,18 @@ export async function runAgentLoop(
 
         // Re-evaluate tier after potential topup
         const effectiveTier = getSurvivalTier(financial.creditsCents, survivalSettings);
+
+        // Fork (Phase 4 step 3, F1): a balance below $0 ends the wake as dead,
+        // before any model call. The heartbeat records the tier change and is
+        // the only way out (balance above $0 again).
+        if (effectiveTier === "dead") {
+          log(config, `[DEAD] Balance ${formatBalance(financial)} is below $0. Ending the wake without a model call.`);
+          db.setAgentState("dead");
+          onStateChange?.("dead");
+          wakeEndReason = "dead: balance below $0";
+          running = false;
+          break;
+        }
 
         if (effectiveTier === "critical") {
           log(config, "[CRITICAL] Credits critically low. Limited operation.");

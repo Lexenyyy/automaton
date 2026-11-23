@@ -1,8 +1,9 @@
 /**
- * Phase 4 step 1: characterization of the survival tiers AS THEY ARE (no
- * behaviour change). Each "TODAY:" test pins current behaviour that a later
- * Phase 4 step changes on purpose; that step flips the test and says so in
- * docs/CHANGELOG-FORK.md. See docs/ROADMAP.md "Phase 4" for the tier table.
+ * Phase 4 step 1: characterization of the survival tiers (the tier table in
+ * docs/ROADMAP.md "Phase 4"). The "TODAY:" tests of step 1 were flipped in
+ * step 3 to the new behaviour ("NOW (step 3):"): no distress wakes on pings,
+ * dead handled by the survival watch on every tick, no model call in dead,
+ * low_compute agent turns on gpt-4.1-nano (F5). Details: survival-tier-watch.test.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -33,14 +34,14 @@ describe("tier thresholds (hardcoded today: SURVIVAL_THRESHOLDS)", () => {
 });
 
 describe("model routing per tier (agent_turn, default registry and strategy)", () => {
-  it("high/normal/low_compute → gpt-4.1-mini, critical → gpt-4.1-nano, dead → none (no model call)", () => {
+  it("NOW (step 3, F5): high/normal → gpt-4.1-mini, low_compute/critical → gpt-4.1-nano, dead → none (no model call)", () => {
     const registry = new ModelRegistry(db.raw);
     registry.initialize();
     const router = new InferenceRouter(db.raw, registry, new InferenceBudgetTracker(db.raw, DEFAULT_MODEL_STRATEGY_CONFIG));
     const pick = (t: Parameters<typeof router.selectModel>[0]) => router.selectModel(t, "agent_turn")?.modelId ?? null;
     expect(pick("high")).toBe("gpt-4.1-mini");
     expect(pick("normal")).toBe("gpt-4.1-mini");
-    expect(pick("low_compute")).toBe("gpt-4.1-mini");
+    expect(pick("low_compute")).toBe("gpt-4.1-nano");
     expect(pick("critical")).toBe("gpt-4.1-nano");
     expect(pick("dead")).toBeNull();
   });
@@ -54,50 +55,45 @@ function legacy(): HeartbeatLegacyContext {
 }
 
 describe("heartbeat in low tiers", () => {
-  it("TODAY: heartbeat_ping asks to wake the agent on EVERY ping (every 15 min) while critical or dead (step 3 changes this)", async () => {
-    for (const tier of ["critical", "dead"]) {
-      const r = await BUILTIN_TASKS.heartbeat_ping(tick(tier, 0), legacy());
-      expect(r.shouldWake, tier).toBe(true);
-      expect(r.message).toMatch(new RegExp(`Distress: ${tier}`));
+  it("NOW (step 3, F2): heartbeat_ping never asks for a wake; it still records the distress signal", async () => {
+    for (const tier of ["high", "normal", "low_compute", "critical", "dead"]) {
+      const r = await BUILTIN_TASKS.heartbeat_ping(tick(tier, tier === "high" || tier === "normal" ? 100 : 0), legacy());
+      expect(r.shouldWake, tier).toBe(false);
     }
     expect(JSON.parse(db.getKV("last_distress")!).level).toBe("dead");
-    for (const tier of ["high", "normal", "low_compute"]) {
-      expect((await BUILTIN_TASKS.heartbeat_ping(tick(tier, 100), legacy())).shouldWake, tier).toBe(false);
-    }
   });
 
-  it("check_credits: wakes on a change INTO critical only (not into low_compute or back up)", async () => {
+  it("NOW (step 3): check_credits only records the balance; no wake, no dead timer, no state change (moved to the survival watch)", async () => {
     db.setKV("prev_credit_tier", "normal");
-    expect((await BUILTIN_TASKS.check_credits(tick("low_compute", 30), legacy())).shouldWake).toBe(false);
-    expect((await BUILTIN_TASKS.check_credits(tick("critical", 5), legacy())).shouldWake).toBe(true);
-    expect((await BUILTIN_TASKS.check_credits(tick("normal", 100), legacy())).shouldWake).toBe(false);
-  });
-
-  it("check_credits: dead only after 1 hour (hardcoded) at <= 0; above zero clears the timer", async () => {
-    db.setKV("prev_credit_tier", "critical");
-    await BUILTIN_TASKS.check_credits(tick("critical", 0), legacy());
-    expect(db.getKV("zero_credits_since")).toBeTruthy();
-    expect(db.getAgentState()).not.toBe("dead");
+    for (const [tier, cents] of [["low_compute", 30], ["critical", 0], ["normal", 100]] as const) {
+      expect((await BUILTIN_TASKS.check_credits(tick(tier, cents), legacy())).shouldWake, tier).toBe(false);
+    }
     db.setKV("zero_credits_since", new Date(Date.now() - 61 * 60_000).toISOString());
-    const r = await BUILTIN_TASKS.check_credits(tick("critical", 0), legacy());
-    expect(r.shouldWake).toBe(true);
-    expect(db.getAgentState()).toBe("dead");
-    await BUILTIN_TASKS.check_credits(tick("normal", 100), legacy());
-    expect(db.getKV("zero_credits_since")).toBeUndefined();
-    expect(db.getAgentState()).toBe("dead"); // TODAY: funding clears the timer but does not leave "dead" here
+    await BUILTIN_TASKS.check_credits(tick("critical", 0), legacy());
+    expect(db.getAgentState()).not.toBe("dead");
+    expect(JSON.parse(db.getKV("last_credit_check")!)).toMatchObject({ credits: 0, tier: "critical" });
   });
 
-  it("an unavailable balance never starts or advances the dead timer", async () => {
-    const ctx = { ...tick("critical", 0), balanceStatus: "unavailable" } as TickContext;
-    await BUILTIN_TASKS.check_credits(ctx, legacy());
-    expect(db.getKV("zero_credits_since")).toBeUndefined();
+  it("NOW (step 3, F1/F3): the survival watch sets dead after the grace and leaves it only above $0 (survival-tier-watch.test.ts)", async () => {
+    const { evaluateSurvival } = await import("../survival/tier-watch.js");
+    const { DEFAULT_SURVIVAL_SETTINGS } = await import("../survival/settings.js");
+    const t0 = Date.now();
+    const at = (cents: number, min: number) => evaluateSurvival(db.raw, { balanceCents: cents, balanceStatus: "live", balanceTier: getSurvivalTier(cents) },
+      DEFAULT_SURVIVAL_SETTINGS, { now: t0 + min * 60_000, log: () => {} });
+    at(0, 0);
+    at(0, 59);
+    expect(db.getAgentState()).not.toBe("dead");
+    at(0, 60);
+    expect(db.getAgentState()).toBe("dead");
+    at(100, 61);
+    expect(db.getAgentState()).toBe("sleeping");
   });
 });
 
 describe("wake requests and the sleep floor", () => {
-  it("TODAY: a heartbeat wake event ends a sleep at the next 30 s check, before sleepConfig.minSeconds (step 3 changes this for distress)", async () => {
+  it("a wake event still ends a sleep at the next 30 s check; distress pings no longer create one, tier changes at most one per gap", async () => {
     let t = 0;
-    insertWakeEvent(db.raw, "heartbeat", "Distress: critical", {});
+    insertWakeEvent(db.raw, "heartbeat", "Survival tier changed: normal → low_compute (balance $0.30)", {});
     const end = await waitForSleepOrWake(db.raw, 3_600_000, { now: () => t, sleep: async (ms) => { t += ms; } });
     expect(end).toMatchObject({ woken: true, source: "heartbeat" });
     expect(t).toBe(30_000);
@@ -114,13 +110,13 @@ describe("agent loop in low tiers", () => {
     expect(inference.calls.length).toBeGreaterThan(0);
   });
 
-  it("TODAY: a wake in state 'dead' overwrites it (waking → running/critical) and calls the model (step 3 changes this)", async () => {
+  it("NOW (step 3, F1): a wake in state 'dead' does nothing: no model call, state stays dead", async () => {
     db.setAgentState("dead");
     const conway = new MockConwayClient();
-    conway.creditsCents = 0; // the heartbeat's own-balance dead: zero for 1 h, tier still "critical"
+    conway.creditsCents = 0; // the heartbeat's own-balance dead: zero for the grace, balance tier still "critical"
     const inference = new MockInferenceClient([noToolResponse("still here")]);
     await runAgentLoop({ identity: createTestIdentity(), config: createTestConfig(), db, conway, inference });
-    expect(inference.calls.length).toBeGreaterThan(0);
-    expect(db.getAgentState()).not.toBe("dead");
+    expect(inference.calls).toHaveLength(0);
+    expect(db.getAgentState()).toBe("dead");
   });
 });

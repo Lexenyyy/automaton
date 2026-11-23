@@ -31,6 +31,7 @@ import {
 import { createLogger } from "../observability/logger.js";
 import { HEARTBEAT_PRUNE_INTERVAL_MS, resolveHeartbeatHistoryDays } from "./history-retention.js";
 import { resolveSurvivalSettings } from "../survival/settings.js";
+import { evaluateSurvival, type SurvivalTickResult } from "../survival/tier-watch.js";
 
 type DatabaseType = BetterSqlite3.Database;
 const logger = createLogger("heartbeat.scheduler");
@@ -117,6 +118,10 @@ export class DurableScheduler {
         resolveSurvivalSettings(this.legacyContext.config),
       );
 
+      // Fork (Phase 4 step 3): survival watch on every tick (dead in/out,
+      // tier changes recorded, one wake per change with a minimum gap).
+      this.runSurvivalWatch(context);
+
       // Get tasks that are due
       const dueTasks = this.getDueTasks(context);
 
@@ -132,6 +137,20 @@ export class DurableScheduler {
     } finally {
       this.tickInProgress = false;
     }
+  }
+
+  /** Fork (Phase 4 step 3): see src/survival/tier-watch.ts. */
+  runSurvivalWatch(context: TickContext): SurvivalTickResult {
+    const r = evaluateSurvival(
+      this.db,
+      { balanceCents: context.creditBalance, balanceStatus: context.balanceStatus ?? "live", balanceTier: context.survivalTier },
+      resolveSurvivalSettings(this.legacyContext.config),
+    );
+    if (r.wakeReason) {
+      this.onWakeRequest?.(r.wakeReason);
+      insertWakeEvent(this.db, "heartbeat", r.wakeReason, { kind: "tier_change", from: r.change?.from, to: r.change?.to });
+    }
+    return r;
   }
 
   /**

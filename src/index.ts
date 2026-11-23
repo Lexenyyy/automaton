@@ -617,7 +617,14 @@ async function run(): Promise<void> {
   // Fork: a restart honours a sleep that is still pending (the agent's own or
   // a forced one), so restarting does not cost a wake. --wake-now overrides.
   const wakeNow = process.argv.includes("--wake-now");
-  const pending = pendingStartupSleep((k) => db.getKV(k), Date.now(), wakeNow);
+  // Fork (Phase 4 step 3): a dead agent stays dead across restarts (and
+  // --wake-now); the run loop below waits for the heartbeat to see a balance
+  // above $0. Honouring a pending sleep here would have set "sleeping".
+  const startDead = db.getAgentState() === "dead";
+  if (startDead) {
+    logger.info(`[${new Date().toISOString()}] Agent state is dead: no wake and no model call until the balance is above $0.`);
+  }
+  const pending = startDead ? null : pendingStartupSleep((k) => db.getKV(k), Date.now(), wakeNow);
   if (pending) {
     // Stale wake events from before this start would end the sleep at once.
     while (consumeNextWakeEvent(db.raw));
@@ -631,7 +638,7 @@ async function run(): Promise<void> {
     logger.info(
       `[${new Date().toISOString()}] ${end.woken ? `Woken by ${end.source}: ${end.reason}` : "Pending sleep is over"}.`,
     );
-  } else if (wakeNow) {
+  } else if (wakeNow && !startDead) {
     logger.info(`[${new Date().toISOString()}] --wake-now: any pending sleep is ignored.`);
   }
 
@@ -641,6 +648,19 @@ async function run(): Promise<void> {
 
   while (true) {
     try {
+      // Fork (Phase 4 step 3, F1): while dead, never enter the agent loop.
+      // Wait until the heartbeat's survival watch sees a balance above $0.
+      if (db.getAgentState() === "dead") {
+        logger.info(`[${new Date().toISOString()}] Dead: waiting for funding (heartbeat only, no model calls).`);
+        const { waitWhileDead } = await import("./survival/dead-state.js");
+        const w = await waitWhileDead(db.raw);
+        logger.info(
+          `[${new Date().toISOString()}] Left dead after ${w.polls} check(s)` +
+            `${w.ignoredWakes ? `, ${w.ignoredWakes} wake request(s) ignored while dead` : ""}. Resuming.`,
+        );
+        continue;
+      }
+
       // Reload skills (may have changed since last loop)
       try {
         skills = loadSkills(skillsDir, db, { containerSandbox: isContainerSandbox(config.sandbox) });
@@ -674,10 +694,9 @@ async function run(): Promise<void> {
       const state = db.getAgentState();
 
       if (state === "dead") {
+        // Fork (Phase 4 step 3): handled at the top of the loop (waitWhileDead).
+        // Upstream slept 5 minutes here and re-entered the agent loop.
         logger.info(`[${new Date().toISOString()}] Automaton is dead. Heartbeat will continue.`);
-        // In dead state, we just wait for funding
-        // The heartbeat will keep checking and broadcasting distress
-        await sleep(300_000); // Check every 5 minutes
         continue;
       }
 

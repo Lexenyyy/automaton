@@ -239,7 +239,10 @@ describe("Heartbeat Tasks", () => {
       expect(parsed.tier).toBe("normal");
     });
 
-    it("wakes on critical tier with distress signal", async () => {
+    // Fork (Phase 4 step 3, F2): the ping records distress but never wakes the
+    // agent (upstream woke on every 15-minute ping); tier-change wakes come from
+    // the survival watch (survival-tier-watch.test.ts).
+    it("records a distress signal on critical tier without waking", async () => {
       const tickCtx = createMockTickContext(db, {
         creditBalance: 50,
         survivalTier: "critical",
@@ -253,13 +256,13 @@ describe("Heartbeat Tasks", () => {
 
       const result = await BUILTIN_TASKS.heartbeat_ping(tickCtx, taskCtx);
 
-      expect(result.shouldWake).toBe(true);
-      expect(result.message).toContain("Distress");
+      expect(result.shouldWake).toBe(false);
       const distress = db.getKV("last_distress");
       expect(distress).toBeDefined();
+      expect(JSON.parse(distress!).level).toBe("critical");
     });
 
-    it("wakes on dead tier with distress signal", async () => {
+    it("records a distress signal on dead tier without waking", async () => {
       const tickCtx = createMockTickContext(db, {
         creditBalance: 0,
         survivalTier: "dead",
@@ -273,8 +276,8 @@ describe("Heartbeat Tasks", () => {
 
       const result = await BUILTIN_TASKS.heartbeat_ping(tickCtx, taskCtx);
 
-      expect(result.shouldWake).toBe(true);
-      expect(result.message).toContain("dead");
+      expect(result.shouldWake).toBe(false);
+      expect(JSON.parse(db.getKV("last_distress")!).level).toBe("dead");
     });
   });
 
@@ -303,7 +306,9 @@ describe("Heartbeat Tasks", () => {
       expect(check).toBeDefined();
     });
 
-    it("wakes when tier drops to critical", async () => {
+    // Fork (Phase 4 step 3): tier-change wakes moved to the survival watch on
+    // every tick; check_credits only records the balance.
+    it("does not wake when tier drops to critical (the survival watch does)", async () => {
       const tickCtx = createMockTickContext(db, {
         creditBalance: 50,
         survivalTier: "critical",
@@ -320,8 +325,8 @@ describe("Heartbeat Tasks", () => {
 
       const result = await BUILTIN_TASKS.check_credits(tickCtx, taskCtx);
 
-      expect(result.shouldWake).toBe(true);
-      expect(result.message).toContain("critical");
+      expect(result.shouldWake).toBe(false);
+      expect(JSON.parse(db.getKV("last_credit_check")!).tier).toBe("critical");
     });
 
     it("does not wake on first run (no previous tier)", async () => {

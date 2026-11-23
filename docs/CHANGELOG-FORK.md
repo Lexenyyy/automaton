@@ -1102,3 +1102,36 @@
   accepted; the heartbeat honours a 5-minute grace; preflight refuses out-of-order thresholds and a 0 grace, and prints
   the default tiers). `survival-tier-audit` (9) unchanged and passing.
   Baselines: Linux 2122 passed; Windows 2090 passed, 22 known failures, 10 skipped; `agent:verify` 161.
+- 2026-11-23: **Tier behaviour fixes** (Phase 4 step 3; findings F1, F2, F3, F5; F6 stays unwired by owner decision).
+  - Survival watch on every heartbeat tick (`src/survival/tier-watch.ts`, called by `DurableScheduler.tick`; not a
+    scheduled task, so no history rows). The dead timer, entering/leaving dead and tier-change wakes moved here from
+    `check_credits`, which runs only every 6 hours (a 1-hour grace could take up to 7 hours); `check_credits` now only
+    records `last_credit_check`.
+    - Entering dead: balance below $0 at once, or at <= $0 for `survival.deadGraceMinutes`. No wake.
+    - Leaving dead (F3): only here, only when a live balance read is above $0: the state is set to `sleeping` (and
+      `sleep_until` cleared) explicitly, logged, and recorded. An unavailable read changes nothing.
+    - Every tier change of the effective tier ("dead" while the state is dead) is appended to kv
+      `survival_tier_changes` (last 100: time, from, to, balance, woke, note) and logged as INFO, e.g.
+      `Tier change: normal → low_compute (balance $0.30); agent woken`. The first observation is not a change.
+    - Wakes (F2): one per tier change, never for a change into dead, and at most one per new setting
+      `survival.tierWakeMinGapMinutes` (default 60, 1..1440; kv `last_tier_wake_at`). A balance bouncing across a
+      boundary is recorded every time but cannot cause a wake storm. `heartbeat_ping` records the distress signal
+      but no longer asks for a wake (upstream: every 15-minute ping while critical or dead).
+  - Dead = heartbeat only (F1, owner decision): the run loop (`src/index.ts`) checks the state at the top of every
+    cycle and, while dead, waits in `waitWhileDead` (`src/survival/dead-state.ts`; checks every 30 s, drops wake
+    requests while still dead) instead of entering the agent loop; upstream slept 5 minutes and re-entered it. A dead
+    agent stays dead across restarts and `--wake-now` (a pending sleep no longer turns it into sleeping). Second guard:
+    `runAgentLoop` returns at once in dead (no wake counted, no model call), and a wake whose balance turns negative
+    ends as "dead: balance below $0" before any model call.
+  - F5 (owner-approved): low_compute agent turns route to gpt-4.1-nano (`DEFAULT_ROUTING_MATRIX`; was gpt-4.1-mini,
+    the same as normal).
+  - Effect on the main agent (template unchanged): no more distress wakes; a tier change wakes it once (at most once
+    an hour); dead never calls the model.
+  Tests: `survival-tier-watch` (14: dead at once below $0 and after the grace; unavailable reads change nothing; stays
+  dead at $0, below $0 and on unavailable reads; leaves dead only above $0 with the state cleared; INFO lines; one
+  wake per change; a 60-minute normal↔low_compute bounce gives 60 records and 2 wakes with a 30-minute gap; the gap
+  setting; one wake event per change through the scheduler; 8 real heartbeat ticks in dead with the agent loop
+  called each time: 0 model calls, then funding resumes; the agent loop in dead; a negative balance mid-wake).
+  `survival-tier-audit`: the `TODAY:` tests flipped to `NOW (step 3)`. `heartbeat` (ping and check_credits no
+  longer wake), `survival-settings` (+1 gap range; grace via the watch), `inference-router` (low_compute → nano).
+  Baselines: Linux 2136 passed; Windows 2104 passed, 22 known failures, 10 skipped; `agent:verify` 161.

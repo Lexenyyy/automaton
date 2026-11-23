@@ -16,14 +16,14 @@ import {
 } from "../survival/settings.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { SURVIVAL_THRESHOLDS, type HeartbeatLegacyContext, type TickContext } from "../types.js";
-import { BUILTIN_TASKS } from "../heartbeat/tasks.js";
+import { DurableScheduler } from "../heartbeat/scheduler.js";
 import { MockConwayClient, createTestConfig, createTestDb, createTestIdentity } from "./mocks.js";
 
 const REPO = path.join(__dirname, "..", "..");
 
 describe("requirement 1: defaults equal today's values exactly", () => {
-  it("highCents 500, normalCents 50, lowComputeCents 10, deadGraceMinutes 60 (the old constants)", () => {
-    expect(DEFAULT_SURVIVAL_SETTINGS).toEqual({ highCents: 500, normalCents: 50, lowComputeCents: 10, deadGraceMinutes: 60 });
+  it("highCents 500, normalCents 50, lowComputeCents 10, deadGraceMinutes 60 (the old constants); tierWakeMinGapMinutes 60 (new in step 3)", () => {
+    expect(DEFAULT_SURVIVAL_SETTINGS).toEqual({ highCents: 500, normalCents: 50, lowComputeCents: 10, deadGraceMinutes: 60, tierWakeMinGapMinutes: 60 });
     expect(DEFAULT_SURVIVAL_SETTINGS).toMatchObject({
       highCents: SURVIVAL_THRESHOLDS.high, normalCents: SURVIVAL_THRESHOLDS.normal, lowComputeCents: SURVIVAL_THRESHOLDS.low_compute,
     });
@@ -112,7 +112,8 @@ describe("requirement 2: thresholds must be in order", () => {
       ["high", "normal", "normal", "low_compute", "low_compute", "critical", "critical", "dead"],
     );
     expect(describeSurvivalSettings(s)).toBe(
-      "high > $0.40, normal > $0.30, low_compute > $0.15, critical >= $0.00, dead below $0 or after 5 min at <= $0",
+      "high > $0.40, normal > $0.30, low_compute > $0.15, critical >= $0.00, dead below $0 or after 5 min at <= $0; " +
+        "tier-change wakes at least 60 min apart",
     );
   });
 });
@@ -128,22 +129,31 @@ describe("requirement 3: deadGraceMinutes has a minimum of 1", () => {
   });
 
   it("the heartbeat uses the configured grace (5 min: dead after 6 min at zero, not after 4)", async () => {
+    // Phase 4 step 3: the dead timer runs in the survival watch on every heartbeat tick.
     const db = createTestDb();
     try {
+      const config = createTestConfig({ balanceSource: "own", survival: { deadGraceMinutes: 5 } });
+      const sched = new DurableScheduler(db.raw, { entries: [], defaultIntervalMs: 60_000, lowComputeMultiplier: 4 }, new Map(),
+        { identity: createTestIdentity(), conway: new MockConwayClient(), db, config } as HeartbeatLegacyContext);
       const ctx = { creditBalance: 0, survivalTier: "critical", balanceStatus: "live", usdcBalance: 0 } as unknown as TickContext;
-      const legacy = {
-        identity: createTestIdentity(), conway: new MockConwayClient(), db,
-        config: createTestConfig({ balanceSource: "own", survival: { deadGraceMinutes: 5 } }),
-      } as HeartbeatLegacyContext;
       db.setKV("zero_credits_since", new Date(Date.now() - 4 * 60_000).toISOString());
-      await BUILTIN_TASKS.check_credits(ctx, legacy);
+      sched.runSurvivalWatch(ctx);
       expect(db.getAgentState()).not.toBe("dead");
       db.setKV("zero_credits_since", new Date(Date.now() - 6 * 60_000).toISOString());
-      await BUILTIN_TASKS.check_credits(ctx, legacy);
+      sched.runSurvivalWatch(ctx);
       expect(db.getAgentState()).toBe("dead");
     } finally {
       db.close();
     }
+  });
+
+  it("tierWakeMinGapMinutes (step 3): 1..1440; 0, fractions and more than a day refused", () => {
+    for (const v of [0, -1, 2.5, "60", 1_441]) {
+      expect(checkSurvivalSettings({ survival: { tierWakeMinGapMinutes: v } } as any).length, String(v)).toBe(1);
+    }
+    expect(checkSurvivalSettings({ survival: { tierWakeMinGapMinutes: 0 } } as any)[0]).toMatch(/tierWakeMinGapMinutes must be 1\.\.1440 minutes \(got 0\)/);
+    expect(checkSurvivalSettings({ survival: { tierWakeMinGapMinutes: 1 } })).toEqual([]);
+    expect(checkSurvivalSettings({ survival: { tierWakeMinGapMinutes: 1_440 } })).toEqual([]);
   });
 });
 
@@ -201,6 +211,9 @@ describe("startup refuses invalid survival settings (preflight path)", () => {
   it("no survival block: passes and prints the default tiers", async () => {
     const r = await preflight();
     expect(r.ok, r.lines.join("\n")).toBe(true);
-    expect(r.lines).toContain("INFO  survival tiers: high > $5.00, normal > $0.50, low_compute > $0.10, critical >= $0.00, dead below $0 or after 60 min at <= $0");
+    expect(r.lines).toContain(
+      "INFO  survival tiers: high > $5.00, normal > $0.50, low_compute > $0.10, critical >= $0.00, dead below $0 or after 60 min at <= $0; " +
+        "tier-change wakes at least 60 min apart",
+    );
   });
 });

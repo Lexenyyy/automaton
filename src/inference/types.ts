@@ -155,7 +155,9 @@ export const DEFAULT_ROUTING_MATRIX: RoutingMatrix = {
     planning: { candidates: ["gpt-4.1-mini", "gpt-4.1-nano"], maxTokens: 4096, ceilingCents: -1 },
   },
   low_compute: {
-    agent_turn: { candidates: ["gpt-4.1-mini"], maxTokens: 4096, ceilingCents: 10 },
+    // Fork (Phase 4 step 3, F5, owner-approved): low_compute agent turns use the
+    // cheap model (was gpt-4.1-mini, the same as normal).
+    agent_turn: { candidates: ["gpt-4.1-nano"], maxTokens: 4096, ceilingCents: 10 },
     heartbeat_triage: { candidates: ["gpt-4.1-nano"], maxTokens: 1024, ceilingCents: 2 },
     safety_check: { candidates: ["gpt-4.1-nano"], maxTokens: 2048, ceilingCents: 5 },
     summarization: { candidates: ["gpt-4.1-nano"], maxTokens: 2048, ceilingCents: 5 },

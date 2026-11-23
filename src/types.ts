@@ -147,7 +147,14 @@ export interface AutomatonConfig {
    * src/survival/settings.ts). Defaults = the old hardcoded values:
    * highCents 500, normalCents 50, lowComputeCents 10, deadGraceMinutes 60.
    */
-  survival?: { highCents?: number; normalCents?: number; lowComputeCents?: number; deadGraceMinutes?: number };
+  survival?: {
+    highCents?: number;
+    normalCents?: number;
+    lowComputeCents?: number;
+    deadGraceMinutes?: number;
+    /** Phase 4 step 3: minimum gap between tier-change wakes (default 60 min, 1..1440). */
+    tierWakeMinGapMinutes?: number;
+  };
   /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in

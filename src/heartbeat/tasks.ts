@@ -17,7 +17,6 @@ import type {
 } from "../types.js";
 import type { HealthMonitor as ColonyHealthMonitor } from "../orchestration/health-monitor.js";
 import { sanitizeInput } from "../agent/injection-defense.js";
-import { resolveSurvivalSettings } from "../survival/settings.js";
 import { createLogger } from "../observability/logger.js";
 import { getMetrics } from "../observability/metrics.js";
 import { AlertEngine, createDefaultAlertRules } from "../observability/alerts.js";
@@ -68,7 +67,9 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
 
     taskCtx.db.setKV("last_heartbeat_ping", JSON.stringify(payload));
 
-    // If critical or dead, record a distress signal
+    // If critical or dead, record a distress signal. Fork (Phase 4 step 3, F2):
+    // recorded only; the ping no longer wakes the agent (upstream did on every
+    // 15-minute ping). Wakes come from tier changes (survival/tier-watch.ts).
     if (tier === "critical" || tier === "dead") {
       const distressPayload = {
         level: tier,
@@ -81,11 +82,6 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
         timestamp: new Date().toISOString(),
       };
       taskCtx.db.setKV("last_distress", JSON.stringify(distressPayload));
-
-      return {
-        shouldWake: true,
-        message: `Distress: ${tier}. Credits: $${(credits / 100).toFixed(2)}. Need funding.`,
-      };
     }
 
     return { shouldWake: false };
@@ -103,52 +99,11 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
       timestamp: now,
     }));
 
-    // Wake the agent if credits dropped to a new tier
-    const prevTier = taskCtx.db.getKV("prev_credit_tier");
-    taskCtx.db.setKV("prev_credit_tier", tier);
-
-    // Dead state escalation: if at zero credits (critical tier) for the grace
-    // period, transition to dead. This gives the agent time to receive funding
-    // before dying. USDC can't go negative, so dead is only reached via this timeout.
-    // Fork (Phase 4 step 2): owner setting survival.deadGraceMinutes (default 60, minimum 1).
-    const DEAD_GRACE_PERIOD_MS = resolveSurvivalSettings(taskCtx.config).deadGraceMinutes * 60_000;
-    // Fork change 3: an unavailable balance read says nothing about funds.
-    // Don't start or advance the dead timer on it.
-    if (ctx.balanceStatus === "unavailable") {
-      return { shouldWake: false };
-    }
-    if (tier === "critical" && credits <= 0) {
-      const zeroSince = taskCtx.db.getKV("zero_credits_since");
-      if (!zeroSince) {
-        // First time seeing zero — start the grace period
-        taskCtx.db.setKV("zero_credits_since", now);
-      } else {
-        const elapsed = Date.now() - new Date(zeroSince).getTime();
-        if (elapsed >= DEAD_GRACE_PERIOD_MS) {
-          // Grace period expired — transition to dead
-          taskCtx.db.setAgentState("dead");
-          logger.warn("Agent entering dead state after 1 hour at zero credits", {
-            zeroSince,
-            elapsed,
-          });
-          return {
-            shouldWake: true,
-            message: `Dead: zero credits for ${Math.round(elapsed / 60_000)} minutes. Need funding.`,
-          };
-        }
-      }
-    } else {
-      // Credits are above zero — clear the grace period timer
-      taskCtx.db.deleteKV("zero_credits_since");
-    }
-
-    if (prevTier && prevTier !== tier && tier === "critical") {
-      return {
-        shouldWake: true,
-        message: `Credits dropped to ${tier} tier: $${(credits / 100).toFixed(2)}`,
-      };
-    }
-
+    // Fork (Phase 4 step 3): the dead timer, entering/leaving dead, tier-change
+    // recording and wakes moved to the survival watch that runs on every
+    // heartbeat tick (src/survival/tier-watch.ts). This task ran only every
+    // 6 hours, so a 1-hour grace could take up to 7 hours. It now only records
+    // the balance it saw.
     return { shouldWake: false };
   },
 

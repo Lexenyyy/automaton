@@ -255,10 +255,12 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
   - [x] 2. Thresholds as settings (`survival`: `highCents`, `normalCents`, `lowComputeCents`, `deadGraceMinutes`);
         defaults = the old values exactly; startup refuses unordered thresholds and a grace below 1 minute; the main
         template has no `survival` block (defaults).
-  - [ ] 3. Tier behaviour fixes: F1 (no model call in dead; stays dead until the balance is above zero, checked
-        without the model), F2 (heartbeat wakes only on a tier change), F3 (funding leaves dead explicitly), tier
-        transitions recorded and logged, F5 (owner-approved: low_compute agent turns → gpt-4.1-nano). F6: the unused
-        upstream helpers stay unwired (owner decision).
+  - [x] 3. Tier behaviour fixes: F1 (no model call in dead; the run loop waits instead of re-entering the agent
+        loop), F2 (wakes only on a tier change, at most one per `survival.tierWakeMinGapMinutes`), F3 (only the
+        heartbeat leaves dead, when the balance is above $0), every tier change recorded (kv `survival_tier_changes`)
+        and logged as INFO, F5 (low_compute agent turns → gpt-4.1-nano). F6: the unused upstream helpers stay
+        unwired (owner decision). The survival watch runs on every heartbeat tick (was: `check_credits`, every 6 h).
+        Tier table after step 3: low_compute → gpt-4.1-nano; the heartbeat never pings a wake; dead → no model call.
   - [ ] 4. Runway estimate (ledger spend rate → time to the next lower tier and to zero) in the wake status,
         `agent:status`, preflight.
   - [ ] 5. Clean stop at zero with an owner notice (banner in `agent:status` / `agent:wallet`, WARN log, watchdog).

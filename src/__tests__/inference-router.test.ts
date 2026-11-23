@@ -252,7 +252,8 @@ describe("InferenceRouter", () => {
     it("returns cheaper model for low_compute tier", () => {
       const model = router.selectModel("low_compute", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-4.1-mini");
+      // Fork (Phase 4 step 3, F5, owner-approved): nano, cheaper than normal's gpt-4.1-mini.
+      expect(model!.modelId).toBe("gpt-4.1-nano");
     });
 
     it("returns minimal model for critical tier", () => {

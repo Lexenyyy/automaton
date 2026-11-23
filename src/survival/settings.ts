@@ -10,6 +10,10 @@
  *                    balance >= 0    → critical; below 0 → dead
  *   deadGraceMinutes minutes at <= $0 before the heartbeat sets "dead"
  *                    (default 60; minimum 1, so 0 cannot be set by accident)
+ *   tierWakeMinGapMinutes  minimum gap between two tier-change wakes (Phase 4
+ *                    step 3; default 60, 1..1440): a balance bouncing across a
+ *                    boundary is recorded each time but wakes the agent at most
+ *                    once per gap
  * The defaults equal the old hardcoded values exactly. Startup refuses values
  * that are not whole numbers, thresholds not strictly in order
  * (high > normal > lowCompute >= 0), and a grace outside 1..10080 minutes.
@@ -26,6 +30,7 @@ export interface SurvivalThresholds {
 
 export interface SurvivalSettings extends SurvivalThresholds {
   deadGraceMinutes: number;
+  tierWakeMinGapMinutes: number;
 }
 
 export const DEFAULT_SURVIVAL_SETTINGS: Readonly<SurvivalSettings> = Object.freeze({
@@ -33,11 +38,14 @@ export const DEFAULT_SURVIVAL_SETTINGS: Readonly<SurvivalSettings> = Object.free
   normalCents: SURVIVAL_THRESHOLDS.normal,
   lowComputeCents: SURVIVAL_THRESHOLDS.low_compute,
   deadGraceMinutes: 60,
+  tierWakeMinGapMinutes: 60,
 });
 
 export const MIN_DEAD_GRACE_MINUTES = 1;
 export const MAX_DEAD_GRACE_MINUTES = 10_080; // 7 days
-const KEYS = ["highCents", "normalCents", "lowComputeCents", "deadGraceMinutes"] as const;
+export const MIN_TIER_WAKE_GAP_MINUTES = 1;
+export const MAX_TIER_WAKE_GAP_MINUTES = 1_440; // 1 day
+const KEYS = ["highCents", "normalCents", "lowComputeCents", "deadGraceMinutes", "tierWakeMinGapMinutes"] as const;
 
 function merged(config: Pick<AutomatonConfig, "survival">): Record<(typeof KEYS)[number], unknown> {
   return { ...DEFAULT_SURVIVAL_SETTINGS, ...(config.survival ?? {}) };
@@ -58,7 +66,7 @@ export function checkSurvivalSettings(config: Pick<AutomatonConfig, "survival">)
     }
   }
   if (problems.length) return problems;
-  const { highCents, normalCents, lowComputeCents, deadGraceMinutes } = s as unknown as SurvivalSettings;
+  const { highCents, normalCents, lowComputeCents, deadGraceMinutes, tierWakeMinGapMinutes } = s as unknown as SurvivalSettings;
   if (!(highCents > normalCents && normalCents > lowComputeCents)) {
     problems.push(
       `survival thresholds must be in order highCents > normalCents > lowComputeCents >= 0 ` +
@@ -68,6 +76,11 @@ export function checkSurvivalSettings(config: Pick<AutomatonConfig, "survival">)
   if (deadGraceMinutes < MIN_DEAD_GRACE_MINUTES || deadGraceMinutes > MAX_DEAD_GRACE_MINUTES) {
     problems.push(
       `survival.deadGraceMinutes must be ${MIN_DEAD_GRACE_MINUTES}..${MAX_DEAD_GRACE_MINUTES} minutes (got ${deadGraceMinutes})`,
+    );
+  }
+  if (tierWakeMinGapMinutes < MIN_TIER_WAKE_GAP_MINUTES || tierWakeMinGapMinutes > MAX_TIER_WAKE_GAP_MINUTES) {
+    problems.push(
+      `survival.tierWakeMinGapMinutes must be ${MIN_TIER_WAKE_GAP_MINUTES}..${MAX_TIER_WAKE_GAP_MINUTES} minutes (got ${tierWakeMinGapMinutes})`,
     );
   }
   return problems;
@@ -84,5 +97,6 @@ const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 /** One line for preflight. */
 export function describeSurvivalSettings(s: SurvivalSettings): string {
   return `high > ${usd(s.highCents)}, normal > ${usd(s.normalCents)}, low_compute > ${usd(s.lowComputeCents)}, ` +
-    `critical >= $0.00, dead below $0 or after ${s.deadGraceMinutes} min at <= $0`;
+    `critical >= $0.00, dead below $0 or after ${s.deadGraceMinutes} min at <= $0; ` +
+    `tier-change wakes at least ${s.tierWakeMinGapMinutes} min apart`;
 }
