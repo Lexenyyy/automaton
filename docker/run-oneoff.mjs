@@ -41,7 +41,7 @@ import {
 } from "./agent-instances.mjs";
 
 const WHO = "run-oneoff";
-/** Runtime commands that must never run next to a live agent (also `--soul reset`, `--facts delete`, `--wallet encrypt`, checked below). */
+/** Runtime commands that must never run next to a live agent (also `--soul reset`, `--facts delete`, `--wallet encrypt|send`, checked below). */
 const REFUSED_WHILE_RUNNING = new Set(["--run", "--init", "--payment-test"]);
 
 const argv = process.argv.slice(2);
@@ -75,6 +75,20 @@ if (tpl.error) {
 }
 if (!tpl.isDefault) console.error(`${WHO}: note: config template ${tpl.value} (AUTOMATON_CONFIG_TEMPLATE), not the normal one`);
 
+// Phase 4 step 7: the tier-walk template and the tier-walk project go together,
+// so a walk command can never run against the main agent (or the walk with the
+// main template's thresholds).
+const TIERWALK_TEMPLATE = "./automaton.tierwalk.json";
+const TIERWALK_PROJECT = "automaton-tierwalk";
+if (tpl.value === TIERWALK_TEMPLATE && project !== TIERWALK_PROJECT) {
+  console.error(`${WHO}: refusing: the tier-walk template is only for --project ${TIERWALK_PROJECT} (got project "${project}").`);
+  process.exit(2);
+}
+if (project === TIERWALK_PROJECT && tpl.value !== TIERWALK_TEMPLATE) {
+  console.error(`${WHO}: refusing: project ${TIERWALK_PROJECT} needs AUTOMATON_CONFIG_TEMPLATE=${TIERWALK_TEMPLATE} (got ${tpl.value}).`);
+  process.exit(2);
+}
+
 // ─── one agent per project ────────────────────────────────────
 const live = runningRuntimes(project, WHO);
 if (live.length > 0) {
@@ -83,6 +97,7 @@ if (live.length > 0) {
   const command = sub("--soul") === "reset" ? "--soul reset"
     : sub("--facts") === "delete" ? "--facts delete"
     : sub("--wallet") === "encrypt" ? "--wallet encrypt"
+    : sub("--wallet") === "send" ? "--wallet send"
     : runtimeArgs.find((a) => REFUSED_WHILE_RUNNING.has(a));
   if (command) {
     console.error(
@@ -103,6 +118,8 @@ const runArgs = [
   ...COMPOSE, "run",
   ...(detach ? ["-d", "-T"] : ["--rm", ...(tty ? [] : ["-T"])]),
   ...(needsSandbox ? [] : ["--no-deps"]),
+  // The runtime prints the project in owner commands (e.g. --wallet send).
+  "-e", `AUTOMATON_PROJECT=${project}`,
   "runtime", ...runtimeArgs,
 ];
 

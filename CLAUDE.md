@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 5 (dead notice + network test): 2174 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 7 tooling (owner send): 2187 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2142 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2155 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -43,7 +43,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (172 checks after Phase 4 step 6).
+  (178 checks after Phase 4 step 7 tooling).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -137,6 +137,11 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:settings` / `agent:settings:reset`: owner view/reset of the agent's own settings.
   - `agent:soul` / `agent:soul:reset`: owner view of the soul / write a fresh one from `soulConfig.defaultCorePurpose`
     and `defaultValues` (identity from the runtime; history kept; refused while an agent runs).
+  - Owner USDC send (runtime `--wallet send <cents|all> [--reason "..."] [--confirm]`, via
+    `node docker/run-oneoff.mjs --project <p> -- --wallet send …`): pays only the creator, same checks as `send_usdc`
+    under the active template's limits; dry run without `--confirm`; recorded like an agent payment (no ledger entry);
+    refused while an agent runs. Tier walk: `docker/automaton.tierwalk.json` only with `--project automaton-tierwalk`
+    (run-oneoff refuses any other pairing).
   - `agent:payment-test`: owner limits test of `send_usdc` through the policy engine, no model call: one real 0.10 USDC
     transfer to the creator, then one refusal per limit (testnet only; refused while an agent runs).
   - `agent:facts` / `agent:facts:delete <category/key> ...`: owner list/delete of the agent's long-term facts

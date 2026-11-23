@@ -1222,3 +1222,34 @@
   running; the money cap still stops with `--allow-tiers`; two runtimes still stop with `--allow-tiers`; default:
   critical still stops).
   Baselines: Linux 2174 passed; Windows 2142 passed, 22 known failures, 10 skipped; `agent:verify` 172.
+- 2026-11-23: **Owner `--wallet send` and the tier-walk template** (Phase 4 step 7, part 1: tooling; the walk itself
+  follows after owner review). Owner decision: an owner send is recorded exactly like an agent payment, with no
+  ledger entry (the survival balance is ledger + on-chain wallet; a ledger entry would count the payment twice, and
+  the watchdog stops on non-inference ledger entries).
+  - `automaton --wallet send <cents|all> [--reason "..."] [--confirm]` (`src/agent/owner-send.ts`): pays only the
+    creator address from the config; it takes no recipient (an address, `--to` or any unknown argument is refused).
+    Same path as an agent payment: the `send_usdc` tool body behind the policy engine with the default rules, under
+    the active template's `treasuryPolicy`. Prints project, network, agent wallet, recipient, amount, wallet USDC
+    before → after, survival balance and tier before → after, limits and reason. Without `--confirm` it is a dry run
+    (policy engine and every `send_usdc` check, nothing signed, nothing recorded). With `--confirm`: a policy
+    decision, `spend_tracking`, `onchain_transactions` (metadata `initiator: "owner"`), and an INFO line. `all` sends
+    the whole wallet. Refused while an agent runs (run-oneoff and the runtime lease).
+  - `sendUsdc`: `dryRun` (stop after every check, before signing) and `initiator` ("agent" default, "owner"); one INFO
+    line per broadcast for both (`USDC payment (agent|owner): …, confirmed|reverted|pending, tx …; reason: …`).
+  - `run-oneoff` passes `AUTOMATON_PROJECT` into one-off containers (printed by `--wallet send`), and pairs the
+    tier-walk template with the tier-walk project: `AUTOMATON_CONFIG_TEMPLATE=./automaton.tierwalk.json` is refused for
+    any project but `automaton-tierwalk`, and that project is refused with any other template (exit 2, before compose).
+  - `docker/automaton.tierwalk.json` (new): name `automaton-tierwalk`; a "read status, then sleep" genesis prompt; tools
+    `check_balance`, `sleep` only (the agent cannot pay); 3 turns per wake; `survival` high > $0.40, normal > $0.30,
+    low_compute > $0.15, dead grace 5 min, tier-change wakes ≥ 1 min apart; `walletReadCacheSeconds` 60; payments per
+    transfer 25¢, hour 60¢, day $1, reserve $0, creator only. Model changes off.
+  - Drain plan (funded 0.50 USDC, ledger $0; checked by a test for 0–4¢ of inference): start ~$0.50 high → send 15¢
+    → ~$0.35 normal → send 13¢ → ~$0.22 low_compute → send 14¢ → ~$0.08 critical → send all → ≤ $0 dead (at once
+    below $0, after 5 min at $0) → owner sends 0.20 USDC → ~$0.20 low_compute (revived).
+  Tests: `owner-send` (13: arguments and every recipient refusal; dry run prints and records nothing; a dry-run
+  refusal; unknown project; confirmed send recorded like an agent payment with no ledger entry; INFO lines for owner
+  and agent; `all`; the main template's $1 reserve refuses; empty recipient list; hourly window across owner sends;
+  tier-walk template valid; drain plan lands in each tier). `agent:verify` +6 (dry run in a container with the
+  project name; a recipient refused; refused while a runtime runs; the template/project pairing both ways; the
+  tier-walk template passes preflight).
+  Baselines: Linux 2187 passed; Windows 2155 passed, 22 known failures, 10 skipped; `agent:verify` 178.

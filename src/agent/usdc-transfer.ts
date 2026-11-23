@@ -30,6 +30,9 @@ import { SpendTracker } from "./spend-tracker.js";
 import { resolveTransferAllowlist } from "./payment-limits.js";
 import { insertSpendRecord, onchainTxInsert } from "../state/database.js";
 import { walletCacheKey } from "../survival/balance.js";
+import { createLogger } from "../observability/logger.js";
+
+const logger = createLogger("payments");
 
 type Database = BetterSqlite3.Database;
 
@@ -91,7 +94,12 @@ export function createViemUsdcChain(account: PrivateKeyAccount, network: Network
 export type SendUsdcResult =
   | { ok: false; code: string; message: string }
   | { ok: true; status: "confirmed" | "pending"; txHash: `0x${string}`; message: string }
-  | { ok: false; code: "REVERTED"; txHash: `0x${string}`; message: string };
+  | { ok: false; code: "REVERTED"; txHash: `0x${string}`; message: string }
+  /** Fork (Phase 4 step 7): every check passed, nothing signed or recorded. */
+  | { ok: true; status: "dry-run"; message: string; walletCentsBefore: number; walletCentsAfter: number };
+
+/** Who started a payment; stored in the transaction metadata and the log line. */
+export type PaymentInitiator = "agent" | "owner";
 
 export interface SendUsdcParams {
   db: Database;
@@ -104,6 +112,10 @@ export interface SendUsdcParams {
   network: NetworkInfo;
   chain: UsdcChain;
   receiptTimeoutMs?: number;
+  /** Fork (Phase 4 step 7): run every check, then stop before signing (owner dry run). */
+  dryRun?: boolean;
+  /** Default "agent" (the send_usdc tool); "owner" for `--wallet send`. */
+  initiator?: PaymentInitiator;
 }
 
 const usd = (cents: number) => `${(cents / 100).toFixed(2)} USDC`;
@@ -168,6 +180,15 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
     }
     if (eth < fee * 2n) return refuse("NO_GAS", `not enough ETH on ${p.network.label} for the network fee; nothing was sent.`);
 
+    // Fork (Phase 4 step 7): an owner dry run stops here, after every check.
+    if (p.dryRun) {
+      const before = Number(usdc / UNITS_PER_CENT);
+      return {
+        ok: true, status: "dry-run", walletCentsBefore: before, walletCentsAfter: before - amount,
+        message: `Dry run: all checks passed for ${usd(amount)} to ${to} on ${p.network.label}; nothing was signed or sent.`,
+      };
+    }
+
     // Reserve the spend before broadcasting.
     const spendId = ulid();
     const now = new Date().toISOString();
@@ -184,7 +205,8 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
       release();
       return refuse("SEND_FAILED", `the transaction was not sent (${err?.message ?? err}).`);
     }
-    const meta = { to, amountCents: amount, reason, network: p.network.caip2, token: usdcAddressFor(p.network.caip2), spendId };
+    const initiator: PaymentInitiator = p.initiator ?? "agent";
+    const meta = { to, amountCents: amount, reason, network: p.network.caip2, token: usdcAddressFor(p.network.caip2), spendId, initiator };
     onchainTxInsert(p.db, {
       id: ulid(), txHash: hash, chain: p.network.caip2, operation: "usdc_transfer", status: "pending",
       gasUsed: null, metadata: JSON.stringify(meta), createdAt: now,
@@ -201,15 +223,21 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
         .run(s, receipt.gasUsed !== undefined ? Number(receipt.gasUsed) : null, hash);
     // Fork (Phase 4): refresh the cached wallet balance right after the payment.
     await refreshWalletCache(p, receipt.status === "timeout");
+    // Fork (Phase 4 step 7): one INFO line per broadcast, the same for agent and owner payments.
+    const logLine = (status: string) =>
+      logger.info(`USDC payment (${initiator}): ${usd(amount)} to ${to} on ${p.network.label}, ${status}, tx ${hash}; reason: ${reason}`);
     if (receipt.status === "success") {
       setStatus("confirmed");
+      logLine("confirmed");
       return { ok: true, status: "confirmed", txHash: hash, message: `Sent ${usd(amount)} to ${to} on ${p.network.label} (tx ${hash}, block ${receipt.blockNumber ?? "?"}).` };
     }
     if (receipt.status === "reverted") {
       setStatus("failed");
       release();
+      logLine("reverted (no USDC moved)");
       return { ok: false, code: "REVERTED", txHash: hash, message: `The payment failed on chain (tx ${hash} reverted); no USDC moved.` };
     }
+    logLine("pending (not confirmed yet)");
     return { ok: true, status: "pending", txHash: hash, message: `Payment of ${usd(amount)} to ${to} was sent (tx ${hash}) but is not confirmed yet; it counts against the limits. Do not send it again.` };
   } finally {
     inFlight = false;
@@ -249,6 +277,7 @@ export async function executeSendUsdc(
   args: Record<string, unknown>,
   ctx: ToolContext,
   chain?: UsdcChain,
+  opts: { dryRun?: boolean; initiator?: PaymentInitiator } = {},
 ): Promise<SendUsdcResult> {
   if ((ctx.identity.chainType ?? "evm") !== "evm") return refuse("EVM_ONLY", "send_usdc supports EVM wallets only.");
   const network = getActiveNetwork();
@@ -270,6 +299,8 @@ export async function executeSendUsdc(
     reason: args.reason,
     network,
     chain: c,
+    dryRun: opts.dryRun,
+    initiator: opts.initiator,
   });
 }
 

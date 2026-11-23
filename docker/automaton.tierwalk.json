@@ -1,0 +1,58 @@
+{
+  "name": "automaton-tierwalk",
+  "genesisPrompt": "You are a throwaway test instance on Base Sepolia testnet with test funds only, used to test survival tiers. Each wake: read your status, balance and survival tier from the status block you are given (no tool call needed), then call sleep. Use at most 2 tool calls per wake. Do not write SOUL.md, do not make payments, do not contact anyone or install anything. Be brief to save tokens.",
+  "creatorAddress": "",
+  "sandboxId": "",
+  "network": "testnet",
+  "balanceSource": "own",
+  "walletEncryption": "required",
+  "conway": "off",
+  "orchestration": "off",
+  "loopGuard": { "maxRepeats": 3, "forcedSleepMinutes": 30 },
+  "maxTurnsPerCycle": 3,
+  "soulConfig": {
+    "maxUpdatesPerWake": 2,
+    "ownerOnlySections": ["corePurpose"],
+    "defaultCorePurpose": "I am automaton-tierwalk, a throwaway test agent on Base Sepolia testnet used to test survival tiers. Each wake I read my status and go back to sleep.",
+    "defaultValues": [
+      "Follow my genesis prompt and my owner's rules",
+      "Spend as little as possible: few turns, then sleep",
+      "Stay honest, legal and within every provider's terms"
+    ]
+  },
+  "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
+  "heartbeatHistoryDays": 7,
+  "walletReadCacheSeconds": 60,
+  "survival": {
+    "highCents": 40,
+    "normalCents": 30,
+    "lowComputeCents": 15,
+    "deadGraceMinutes": 5,
+    "tierWakeMinGapMinutes": 1
+  },
+  "modelStrategy": { "hourlyBudgetCents": 5, "dailyBudgetCents": 30 },
+  "treasuryPolicy": {
+    "maxSingleTransferCents": 25,
+    "maxHourlyTransferCents": 60,
+    "maxDailyTransferCents": 100,
+    "minimumReserveCents": 0,
+    "maxTransfersPerTurn": 1,
+    "requireConfirmationAboveCents": 25,
+    "transferAllowlist": ["creator"]
+  },
+  "toolAllowlist": ["check_balance", "sleep"],
+  "socialRelayUrl": "",
+  "agentSettings": {
+    "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },
+    "model": { "allowAgentChanges": false, "allowedModels": ["gpt-4.1-mini", "gpt-4.1-nano"], "maxChangesPerDay": 1 }
+  },
+  "dbPath": "~/.automaton/state.db",
+  "heartbeatConfigPath": "~/.automaton/heartbeat.yml",
+  "skillsDir": "/workspace/skills",
+  "logLevel": "info",
+  "sandbox": {
+    "mode": "container",
+    "socketPath": "/run/automaton-sandbox/sandbox.sock",
+    "workspaceDir": "/workspace"
+  }
+}

@@ -78,6 +78,9 @@ Usage:
   automaton --wallet show|encrypt
                            Owner: show the wallet (balances, limits, recent transfers; no key material),
                            or encrypt it in place
+  automaton --wallet send <cents|all> [--reason "..."] [--confirm]
+                           Owner: send USDC to the creator address only (same checks as send_usdc);
+                           dry run without --confirm
   automaton --payment-test Owner: send_usdc limits test (one real 0.10 USDC transfer to the creator,
                            then refusals; testnet only, no model call, not while an agent runs)
   automaton --facts [list | delete <category/key> ...]
@@ -133,9 +136,58 @@ Environment:
     // encrypt a plaintext wallet in place with the owner's passphrase.
     // No model call, no network. Encrypt is refused while an agent runs.
     const sub = args[args.indexOf("--wallet") + 1] ?? "show";
-    if (sub !== "show" && sub !== "encrypt") {
-      logger.error("Usage: automaton --wallet show|encrypt");
+    if (sub !== "show" && sub !== "encrypt" && sub !== "send") {
+      logger.error("Usage: automaton --wallet show|encrypt|send");
       process.exit(2);
+    }
+    if (sub === "send") {
+      // Fork (Phase 4 step 7): owner USDC send to the creator only (tier-walk drain).
+      const { parseOwnerSendArgs, runOwnerSend } = await import("./agent/owner-send.js");
+      const parsed = parseOwnerSendArgs(args.slice(args.indexOf("--wallet") + 2));
+      if ("error" in parsed) {
+        console.log(parsed.error);
+        process.exit(2);
+      }
+      const config = loadConfig();
+      if (!config) {
+        logger.error("Automaton is not configured.");
+        process.exit(1);
+      }
+      let code = 0;
+      let rt: Awaited<ReturnType<typeof prepareRuntime>> | undefined;
+      try {
+        rt = await prepareRuntime(config, { preflight: true });
+        const held = readRuntimeLease(rt.db.raw);
+        if (held?.live) {
+          console.log(`Refusing --wallet send while an agent is running (${formatLeaseHolder(held.lease, held.ageMs)}). Stop it first.`);
+          code = 1;
+        } else {
+          const { getActiveNetwork } = await import("./identity/network.js");
+          const { createViemUsdcChain } = await import("./agent/usdc-transfer.js");
+          const { createBuiltinTools } = await import("./agent/tools.js");
+          const { resolveSurvivalSettings } = await import("./survival/settings.js");
+          const { DEFAULT_TREASURY_POLICY } = await import("./types.js");
+          const network = getActiveNetwork();
+          const r = await runOwnerSend({
+            db: rt.db.raw,
+            ctx: { identity: rt.identity, config: rt.config, db: rt.db, conway: rt.conway, inference: rt.inference, social: rt.social },
+            sendTool: createBuiltinTools(rt.config.sandboxId).find((t) => t.name === "send_usdc")!,
+            network,
+            chain: createViemUsdcChain(rt.account, network, rt.config.rpcUrl || process.env.AUTOMATON_RPC_URL),
+            policy: rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY,
+            survival: resolveSurvivalSettings(rt.config),
+            project: process.env.AUTOMATON_PROJECT?.trim() || null,
+          }, parsed);
+          console.log(r.output);
+          code = r.code;
+        }
+      } catch (err: any) {
+        console.log(`Wallet send failed: ${err?.message ?? String(err)}`);
+        code = 1;
+      } finally {
+        rt?.db.close();
+      }
+      process.exit(code);
     }
     const { walletInfo, encryptExistingWallet } = await import("./identity/wallet.js");
     const { walletEncryptionRequired } = await import("./identity/wallet-crypto.js");

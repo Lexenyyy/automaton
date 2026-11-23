@@ -522,6 +522,33 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     payTpl.status === 0 && payTpl.stderr.includes("note: config template ./automaton.paytest.json") &&
       payTpl.stdout.includes("PREFLIGHT PASSED") && payTpl.stdout.includes("INFO  payment tools offered: send_usdc"),
     `exit ${payTpl.status}; ${(payTpl.stdout.split("\n").find((l) => l.includes("payment tools")) ?? payTpl.stdout.slice(-300)).trim()}`);
+  // Owner --wallet send (Phase 4 step 7) on the unfunded throwaway wallet: plan printed, dry run refuses, nothing sent.
+  const wsDry = oneoff(["--", "--wallet", "send", "10"]);
+  check("one-off commands", "--wallet send (dry run): prints project, wallet, creator, amount, balance after; refused (empty wallet); nothing sent",
+    wsDry.status === 1 && wsDry.stdout.includes("DRY RUN (add --confirm to send)") && wsDry.stdout.includes(`Project:          ${PROJECT}`) &&
+      /Agent wallet: {5}0x[0-9a-fA-F]{40}/.test(wsDry.stdout) && wsDry.stdout.includes(`To (creator):     ${VERIFY_CREATOR}`) &&
+      wsDry.stdout.includes("Amount:           0.10 USDC") && wsDry.stdout.includes("Wallet USDC:      0.00 USDC → -0.10 USDC after") &&
+      /REFUSED/.test(wsDry.stdout) && !/RESULT: Sent/.test(wsDry.stdout),
+    `exit ${wsDry.status}: ${wsDry.stdout.trim().split("\n").filter((l) => /Project|REFUSED|RESULT|DRY/.test(l)).join(" | ")}`);
+  const wsOther = oneoff(["--", "--wallet", "send", "10", "0x3333333333333333333333333333333333333333", "--confirm"]);
+  check("one-off commands", "--wallet send refuses any recipient other than the creator (exit 2, nothing started)",
+    wsOther.status === 2 && wsOther.stdout.includes("pays only the creator address"), `exit ${wsOther.status}: ${wsOther.stdout.trim()}`);
+  // The tier-walk template and project go together (never against the main agent).
+  const tplEnv = (value) => ({ ...env, AUTOMATON_CONFIG_TEMPLATE: value });
+  const twMain = spawnSync(process.execPath, [oneoffScript, "--project", PROJECT, "--", "--ledger", "show"], { encoding: "utf-8", env: tplEnv("./automaton.tierwalk.json"), timeout: 60_000 });
+  check("one-off commands", "the tier-walk template is refused for any project other than automaton-tierwalk (exit 2)",
+    twMain.status === 2 && twMain.stderr.includes("the tier-walk template is only for --project automaton-tierwalk"), `exit ${twMain.status}: ${twMain.stderr.trim()}`);
+  const twNoTpl = spawnSync(process.execPath, [oneoffScript, "--project", "automaton-tierwalk", "--", "--ledger", "show"], { encoding: "utf-8", env, timeout: 60_000 });
+  check("one-off commands", "project automaton-tierwalk is refused without the tier-walk template (exit 2, nothing started)",
+    twNoTpl.status === 2 && twNoTpl.stderr.includes("project automaton-tierwalk needs AUTOMATON_CONFIG_TEMPLATE=./automaton.tierwalk.json"),
+    `exit ${twNoTpl.status}: ${twNoTpl.stderr.trim()}`);
+  // The tier-walk template passes the real startup checks (throwaway verify project, direct compose run).
+  const twPre = spawnSync("docker", [...COMPOSE, "run", "--rm", "-T", "runtime", "--preflight"], { cwd: ROOT, encoding: "utf-8", env: tplEnv("./automaton.tierwalk.json"), timeout: 300_000 });
+  check("one-off commands", "the tier-walk template passes preflight: scaled tiers, reserve $0, creator only, no payment tool for the agent",
+    twPre.status === 0 && twPre.stdout.includes("PREFLIGHT PASSED") &&
+      twPre.stdout.includes("INFO  survival tiers: high > $0.40, normal > $0.30, low_compute > $0.15, critical >= $0.00, dead below $0 or after 5 min at <= $0; tier-change wakes at least 1 min apart") &&
+      twPre.stdout.includes("per transfer $0.25, hour $0.60, day $1.00, reserve $0.00") && twPre.stdout.includes("INFO  payment tools offered: none"),
+    `exit ${twPre.status}: ${(twPre.stdout + twPre.stderr).split("\n").filter((l) => /FAIL|survival tiers|payments:|payment tools|PREFLIGHT/.test(l)).join(" | ")}`);
   const failOneoff = oneoff(["--", "--ledger", "grant", "-5"]);
   check("one-off commands", "passes the runtime's exit code through", failOneoff.status === 1, `exit ${failOneoff.status}`);
 
@@ -548,6 +575,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const soulRefused = oneoff(["--", "--soul", "reset"]);
   check("one agent per project", "--soul reset is refused while a runtime runs (exit 1)",
     soulRefused.status === 1 && soulRefused.stderr.includes("refusing --soul reset"), `exit ${soulRefused.status}: ${soulRefused.stderr.trim()}`);
+  const sendRefused = oneoff(["--", "--wallet", "send", "10", "--confirm"]);
+  check("one agent per project", "--wallet send is refused while a runtime runs (exit 1)",
+    sendRefused.status === 1 && sendRefused.stderr.includes("refusing --wallet send"), `exit ${sendRefused.status}: ${sendRefused.stderr.trim()}`);
   const payRefused = oneoff(["--", "--payment-test"]);
   check("one agent per project", "--payment-test is refused while a runtime runs (exit 1)",
     payRefused.status === 1 && payRefused.stderr.includes("refusing --payment-test"), `exit ${payRefused.status}: ${payRefused.stderr.trim()}`);
