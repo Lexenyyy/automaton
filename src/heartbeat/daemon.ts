@@ -24,6 +24,7 @@ import type {
 import { BUILTIN_TASKS } from "./tasks.js";
 import { DurableScheduler } from "./scheduler.js";
 import { upsertHeartbeatSchedule } from "../state/database.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import type BetterSqlite3 from "better-sqlite3";
 import { createLogger } from "../observability/logger.js";
 
@@ -175,7 +176,8 @@ export function createHeartbeatDaemon(
 
   const forceRun = async (taskName: string): Promise<void> => {
     const context = await import("./tick-context.js").then((m) =>
-      m.buildTickContext(rawDb, conway, heartbeatConfig, identity.address, identity.chainType, scheduler.balanceSource()),
+      m.buildTickContext(rawDb, conway, heartbeatConfig, identity.address, identity.chainType, scheduler.balanceSource(),
+        resolveSurvivalSettings(config)),
     );
     await scheduler.executeTask(taskName, context);
   };

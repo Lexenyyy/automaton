@@ -17,7 +17,7 @@ import type {
 } from "../types.js";
 import type { HealthMonitor as ColonyHealthMonitor } from "../orchestration/health-monitor.js";
 import { sanitizeInput } from "../agent/injection-defense.js";
-import { getSurvivalTier } from "../conway/credits.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import { createLogger } from "../observability/logger.js";
 import { getMetrics } from "../observability/metrics.js";
 import { AlertEngine, createDefaultAlertRules } from "../observability/alerts.js";
@@ -107,10 +107,11 @@ export const BUILTIN_TASKS: Record<string, HeartbeatTaskFn> = {
     const prevTier = taskCtx.db.getKV("prev_credit_tier");
     taskCtx.db.setKV("prev_credit_tier", tier);
 
-    // Dead state escalation: if at zero credits (critical tier) for >1 hour,
-    // transition to dead. This gives the agent time to receive funding before dying.
-    // USDC can't go negative, so dead is only reached via this timeout.
-    const DEAD_GRACE_PERIOD_MS = 3_600_000; // 1 hour
+    // Dead state escalation: if at zero credits (critical tier) for the grace
+    // period, transition to dead. This gives the agent time to receive funding
+    // before dying. USDC can't go negative, so dead is only reached via this timeout.
+    // Fork (Phase 4 step 2): owner setting survival.deadGraceMinutes (default 60, minimum 1).
+    const DEAD_GRACE_PERIOD_MS = resolveSurvivalSettings(taskCtx.config).deadGraceMinutes * 60_000;
     // Fork change 3: an unavailable balance read says nothing about funds.
     // Don't start or advance the dead timer on it.
     if (ctx.balanceStatus === "unavailable") {

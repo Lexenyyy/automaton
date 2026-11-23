@@ -26,6 +26,7 @@ import { getLineageSummary } from "../replication/lineage.js";
 import { sanitizeInput } from "./injection-defense.js";
 import { loadCurrentSoul } from "../soul/model.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import { formatBalance } from "../survival/balance.js";
 import { buildStatusSnapshot, type BudgetSnapshot } from "./status-snapshot.js";
 import { resolveOrchestrationMode } from "./orchestration-mode.js";
@@ -746,7 +747,7 @@ Your chain type is ${chainType}.`,
   // Survival tier: same function the loop and heartbeat use (fork change 3)
   const survivalTier = financial.balanceStatus === "unavailable"
     ? "unknown (balance could not be read)"
-    : getSurvivalTier(financial.creditsCents);
+    : getSurvivalTier(financial.creditsCents, resolveSurvivalSettings(config));
 
   // Status block: wallet address and sandbox ID intentionally excluded (sensitive)
   sections.push(

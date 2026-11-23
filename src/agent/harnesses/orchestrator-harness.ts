@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { TaskGraphRow } from "../../state/database.js";
+import { resolveSurvivalSettings } from "../../survival/settings.js";
 import { getTaskById, getTasksByGoal } from "../../state/database.js";
 import { loadPlan } from "../../orchestration/plan-mode.js";
 import {
@@ -403,6 +404,7 @@ You follow a strict planner-backed plan → execute → verify → fix cycle:
 
     const plannerContext = await buildPlannerContext({
       db: this.context.db,
+      survival: resolveSurvivalSettings(this.context.config as Parameters<typeof resolveSurvivalSettings>[0]),
       workspace: this.context.workspace,
       usdcBalance: Number((this.context.config as { usdcBalance?: number } | undefined)?.usdcBalance ?? 0),
       availableRoles: ["executor", "researcher", "tester", "generalist", "orchestrator", "critic"],

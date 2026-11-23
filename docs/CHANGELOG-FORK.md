@@ -1082,3 +1082,23 @@
   Findings F1–F6 and the tier table are in ROADMAP Phase 4; the `TODAY:` tests are flipped by the steps that change
   them. No source change.
   Baselines: Linux 2106 passed; Windows 2074 passed, 22 known failures, 10 skipped; `agent:verify` 161 (not rerun).
+- 2026-11-23: **Survival thresholds and dead grace as settings** (Phase 4 step 2; finding F4). Owner approved F5 (route
+  low_compute agent turns to nano) and F6 (leave the unused upstream helpers unwired) for step 3.
+  - `config.survival` (`src/survival/settings.ts`, new): `highCents`, `normalCents`, `lowComputeCents`,
+    `deadGraceMinutes`. Defaults equal the old hardcoded values exactly (500 / 50 / 10 cents from `SURVIVAL_THRESHOLDS`,
+    60 minutes from `check_credits`). critical (>= 0) and dead (< 0) stay fixed.
+  - Startup (`prepareRuntime`) refuses: non-whole or negative values, unknown keys, thresholds not strictly in order
+    (`highCents > normalCents > lowComputeCents >= 0`, checked together with the defaults for a partial block), and
+    `deadGraceMinutes` outside 1..10080 (so 0 cannot be set by accident). Preflight prints `INFO survival tiers: …`.
+  - `getSurvivalTier(cents, thresholds)`: every production call passes `resolveSurvivalSettings(config)` (loop ×3,
+    status snapshot, system prompt, `check_balance`, heartbeat tick context via scheduler and `forceRun`, planner
+    context via orchestrator ×2 and the orchestrator harness, the unwired monitor); a source-scan test fails on any
+    call without thresholds. `check_credits` uses `deadGraceMinutes`. The unused `getSurvivalTier` import in
+    `heartbeat/tasks.ts` was removed.
+  - The main template is unchanged (no `survival` block → the defaults), so the main agent behaves as before; the
+    walk's scaled values go only into `automaton.tierwalk.json` (step 7).
+  Tests: `survival-settings` (16: defaults = old values incl. every boundary; main template uses the defaults; source
+  scan; 5 out-of-order cases; bad values; a scaled set; `deadGraceMinutes` 0/-5/1.5/"5"/10081 refused, 1 and 10080
+  accepted; the heartbeat honours a 5-minute grace; preflight refuses out-of-order thresholds and a 0 grace, and prints
+  the default tiers). `survival-tier-audit` (9) unchanged and passing.
+  Baselines: Linux 2122 passed; Windows 2090 passed, 22 known failures, 10 skipped; `agent:verify` 161.

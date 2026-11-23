@@ -252,11 +252,13 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         - F6 Unused upstream helpers: `survival/low-compute.ts` (would pick gpt-5-mini for low tiers),
           `survival/funding.ts`, `survival/monitor.ts`. Owner notices exist only as kv (`last_distress`).
         - No runway estimate anywhere.
-  - [ ] 2. Thresholds as settings (`survival`: `highCents`, `normalCents`, `lowComputeCents`, `deadGraceMinutes`);
-        startup refuses unordered values; normal template keeps today's values.
+  - [x] 2. Thresholds as settings (`survival`: `highCents`, `normalCents`, `lowComputeCents`, `deadGraceMinutes`);
+        defaults = the old values exactly; startup refuses unordered thresholds and a grace below 1 minute; the main
+        template has no `survival` block (defaults).
   - [ ] 3. Tier behaviour fixes: F1 (no model call in dead; stays dead until the balance is above zero, checked
         without the model), F2 (heartbeat wakes only on a tier change), F3 (funding leaves dead explicitly), tier
-        transitions recorded and logged. F5/F6: proposal to the owner in that step.
+        transitions recorded and logged, F5 (owner-approved: low_compute agent turns → gpt-4.1-nano). F6: the unused
+        upstream helpers stay unwired (owner decision).
   - [ ] 4. Runway estimate (ledger spend rate → time to the next lower tier and to zero) in the wake status,
         `agent:status`, preflight.
   - [ ] 5. Clean stop at zero with an owner notice (banner in `agent:status` / `agent:wallet`, WARN log, watchdog).

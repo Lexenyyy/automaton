@@ -36,6 +36,7 @@ import {
 } from "./tools.js";
 import { sanitizeInput } from "./injection-defense.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import { createBalanceSource, toFinancialState, formatBalance } from "../survival/balance.js";
 import {
   claimInboxMessages,
@@ -421,6 +422,8 @@ export async function runAgentLoop(
   // Fork: daily wake cap (owner setting sleepConfig.maxWakesPerDay). Past it,
   // sleep until the next UTC day without any model call.
   const sleepSettings = resolveSleepSettings(config);
+  // Fork (Phase 4 step 2): tier thresholds from the owner's settings.
+  const survivalSettings = resolveSurvivalSettings(config);
   const admitted = admitWake(db.raw, sleepSettings);
   if (!admitted.allowed) {
     const until = nextUtcDay(new Date());
@@ -548,7 +551,7 @@ export async function runAgentLoop(
         log(config, "[BALANCE_UNAVAILABLE] Balance could not be read, continuing in low-compute mode.");
         inference.setLowComputeMode(true);
       } else {
-        const tier = getSurvivalTier(financial.creditsCents);
+        const tier = getSurvivalTier(financial.creditsCents, survivalSettings);
 
         // Inline auto-topup (Conway balance only): if credits are critically
         // low and USDC is available, buy Conway credits NOW. With the own
@@ -582,7 +585,7 @@ export async function runAgentLoop(
         }
 
         // Re-evaluate tier after potential topup
-        const effectiveTier = getSurvivalTier(financial.creditsCents);
+        const effectiveTier = getSurvivalTier(financial.creditsCents, survivalSettings);
 
         if (effectiveTier === "critical") {
           log(config, "[CRITICAL] Credits critically low. Limited operation.");
@@ -702,7 +705,7 @@ export async function runAgentLoop(
       pendingInput = undefined;
 
       // ── Inference Call (via router when available) ──
-      const survivalTier = getSurvivalTier(financial.creditsCents);
+      const survivalTier = getSurvivalTier(financial.creditsCents, survivalSettings);
       log(config, `[THINK] Routing inference (tier: ${survivalTier}, model: ${inference.getDefaultModel()})...`);
 
       const inferenceTools = toolsToInferenceFormat(tools);

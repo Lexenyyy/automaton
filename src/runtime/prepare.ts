@@ -32,6 +32,7 @@ import { resolveSleepSettings } from "../agent/sleep-limits.js";
 import { checkHeartbeatHistoryDays } from "../heartbeat/history-retention.js";
 import { checkPaymentLimits, describePaymentLimits, looserThanDefaults } from "../agent/payment-limits.js";
 import { TRANSFER_TOOLS } from "../agent/policy-rules/financial.js";
+import { checkSurvivalSettings, describeSurvivalSettings, resolveSurvivalSettings } from "../survival/settings.js";
 import { checkSoulDefaults } from "../soul/reset.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
@@ -356,6 +357,8 @@ export async function prepareRuntime(
   if (historyDaysProblem) allowProblems.push(historyDaysProblem);
   // Fork (Phase 3 step 2): refuse invalid payment limits or recipients.
   allowProblems.push(...checkPaymentLimits(treasuryPolicy));
+  // Fork (Phase 4 step 2): refuse survival thresholds out of order or a dead grace below 1 minute.
+  allowProblems.push(...checkSurvivalSettings(config));
   allowProblems.push(...checkSoulDefaults(config));
   if (allowProblems.length) {
     if (lease) releaseRuntimeLease(db.raw, lease.instanceId);
@@ -418,6 +421,7 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     line(true, `creator: ${rt.config.creatorAddress}`);
     const tp = rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY;
     lines.push(`INFO  payments: ${describePaymentLimits(tp, rt.config.creatorAddress)}`);
+    lines.push(`INFO  survival tiers: ${describeSurvivalSettings(resolveSurvivalSettings(rt.config))}`);
     const looser = looserThanDefaults(tp);
     if (looser.length) lines.push(`WARN  payment limits looser than the code defaults: ${looser.join("; ")}`);
     line(true, `Conway: ${rt.conwayMode}${rt.conwayMode === "off" ? " (own providers only; no Conway requests)" : ""}`);

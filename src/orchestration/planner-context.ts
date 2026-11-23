@@ -7,9 +7,12 @@ import type { FundingProtocol } from "./types.js";
 import type { AgentWorkspace } from "./workspace.js";
 import { getActiveGoals } from "../state/database.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
 
 export interface PlannerContextOptions {
   db: Database;
+  /** Fork (Phase 4 step 2): the owner's tier thresholds (resolveSurvivalSettings(config)). */
+  survival?: SurvivalThresholds;
   workspace?: Pick<AgentWorkspace, "basePath" | "listOutputs">;
   funding?: Pick<FundingProtocol, "getBalance">;
   identityAddress?: string;
@@ -45,7 +48,7 @@ export async function buildPlannerContext(options: PlannerContextOptions): Promi
   return {
     creditsCents,
     usdcBalance,
-    survivalTier: toSurvivalTier(creditsCents),
+    survivalTier: toSurvivalTier(creditsCents, options.survival ?? DEFAULT_SURVIVAL_SETTINGS),
     availableRoles: normalizeStringList(options.availableRoles, [...DEFAULT_PLANNER_AVAILABLE_ROLES]),
     customRoles: normalizeStringList(options.customRoles, []),
     activeGoals: getActiveGoals(options.db).map((goal) => ({
@@ -197,8 +200,9 @@ function resolveUsdcBalance(options: PlannerContextOptions, cachedUsdcBalance?: 
 }
 
 // Fork change 3: same tiers and thresholds as the loop and heartbeat.
-function toSurvivalTier(balanceCents: number): string {
-  return getSurvivalTier(balanceCents);
+// Fork (Phase 4 step 2): callers pass the owner's thresholds (options.survival).
+function toSurvivalTier(balanceCents: number, thresholds: SurvivalThresholds): string {
+  return getSurvivalTier(balanceCents, thresholds);
 }
 
 function listWorkspaceFiles(workspace?: Pick<AgentWorkspace, "basePath" | "listOutputs">): string[] {

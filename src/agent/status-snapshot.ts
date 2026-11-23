@@ -9,6 +9,7 @@
 
 import type { AutomatonConfig, AutomatonDatabase, FinancialState, ToolCallResult } from "../types.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import { formatBalance } from "../survival/balance.js";
 import { getActiveNetwork } from "../identity/network.js";
 import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
@@ -38,7 +39,7 @@ export function buildStatusSnapshot(params: {
   const { config, financial, db, budget } = params;
   const tier = financial.balanceStatus === "unavailable"
     ? "unknown (balance could not be read)"
-    : getSurvivalTier(financial.creditsCents);
+    : getSurvivalTier(financial.creditsCents, resolveSurvivalSettings(config));
   let network = "unknown";
   try {
     network = getActiveNetwork().label;

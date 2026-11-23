@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { ulid } from "ulid";
 import type { AutomatonIdentity } from "../types.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 import { createLogger } from "../observability/logger.js";
 import {
   assignTask,
@@ -433,6 +434,7 @@ export class Orchestrator {
         goalToPlannerInput(goalRowToGoal(goal)),
         await buildPlannerContext({
           db: this.params.db,
+          survival: resolveSurvivalSettings(this.params.config),
           workspace: new AgentWorkspace(goal.id),
           funding: this.params.funding,
           identityAddress: this.params.identity.address,
@@ -736,6 +738,7 @@ export class Orchestrator {
         taskToPlannerFailureInput(taskRowToTaskNode(failedTaskRow)),
         await buildPlannerContext({
           db: this.params.db,
+          survival: resolveSurvivalSettings(this.params.config),
           workspace: new AgentWorkspace(goal.id),
           funding: this.params.funding,
           identityAddress: this.params.identity.address,

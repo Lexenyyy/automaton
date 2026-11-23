@@ -10,7 +10,7 @@ import type {
   FinancialState,
   SurvivalTier,
 } from "../types.js";
-import { SURVIVAL_THRESHOLDS } from "../types.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
 
 /**
  * Check the current financial state of the automaton.
@@ -34,11 +34,18 @@ export async function checkFinancialState(
  *
  * Zero credits = "critical" (broke but alive — can still accept funding, send distress).
  * Only negative balance (API-confirmed debt) = "dead".
+ *
+ * Fork (Phase 4 step 2): thresholds are owner settings (config.survival,
+ * src/survival/settings.ts). Production callers pass resolveSurvivalSettings(config)
+ * (a test enforces it); the default equals the old hardcoded values.
  */
-export function getSurvivalTier(creditsCents: number): SurvivalTier {
-  if (creditsCents > SURVIVAL_THRESHOLDS.high) return "high";
-  if (creditsCents > SURVIVAL_THRESHOLDS.normal) return "normal";
-  if (creditsCents > SURVIVAL_THRESHOLDS.low_compute) return "low_compute";
+export function getSurvivalTier(
+  creditsCents: number,
+  thresholds: SurvivalThresholds = DEFAULT_SURVIVAL_SETTINGS,
+): SurvivalTier {
+  if (creditsCents > thresholds.highCents) return "high";
+  if (creditsCents > thresholds.normalCents) return "normal";
+  if (creditsCents > thresholds.lowComputeCents) return "low_compute";
   if (creditsCents >= 0) return "critical";
   return "dead";
 }

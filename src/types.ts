@@ -143,6 +143,12 @@ export interface AutomatonConfig {
    */
   walletEncryption?: "required" | "optional";
   /**
+   * Survival tier thresholds and dead grace (fork, Phase 4; see
+   * src/survival/settings.ts). Defaults = the old hardcoded values:
+   * highCents 500, normalCents 50, lowComputeCents 10, deadGraceMinutes 60.
+   */
+  survival?: { highCents?: number; normalCents?: number; lowComputeCents?: number; deadGraceMinutes?: number };
+  /**
    * Owner limits for settings the agent may change itself (fork, Phase 1).
    * Agent changes are stored in the database (table agent_settings), never in
    * this config file; see src/agent/settings.ts.

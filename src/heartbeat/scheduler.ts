@@ -30,6 +30,7 @@ import {
 } from "../state/database.js";
 import { createLogger } from "../observability/logger.js";
 import { HEARTBEAT_PRUNE_INTERVAL_MS, resolveHeartbeatHistoryDays } from "./history-retention.js";
+import { resolveSurvivalSettings } from "../survival/settings.js";
 
 type DatabaseType = BetterSqlite3.Database;
 const logger = createLogger("heartbeat.scheduler");
@@ -113,6 +114,7 @@ export class DurableScheduler {
         this.legacyContext.identity.address,
         this.legacyContext.identity.chainType,
         this.balanceSource(),
+        resolveSurvivalSettings(this.legacyContext.config),
       );
 
       // Get tasks that are due

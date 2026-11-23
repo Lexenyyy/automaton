@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 1
-  (tier audit): 2106 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 2
+  (survival settings): 2122 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2074 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2090 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -101,6 +101,9 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   in the runtime's sleeping state; the `sleep` tool raises short values, says so, and refuses zero/negative).
   Past `maxWakesPerDay` wake cycles in a UTC day (restarts and heartbeat wake-ups count), the agent sleeps
   until the next UTC day without a model call; `--wake-now` does not override this.
+- **Survival tiers:** optional `"survival": { "highCents", "normalCents", "lowComputeCents", "deadGraceMinutes" }`
+  (`src/survival/settings.ts`; defaults 500 / 50 / 10 cents and 60 min = the old hardcoded values; the main template
+  sets none). Startup refuses thresholds not strictly in order and a grace outside 1..10080 min; preflight prints them.
 - **Heartbeat history:** `"heartbeatHistoryDays": 7` in the template (code default 7, 0 = keep all); the scheduler
   deletes older `heartbeat_history` rows at most once an hour.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule

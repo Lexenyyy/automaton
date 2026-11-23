@@ -14,6 +14,7 @@ import type {
   SurvivalTier,
 } from "../types.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "./settings.js";
 import { ConwayBalanceSource, toFinancialState, formatBalance, type BalanceSource } from "./balance.js";
 
 export interface ResourceStatus {
@@ -32,6 +33,8 @@ export async function checkResources(
   conway: ConwayClient,
   db: AutomatonDatabase,
   balanceSource?: BalanceSource,
+  /** Fork (Phase 4 step 2): tier thresholds; this helper is not wired into the runtime (Phase 4 F6). */
+  thresholds: SurvivalThresholds = DEFAULT_SURVIVAL_SETTINGS,
 ): Promise<ResourceStatus> {
   // Survival balance (fork change 3). Callers pass the configured source;
   // without one, the upstream Conway-credits behavior is kept.
@@ -52,7 +55,7 @@ export async function checkResources(
   // An unavailable balance says nothing about funds: keep the previous tier.
   const tier = financial.balanceStatus === "unavailable" && previousTier
     ? previousTier
-    : getSurvivalTier(financial.creditsCents);
+    : getSurvivalTier(financial.creditsCents, thresholds);
   const tierChanged = previousTier !== null && previousTier !== tier;
 
   // Store current tier

@@ -15,6 +15,7 @@ import type {
   TickContext,
 } from "../types.js";
 import { getSurvivalTier } from "../conway/credits.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
 import { ConwayBalanceSource, type BalanceSource } from "../survival/balance.js";
 
 type DatabaseType = BetterSqlite3.Database;
@@ -44,6 +45,8 @@ export async function buildTickContext(
   walletAddress?: string,
   chainType?: string,
   balanceSource?: BalanceSource,
+  /** Fork (Phase 4 step 2): the owner's tier thresholds (resolveSurvivalSettings(config)). */
+  thresholds: SurvivalThresholds = DEFAULT_SURVIVAL_SETTINGS,
 ): Promise<TickContext> {
   const tickId = generateTickId();
   const startedAt = new Date();
@@ -54,9 +57,9 @@ export async function buildTickContext(
   const lastTierRow = db.prepare("SELECT value FROM kv WHERE key = 'last_tick_tier'").get() as { value: string } | undefined;
   let survivalTier: SurvivalTier;
   if (snapshot.status === "unavailable") {
-    survivalTier = (lastTierRow?.value as SurvivalTier | undefined) ?? getSurvivalTier(snapshot.balanceCents);
+    survivalTier = (lastTierRow?.value as SurvivalTier | undefined) ?? getSurvivalTier(snapshot.balanceCents, thresholds);
   } else {
-    survivalTier = getSurvivalTier(snapshot.balanceCents);
+    survivalTier = getSurvivalTier(snapshot.balanceCents, thresholds);
     db.prepare("INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES ('last_tick_tier', ?, datetime('now'))").run(survivalTier);
   }
 
