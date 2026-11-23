@@ -15,6 +15,10 @@ import type { WalletInfo } from "../identity/wallet.js";
 import { usdcAddressFor } from "../conway/x402.js";
 import { describePaymentLimits } from "./payment-limits.js";
 import { SpendTracker } from "./spend-tracker.js";
+import { buildDeadNotice } from "../survival/dead-notice.js";
+import { getAgentStateRaw } from "../survival/tier-watch.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
+import { getLedgerBalanceCents } from "../state/ledger.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -56,8 +60,18 @@ export function walletReport(o: {
   creatorAddress: string | undefined;
   encryptionSetting: string;
   db: Database | null;
+  /** Fork (Phase 4 step 5): thresholds for the dead notice (defaults when absent). */
+  survival?: SurvivalThresholds;
 }): string {
   const lines = ["=== WALLET ==="];
+  // Fork (Phase 4 step 5): the owner notice while the agent is dead.
+  if (o.db && getAgentStateRaw(o.db) === "dead") {
+    const live = o.balances?.usdcUnits !== null && o.balances?.usdcUnits !== undefined
+      ? getLedgerBalanceCents(o.db, { liveOnly: o.network?.mode === "mainnet" }) + Number(o.balances.usdcUnits / 10_000n)
+      : undefined;
+    const notice = buildDeadNotice(o.db, o.survival ?? DEFAULT_SURVIVAL_SETTINGS, { balanceCents: live, address: o.info.address });
+    lines.push(`!!! ${notice?.text ?? "DEAD (no notice recorded yet). No model calls until funded."}`);
+  }
   if (!o.info.exists) {
     lines.push("No wallet.");
   } else {

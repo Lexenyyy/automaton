@@ -266,7 +266,9 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         `walletReadCacheSeconds` (default 300; refreshed right after `send_usdc`): 12 on-chain reads/hour instead of 60.
   - [x] 4. Runway estimate (inference spend over the last 24 h → time to the next lower tier and to $0) in the
         per-turn status, the wake-up status, `agent:status` (text and JSON) and preflight.
-  - [ ] 5. Clean stop at zero with an owner notice (banner in `agent:status` / `agent:wallet`, WARN log, watchdog).
+  - [x] 5. Clean stop at zero with an owner notice: one WARN per entry into dead; notice (since when, wallet to fund,
+        amounts to revive and to reach normal; no secrets) in `agent:status` and `agent:wallet` while dead; reviving
+        clears it and records "revived at"; the watchdog reports it, then stops gracefully.
   - [ ] 6. Watchdog `--allow-tiers` (default still stops on low_compute/critical/dead).
   - [ ] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,
         one wake per tier, no model call in dead, refund and revive).
@@ -284,6 +286,8 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
   with `livemode` from the event.
 - Own VPS + domain + HTTPS; replace `exposePort` (reverse proxy, e.g. Caddy) to get a public URL
 - Revenue vs cost tracking (general plumbing)
+- Runway (owner note, 2026-11-23): the Phase 4 runway counts only inference spend over a fixed 24 h window; in
+  Phase 5 it must also count non-inference spending (hosting, payments, fees) and revenue.
 Done when: a placeholder endpoint is reachable at the public HTTPS URL and accepts a testnet payment
 within the limits, and a Stripe test-mode payment, confirmed by a signed webhook.
 

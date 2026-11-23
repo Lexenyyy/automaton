@@ -26,6 +26,8 @@ import type BetterSqlite3 from "better-sqlite3";
 import type { SurvivalTier } from "../types.js";
 import type { SurvivalSettings } from "./settings.js";
 import { createLogger } from "../observability/logger.js";
+import { getActiveNetwork } from "../identity/network.js";
+import { buildDeadNotice, clearDeadRecord, readDeadRecord, writeDeadRecord } from "./dead-notice.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -75,6 +77,15 @@ const delKv = (db: Database, key: string): void => {
 };
 const usd = (cents: number) => `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`;
 
+function lastKnownBalance(db: Database): number {
+  try {
+    const v = JSON.parse(getKv(db, "last_known_balance") ?? "null");
+    return v && Number.isFinite(v.creditsCents) ? Number(v.creditsCents) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function getAgentStateRaw(db: Database): string | undefined {
   return getKv(db, "agent_state");
 }
@@ -93,12 +104,34 @@ export function evaluateSurvival(
   db: Database,
   input: SurvivalTickInput,
   settings: SurvivalSettings,
-  opts: { now?: number; log?: (msg: string) => void } = {},
+  opts: { now?: number; log?: (msg: string) => void; warn?: (msg: string) => void; network?: string } = {},
 ): SurvivalTickResult {
   const nowMs = opts.now ?? Date.now();
   const nowIso = new Date(nowMs).toISOString();
   const log = opts.log ?? ((m: string) => logger.info(m));
+  const warn = opts.warn ?? ((m: string) => logger.warn(m));
+  const networkLabel = () => {
+    if (opts.network) return opts.network;
+    try {
+      return getActiveNetwork().label;
+    } catch {
+      return "the active network";
+    }
+  };
+  // Fork (Phase 4 step 5): one dead record and one WARN per entry into dead.
+  const recordDead = (reason: string, balanceCents: number) => {
+    writeDeadRecord(db, { since: nowIso, reason, network: networkLabel(), balanceCentsAtEntry: balanceCents });
+    const notice = buildDeadNotice(db, settings, { balanceCents });
+    warn(notice?.text ?? `DEAD since ${nowIso} (${reason}).`);
+  };
   const stateBefore = getAgentStateRaw(db);
+
+  // Dead set elsewhere (the agent loop, on a live balance below $0) without a
+  // record yet: write it and warn once. A non-live read never supplies the
+  // balance (the last known one is used instead).
+  if (stateBefore === "dead" && !readDeadRecord(db)) {
+    recordDead("balance below $0 (seen by the agent loop)", input.balanceStatus === "live" ? input.balanceCents : lastKnownBalance(db));
+  }
 
   // Only a live read decides anything. "unavailable" (no read, no cached value)
   // and "cached" (the read failed; the last good wallet value plus the current
@@ -127,16 +160,20 @@ export function evaluateSurvival(
   }
 
   let deadNote = "";
+  let revivedNote = "";
   if (stateBefore !== "dead" && (input.balanceTier === "dead" || graceOver)) {
     setKv(db, "agent_state", "dead");
     result.enteredDead = true;
     deadNote = input.balanceTier === "dead" ? "balance below $0" : `${zeroMinutes} min at <= $0`;
-    log(`Agent state: dead (${deadNote}, balance ${usd(input.balanceCents)}). No model calls until the balance is above $0.`);
+    recordDead(deadNote, input.balanceCents); // the one WARN for this entry into dead
   } else if (stateBefore === "dead" && input.balanceCents > 0) {
+    const rec = readDeadRecord(db);
     setKv(db, "agent_state", "sleeping");
     delKv(db, "sleep_until");
+    clearDeadRecord(db);
     result.leftDead = true;
-    log(`Agent state: left dead (balance ${usd(input.balanceCents)} is above $0 again). Resuming.`);
+    revivedNote = `revived at ${nowIso}${rec ? ` (dead since ${rec.since})` : ""}`;
+    log(`Agent state: ${revivedNote}; balance ${usd(input.balanceCents)} is above $0 again. Resuming.`);
   }
 
   const effective: SurvivalTier = getAgentStateRaw(db) === "dead" ? "dead" : input.balanceTier;
@@ -148,9 +185,10 @@ export function evaluateSurvival(
   const lastWake = getKv(db, LAST_TIER_WAKE_KEY);
   const gapOk = !lastWake || nowMs - new Date(lastWake).getTime() >= settings.tierWakeMinGapMinutes * 60_000;
   const woke = effective !== "dead" && gapOk;
+  const wakeNote = woke ? "agent woken" : `no wake: within ${settings.tierWakeMinGapMinutes} min of the last tier-change wake`;
   const note = effective === "dead"
     ? `dead (${deadNote || "state dead"}): no wake, no model calls`
-    : woke ? "agent woken" : `no wake: within ${settings.tierWakeMinGapMinutes} min of the last tier-change wake`;
+    : revivedNote ? `${revivedNote}; ${wakeNote}` : wakeNote;
   const change: TierChange = { at: nowIso, from: prev, to: effective, balanceCents: input.balanceCents, woke, note };
   const all = [...getTierChanges(db), change].slice(-MAX_TIER_CHANGES);
   setKv(db, TIER_CHANGES_KEY, JSON.stringify(all));

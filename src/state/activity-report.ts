@@ -9,6 +9,7 @@ import type { Database } from "better-sqlite3";
 import { formatUsdMc, getInferenceCostSinceMc, getLifetimeInferenceCostMc } from "./ledger.js";
 import { computeRunway, formatRunway, type Runway } from "../survival/runway.js";
 import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
+import { buildDeadNotice, type DeadNotice } from "../survival/dead-notice.js";
 
 export interface ActivityReport {
   agentState: string;
@@ -37,6 +38,8 @@ export interface ActivityReport {
    */
   runway: Runway | null;
   runwayText: string;
+  /** Fork (Phase 4 step 5): the owner notice while the agent is dead (null otherwise). */
+  deadNotice: DeadNotice | { text: string } | null;
 }
 
 export interface SinceStats {
@@ -94,6 +97,11 @@ export function getActivityReport(
 ): ActivityReport {
   const balance = lastKnownBalanceCents(db);
   const runway = balance === null ? null : computeRunway(db, balance, thresholds, now);
+  const dead = kv(db, "agent_state") === "dead";
+  const deadNotice = !dead
+    ? null
+    : buildDeadNotice(db, thresholds, { balanceCents: balance }) ??
+      { text: "DEAD (no notice recorded yet: the heartbeat writes it on its next tick). No model calls until funded." };
   const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
   const last = db.prepare("SELECT MAX(timestamp) AS t FROM turns").get() as { t: string | null };
@@ -103,6 +111,7 @@ export function getActivityReport(
     ? (db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(wakeStart) as { n: number }).n
     : 0;
   return {
+    deadNotice,
     runway,
     runwayText: runway ? formatRunway(runway) : "Runway: unknown (no balance read yet)",
     tier: kv(db, "last_tick_tier"),
@@ -139,6 +148,7 @@ const isFuture = (iso: string | null, now: Date): iso is string =>
 export function formatActivityReport(r: ActivityReport, now: Date = new Date()): string {
   const lines = [
     "=== AGENT ACTIVITY (state.db) ===",
+    ...(r.deadNotice ? [`!!! ${r.deadNotice.text}`] : []),
     `State:             ${r.agentState}`,
     `Last turn:         ${r.lastTurnAt ? `${r.lastTurnAt} (${ago(r.lastTurnAt, now)})` : "none"}`,
     `Survival tier:     ${r.tier ?? "unknown"}`,

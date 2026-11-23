@@ -185,6 +185,7 @@ Environment:
           creatorAddress: config?.creatorAddress,
           encryptionSetting: `${config?.walletEncryption ?? "optional (default)"}${walletEncryptionRequired(config) ? " → required" : ""}`,
           db: reportDb?.raw ?? null,
+          survival: (await import("./survival/settings.js")).resolveSurvivalSettings(config),
         }));
       } finally {
         reportDb?.close();

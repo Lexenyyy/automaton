@@ -690,6 +690,27 @@ db.close();`], { allowFail: false });
     wOff5.status === 2 && wOff5.stdout.includes("STOP: 5 wakes in a row could not reach the model API (> 4)") && runtimeIds("running") === "",
     (wOff5.stdout + wOff5.stderr).trim());
   setOffline(0);
+  // Dead agent (Phase 4 step 5): the watchdog reports the owner notice, then stops gracefully.
+  const setDead = (on) => docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+${on
+  ? `db.setAgentState("dead"); db.setKV("dead_notice", JSON.stringify({ since: "2026-11-23T20:00:00.000Z", reason: "verify", network: "Base Sepolia (testnet)", balanceCentsAtEntry: 0 }));
+db.setKV("last_known_balance", JSON.stringify({ creditsCents: 0, usdcBalance: 0 }));`
+  : `db.setAgentState("sleeping"); db.deleteKV("dead_notice"); db.deleteKV("last_known_balance");`}
+db.close();`], { allowFail: false });
+  standInW(`${PROJECT}-w1d`, KEEP);
+  setDead(true);
+  const wDead = watch(["--once"]);
+  check(W, "a dead agent: the notice (since, wallet to fund, amounts) is reported, then a graceful stop (exit 2)",
+    wDead.status === 2 && wDead.stdout.includes("DEAD NOTICE: DEAD since 2026-11-23 20:00:00 UTC (verify)") &&
+      /Fund 0x[0-9a-fA-F]{40} on Base Sepolia \(testnet\): at least 0\.01 USDC to revive \(critical\), 0\.51 USDC to reach normal/.test(wDead.stdout) &&
+      wDead.stdout.includes("STOP: the agent is dead") && runtimeIds("running") === "",
+    `exit ${wDead.status}; ` + wDead.stdout.split("\n").filter((l) => /DEAD NOTICE|STOP/.test(l)).join(" | "));
+  const stDead = status();
+  check(W, "agent:status shows the dead notice while dead",
+    stDead.stdout.includes("!!! DEAD since 2026-11-23 20:00:00 UTC (verify)"), stDead.stdout.trim().slice(0, 500));
+  setDead(false);
   standInW(`${PROJECT}-w1b`, KEEP);
   const beforeGrant = new Date().toISOString();
   oneoff(["--", "--ledger", "grant", "0.01"]);

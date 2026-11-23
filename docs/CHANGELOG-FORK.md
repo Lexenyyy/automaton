@@ -1177,3 +1177,25 @@
   tier; scaled thresholds; at/below $0; formatting; durations; activity report text and JSON; before any balance
   read; wake-up status live and unreadable). `agent:verify` +1 (preflight runway and wallet read cache lines).
   Baselines: Linux 2161 passed; Windows 2129 passed, 22 known failures, 10 skipped; `agent:verify` 162.
+- 2026-11-23: **Owner notice while dead** (Phase 4 step 5; owner kept the 24-hour runway window fixed and noted for
+  Phase 5 that the runway must also count non-inference spending).
+  - `src/survival/dead-notice.ts` (new). The survival watch writes one record when the agent enters dead (kv
+    `dead_notice`: since, reason, network, balance at entry) and logs **one WARN** with the notice: per entry into
+    dead, not per check (the run loop's wait logs nothing per 30 s check). Dead set by the agent loop (a live balance
+    below $0) gets its record and WARN on the next heartbeat check.
+  - The notice text is built when shown, from the latest balance: `DEAD since <UTC> (<reason>). No model calls until
+    funded. Fund <wallet address> on <network>: at least X USDC to revive (critical), Y USDC to reach normal (balance
+    now $Z). Or add an owner grant: pnpm agent:ledger:grant <dollars>.` (revive = balance above $0, normal = above
+    `survival.normalCents`). When the balance is already above $0, it says the heartbeat revives the agent on its next
+    live read instead. Only public data: the wallet address (from the identity table), amounts and times.
+  - Shown while dead: first line of `agent:status` (`!!! …`; `deadNotice` in `--activity --json`, from the last known
+    balance) and of `agent:wallet` (from the ledger plus the live wallet read). Not shown when alive.
+  - Reviving deletes the record; the tier-history entry and the INFO line say `revived at <time> (dead since <time>)`.
+  - Watchdog: a dead agent's notice is printed as `DEAD NOTICE: …` (console and watch log), then `STOP: the agent is
+    dead` and a graceful `agent:down` (default unchanged: dead stops the run).
+  Tests: `dead-notice` (11: one WARN across entry and 30 checks; negative balance; dead set by the loop; text and
+  amounts at $0, below $0 and scaled thresholds; already above $0; no secrets; agent:status banner and JSON, fallback
+  before the record; agent:wallet banner with the live balance and none when alive; revive clears it and records
+  "revived at", dying again warns again). `agent:verify` +2 (the real watchdog on a stand-in runtime marked dead
+  reports the notice and stops with exit 2; `agent:status` shows it).
+  Baselines: Linux 2172 passed; Windows 2140 passed, 22 known failures, 10 skipped; `agent:verify` 164.

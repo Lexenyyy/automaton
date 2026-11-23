@@ -196,7 +196,13 @@ function check() {
   if (s.maxDenials && s.maxDenials.count >= limits.maxDenials) {
     return `${s.maxDenials.tool} denied by policy ${s.maxDenials.count} times`;
   }
-  if (["low_compute", "critical", "dead"].includes(a.tier) || a.agentState === "dead") {
+  // Phase 4 step 5: a dead agent's owner notice (since when, wallet to fund, amounts) is
+  // reported on its own line before the stop, so it is in the console and the watch log.
+  if (a.agentState === "dead") {
+    out(`DEAD NOTICE: ${a.deadNotice?.text ?? "the agent is dead (no notice recorded yet)"}`);
+    return `the agent is dead (state dead, tier ${a.tier ?? "?"})`;
+  }
+  if (["low_compute", "critical", "dead"].includes(a.tier)) {
     return `survival tier ${a.tier}, state ${a.agentState}`;
   }
   // An offline wake end ("offline: …") is not forced: the agent sleeps and retries
