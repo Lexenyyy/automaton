@@ -261,8 +261,11 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         and logged as INFO, F5 (low_compute agent turns → gpt-4.1-nano). F6: the unused upstream helpers stay
         unwired (owner decision). The survival watch runs on every heartbeat tick (was: `check_credits`, every 6 h).
         Tier table after step 3: low_compute → gpt-4.1-nano; the heartbeat never pings a wake; dead → no model call.
-  - [ ] 4. Runway estimate (ledger spend rate → time to the next lower tier and to zero) in the wake status,
-        `agent:status`, preflight.
+  - [x] Fixes after step 3 (owner check): survival decisions only on live balance reads (a failed/cached read never
+        starts the timer or records a change; 90-minute outage test); wallet balance read cache
+        `walletReadCacheSeconds` (default 300; refreshed right after `send_usdc`): 12 on-chain reads/hour instead of 60.
+  - [x] 4. Runway estimate (inference spend over the last 24 h → time to the next lower tier and to $0) in the
+        per-turn status, the wake-up status, `agent:status` (text and JSON) and preflight.
   - [ ] 5. Clean stop at zero with an owner notice (banner in `agent:status` / `agent:wallet`, WARN log, watchdog).
   - [ ] 6. Watchdog `--allow-tiers` (default still stops on low_compute/critical/dead).
   - [ ] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,

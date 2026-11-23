@@ -27,6 +27,7 @@ import { sanitizeInput } from "./injection-defense.js";
 import { loadCurrentSoul } from "../soul/model.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { resolveSurvivalSettings } from "../survival/settings.js";
+import { runwayLine } from "../survival/runway.js";
 import { formatBalance } from "../survival/balance.js";
 import { buildStatusSnapshot, type BudgetSnapshot } from "./status-snapshot.js";
 import { resolveOrchestrationMode } from "./orchestration-mode.js";
@@ -754,7 +755,8 @@ Your chain type is ${chainType}.`,
     `--- CURRENT STATUS ---
 State: ${state}
 Balance: ${formatBalance(financial)}
-Survival tier: ${survivalTier}${uptimeLine}
+Survival tier: ${survivalTier}
+${runwayLine(db.raw, financial, resolveSurvivalSettings(config))}${uptimeLine}
 Total turns completed: ${turnCount}
 Recent self-modifications: ${recentMods.length}
 Inference model: ${config.inferenceModel}

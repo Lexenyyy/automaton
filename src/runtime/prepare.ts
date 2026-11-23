@@ -33,7 +33,8 @@ import { checkHeartbeatHistoryDays } from "../heartbeat/history-retention.js";
 import { checkPaymentLimits, describePaymentLimits, looserThanDefaults } from "../agent/payment-limits.js";
 import { TRANSFER_TOOLS } from "../agent/policy-rules/financial.js";
 import { checkSurvivalSettings, describeSurvivalSettings, resolveSurvivalSettings } from "../survival/settings.js";
-import { checkWalletReadCacheSeconds, resolveWalletReadCacheSeconds } from "../survival/balance.js";
+import { checkWalletReadCacheSeconds, createBalanceSource, resolveWalletReadCacheSeconds, toFinancialState } from "../survival/balance.js";
+import { runwayLine } from "../survival/runway.js";
 import { checkSoulDefaults } from "../soul/reset.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
@@ -426,6 +427,15 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     const tp = rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY;
     lines.push(`INFO  payments: ${describePaymentLimits(tp, rt.config.creatorAddress)}`);
     lines.push(`INFO  survival tiers: ${describeSurvivalSettings(resolveSurvivalSettings(rt.config))}`);
+    // Fork (Phase 4 step 4): runway at the recent spend rate (one balance read; no model call).
+    try {
+      const snap = await createBalanceSource({
+        config: rt.config, db: rt.db.raw, conway: rt.conway, address: rt.identity.address, chainType: rt.resolvedChainType,
+      }).read();
+      lines.push(`INFO  ${runwayLine(rt.db.raw, toFinancialState(snap), resolveSurvivalSettings(rt.config))}`);
+    } catch (err: any) {
+      lines.push(`INFO  Runway: unknown (${err?.message ?? err})`);
+    }
     const cacheS = resolveWalletReadCacheSeconds(rt.config);
     lines.push(`INFO  wallet balance: read on chain ${cacheS === 0 ? "every time" : `at most every ${cacheS} s (fresh after send_usdc)`}`);
     const looser = looserThanDefaults(tp);

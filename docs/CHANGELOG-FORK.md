@@ -1162,3 +1162,18 @@
   Tests: `wallet-read-cache` (8: 12 vs 60 reads in an hour of real ticks; reuse is live; expired + failing is
   cached; setting and validation; refresh after confirmed, reverted, pending and a failed read).
   Baselines: Linux 2149 passed; Windows 2117 passed, 22 known failures, 10 skipped; `agent:verify` 161.
+- 2026-11-23: **Runway estimate** (Phase 4 step 4). `src/survival/runway.ts` (new):
+  - Burn rate = inference spend in the ledger over the last 24 h, divided by the hours actually covered (at least 1,
+    at most 24, never more than the time since the first ledger entry, so a young agent is not divided by 24 hours
+    it has not lived). Only inference counts as burn (deliberate `send_usdc` payments and future revenue are not
+    extrapolated).
+  - From the survival balance and the owner's thresholds: the next lower tier, its boundary and the hours until it;
+    hours until $0. No spend in the window = "no estimate" (never infinite); at or below $0 = "none".
+  - Shown: in the per-turn status of the system prompt and the wake-up status (an unreadable balance gives
+    "Runway: unknown"); in `agent:status` (activity report text and `runway` in `--activity --json`, from the last
+    known balance and the configured thresholds); in preflight (one balance read through the cached source).
+  - Example: `Runway: $6.15 lasts ~25 d 15 h at 1.0¢/h (inference, last 24 h); normal at $5.00 in ~4 d 19 h`.
+  Tests: `runway` (12: 24 h window and old spend ignored; young agent; 1-hour minimum; no spend; next tier for every
+  tier; scaled thresholds; at/below $0; formatting; durations; activity report text and JSON; before any balance
+  read; wake-up status live and unreadable). `agent:verify` +1 (preflight runway and wallet read cache lines).
+  Baselines: Linux 2161 passed; Windows 2129 passed, 22 known failures, 10 skipped; `agent:verify` 162.

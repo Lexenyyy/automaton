@@ -385,6 +385,9 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     preOut.includes("INFO  inference today (UTC): $0.00 of $0.30 daily cap"));
   check("entrypoint", "--preflight prints no key values", !preOut.includes(fakeSecret) && !preOut.includes(fakeOpenAiKey));
   check("entrypoint", "--preflight uses the creator address from AUTOMATON_CREATOR_ADDRESS", preOut.includes(`creator: ${VERIFY_CREATOR}`));
+  check("entrypoint", "--preflight prints the runway estimate and the wallet read cache",
+    /INFO {2}Runway: /.test(preOut) && preOut.includes("INFO  wallet balance: read on chain at most every 300 s"),
+    preOut.split("\n").filter((l) => /Runway:|wallet balance:/.test(l)).join(" | ") || "no runway line");
   check("entrypoint", "--preflight with the normal template: no payment tool offered to the agent",
     preOut.includes("INFO  payment tools offered: none"), preOut.split("\n").find((l) => l.includes("payment tools")) ?? "no line");
   check("entrypoint", "--preflight shows the template's payment limits; only the creator may receive payments",

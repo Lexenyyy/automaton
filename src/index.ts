@@ -402,7 +402,8 @@ Environment:
     const db = createDatabase(resolvePath(config.dbPath));
     const { getActivityReport, formatActivityReport } = await import("./state/activity-report.js");
     try {
-      const report = getActivityReport(db.raw, new Date(), since);
+      const { resolveSurvivalSettings } = await import("./survival/settings.js");
+      const report = getActivityReport(db.raw, new Date(), since, resolveSurvivalSettings(config));
       console.log(args.includes("--json") ? JSON.stringify(report) : formatActivityReport(report));
     } finally {
       db.close();

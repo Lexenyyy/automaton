@@ -10,6 +10,7 @@
 import type { AutomatonConfig, AutomatonDatabase, FinancialState, ToolCallResult } from "../types.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { resolveSurvivalSettings } from "../survival/settings.js";
+import { runwayLine } from "../survival/runway.js";
 import { formatBalance } from "../survival/balance.js";
 import { getActiveNetwork } from "../identity/network.js";
 import { MC_PER_CENT, formatUsdMc } from "../state/ledger.js";
@@ -49,6 +50,8 @@ export function buildStatusSnapshot(params: {
   const lines = [
     `Balance: ${formatBalance(financial)}`,
     `Survival tier: ${tier}`,
+    // Fork (Phase 4 step 4): time to the next lower tier and to $0 at the recent spend rate.
+    runwayLine(db.raw, financial, resolveSurvivalSettings(config)),
     `Network: ${network}`,
   ];
   if (budget) {

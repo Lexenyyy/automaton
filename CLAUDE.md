@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 wallet read cache: 2149 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 4 (runway): 2161 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2117 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2129 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -43,7 +43,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (161 checks after Phase 3 step 7).
+  (162 checks after Phase 4 step 4).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -109,7 +109,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   change (kv `survival_tier_changes`, INFO log) and wakes the agent once per change (never into dead, at most once per
   gap). Dead = heartbeat only: the run loop waits (`waitWhileDead`), no agent loop, no model call. low_compute agent
   turns use gpt-4.1-nano. The on-chain wallet balance is read at most every `walletReadCacheSeconds` (default 300,
-  0 = always) and refreshed right after `send_usdc`.
+  0 = always) and refreshed right after `send_usdc`. A runway estimate (`src/survival/runway.ts`: inference spend over
+  the last 24 h → time to the next lower tier and to $0) is in the agent's status, `agent:status` and preflight.
 - **Heartbeat history:** `"heartbeatHistoryDays": 7` in the template (code default 7, 0 = keep all); the scheduler
   deletes older `heartbeat_history` rows at most once an hour.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule

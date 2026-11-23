@@ -7,6 +7,8 @@
 
 import type { Database } from "better-sqlite3";
 import { formatUsdMc, getInferenceCostSinceMc, getLifetimeInferenceCostMc } from "./ledger.js";
+import { computeRunway, formatRunway, type Runway } from "../survival/runway.js";
+import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
 
 export interface ActivityReport {
   agentState: string;
@@ -29,6 +31,12 @@ export interface ActivityReport {
   offlineStreak: number;
   /** Totals since a given time (the watchdog's start), when asked for. */
   since?: SinceStats;
+  /**
+   * Fork (Phase 4 step 4): runway from the last known balance (kv last_known_balance)
+   * and the owner's thresholds; null when no balance was read yet.
+   */
+  runway: Runway | null;
+  runwayText: string;
 }
 
 export interface SinceStats {
@@ -69,7 +77,23 @@ function sinceStats(db: Database, since: string): SinceStats {
   };
 }
 
-export function getActivityReport(db: Database, now: Date = new Date(), since?: string): ActivityReport {
+function lastKnownBalanceCents(db: Database): number | null {
+  try {
+    const v = JSON.parse(kv(db, "last_known_balance") ?? "null");
+    return v && Number.isFinite(v.creditsCents) ? Number(v.creditsCents) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getActivityReport(
+  db: Database,
+  now: Date = new Date(),
+  since?: string,
+  thresholds: SurvivalThresholds = DEFAULT_SURVIVAL_SETTINGS,
+): ActivityReport {
+  const balance = lastKnownBalanceCents(db);
+  const runway = balance === null ? null : computeRunway(db, balance, thresholds, now);
   const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
   const last = db.prepare("SELECT MAX(timestamp) AS t FROM turns").get() as { t: string | null };
@@ -79,6 +103,8 @@ export function getActivityReport(db: Database, now: Date = new Date(), since?: 
     ? (db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(wakeStart) as { n: number }).n
     : 0;
   return {
+    runway,
+    runwayText: runway ? formatRunway(runway) : "Runway: unknown (no balance read yet)",
     tier: kv(db, "last_tick_tier"),
     turnsThisWake: thisWake,
     wakeStartedAt: wakeStart,
@@ -116,6 +142,7 @@ export function formatActivityReport(r: ActivityReport, now: Date = new Date()):
     `State:             ${r.agentState}`,
     `Last turn:         ${r.lastTurnAt ? `${r.lastTurnAt} (${ago(r.lastTurnAt, now)})` : "none"}`,
     `Survival tier:     ${r.tier ?? "unknown"}`,
+    `Runway:            ${r.runwayText.replace(/^Runway: /, "")}`,
     `Turns, last hour:  ${r.turnsLastHour} (this or last wake: ${r.turnsThisWake})`,
     `Inference spend:   last hour ${formatUsdMc(r.spendLastHourMc)}, today (UTC) ${formatUsdMc(r.spendTodayMc)}, lifetime real money ${formatUsdMc(r.spendLifetimeMc)}`,
   ];
