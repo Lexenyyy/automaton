@@ -186,7 +186,7 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
     grow?), spend per wake, ledger vs OpenAI usage, soul versions, facts table growth, heartbeat failures,
     container memory/CPU, database size, new errors in the saved log.
 
-## Phase 3 — Wallet & money, TESTNET ONLY (2 weeks)
+## Phase 3 — Wallet & money, TESTNET ONLY (2 weeks) — DONE 2026-11-22
 Plan (owner-approved 2026-11-20; one commit per step):
   - [x] **1. Wallet encrypted at rest** (scrypt + AES-256-GCM, passphrase from the secrets folder, `walletEncryption`
         setting, `agent:wallet` / `agent:wallet:encrypt`, leak test). Owner migration: passphrase file + encrypt.
@@ -194,8 +194,13 @@ Plan (owner-approved 2026-11-20; one commit per step):
   - [x] 3. `send_usdc` tool (ERC-20 transfer on the active network; all limits checked in code before signing).
   - [x] 4. Policy rules for `send_usdc` and the minimum reserve enforced (approved under rule 4, tightening only).
   - [x] 5. `pnpm agent:wallet` with ETH/USDC balances, limits and recent transfers.
-  - [ ] 6. Owner: faucet funds (Base Sepolia ETH for gas, small test USDC) to the agent address.
-  - [ ] 7. Limits test: unit tests, a no-model one-off through the policy engine, one real wake.
+  - [x] 6. Owner: faucet funds (Base Sepolia ETH for gas, small test USDC) to the agent address (2.00 USDC,
+        0.0005 ETH; 2026-11-22).
+  - [x] 7. Limits test: unit tests (`usdc-transfer`, `send-usdc-policy`, `payment-test`); the owner one-off
+        `pnpm agent:payment-test` passed 9/9 on Base Sepolia (one real 0.10 USDC transfer, tx `0x56234ca9…`); one
+        real agent wake with `automaton.paytest.json` sent 0.05 USDC to the creator (tx `0xb913abad…`), 4 turns,
+        2.05¢, no denials. Wallet now 1.85 USDC.
+  - Not done here, on purpose: a creator `fund` command (the owner funds by sending USDC or `ledger grant`).
 - Wallet generated with viem, stored encrypted, never in logs or model context
 - Base Sepolia only; fund with faucet test USDC
 - Balance visible to the agent each turn
@@ -207,6 +212,8 @@ Plan (owner-approved 2026-11-20; one commit per step):
 - [x] Creator fund command for the own balance: `automaton-cli ledger grant <amount>`
 - Creator `fund` command
 Done when: testnet payment works within limits; over-limit payments are blocked by code; key never leaks.
+  Status: met (see CHANGELOG 2026-11-22): payments within limits by the owner's test and by the agent; over-limit
+  payments refused at the tool and the policy engine; wallet encrypted at rest, leak test, passphrase not in the sandbox.
 
 ## Phase 4 — Survival system (1 week)
 - Credit monitor converts balance into runway estimate

@@ -1046,3 +1046,27 @@
   (normal template offers no payment tool; a bad template value refused; paytest template noted, preflight passes,
   `send_usdc` offered).
   Baselines: Linux 2097 passed; Windows 2065 passed, 22 known failures, 10 skipped; `agent:verify` 161.
+- 2026-11-22: **Real agent payment wake passed** (Phase 3 step 7, part 3; build `bf35637`, 19:40–20:40 UTC,
+  `AUTOMATON_CONFIG_TEMPLATE=./automaton.paytest.json`, `agent:run --detach --wake-now`, `agent:watch --hours 1
+  --max-run-cents 4`). Watchdog DONE after 1 h, graceful `agent:down`, log saved; template switched back by the owner.
+  Read-only review of the saved log and a copy of state.db:
+  - One wake, 4 turns, exactly the genesis steps: `recall_facts` (no `payment_test_done`), `send_usdc` 5 cents to the
+    creator ("Sent 0.05 USDC … tx 0xb913abad…, block 62272898"), `remember_fact self/payment_test_done`, `sleep 3600`.
+    Wake ended "agent chose sleep"; no warning, no forced sleep, no retry.
+  - Policy: the send was allowed; no denial during the wake. The 6 `send_usdc` denials in `policy_decisions` are the
+    owner's payment test (19:01), one per refused case.
+  - `onchain_transactions`: two rows, both `usdc_transfer` confirmed on eip155:84532 (payment test 0.10 USDC, 62,159
+    gas; agent 0.05 USDC, 45,047 gas). `spend_tracking`: the same two (10 + 5 cents, UTC hour 19). Wallet 1.85 USDC.
+  - Ledger: only inference (4 entries, 2.049¢; ~0.51¢ per call at 12.2–12.9k input tokens; 11 tools offered).
+    No ledger entry for the transfers (by design: the wallet balance is read on chain).
+  - Tier "high" the whole run (balance $6.15 = 1.90 USDC + $4.25 ledger), as expected; routing still used
+    gpt-4.1-mini. The watchdog stops only on low_compute/critical/dead, so "high" did not stop it (CLAUDE.md said
+    "tier not normal"; corrected).
+  - Heartbeat: no `check_social_inbox` runs (H2 works). `heartbeatHistoryDays` 7: nothing old enough to prune yet
+    (oldest row 2026-11-16).
+  - Memory (H4): runtime 173 MiB peak at the wake, then 114 → 119 MiB over the hour; sandbox 16–21 MiB.
+  - Facts: 11 (+ `payment_test_done`); the 7 stale run 1–5 facts are still there (owner may delete with
+    `agent:facts:delete`). Soul unchanged (v91). DB 2.68 MB.
+  Phase 3 "done when" met: testnet payment within limits (owner one-off and the agent itself), over-limit payments
+  blocked in code at two layers (payment test, 9/9), key never leaks (encrypted at rest, leak test, passphrase
+  absent from the sandbox).

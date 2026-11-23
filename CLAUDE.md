@@ -69,7 +69,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
 - **Payment limits:** `treasuryPolicy` in the template: per transfer 25¢, hour 50¢, day $1, reserve $1 left in the
   wallet, 1 transfer/turn, recipients `transferAllowlist: ["creator"]` (code default `[]` = no payments). Startup refuses
   invalid limits or recipients (`src/agent/payment-limits.ts`); preflight prints them. The `send_usdc` tool
-  (`src/agent/usdc-transfer.ts`) checks all of them in code before signing; it is not in the template allowlist yet.
+  (`src/agent/usdc-transfer.ts`) checks all of them in code before signing; it is not in the normal template's
+  allowlist (only in `automaton.paytest.json`). Phase 3 closed 2026-11-22 (owner test 9/9, real agent payment).
   The policy engine checks them again (`TRANSFER_TOOLS`, `financial.transfer_recipient_allowlist`, and
   `financial.minimum_reserve` against the cached wallet balance, fail closed; owner-approved under rule 4).
 - **Creator address:** set `$env:AUTOMATON_CREATOR_ADDRESS` (the owner's own wallet). It overrides
@@ -144,7 +145,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:watch [--hours H]`: watchdog for unattended runs. Checks every 5 min (Docker + `--activity
     --json --since <start>`); on a stop rule it runs `agent:down` and exits 2; after `--hours` it stops the
     agent and exits 0. Default rules: no/several/old-image runtime; spend > 5¢ since start or > 3¢ in an hour;
-    > 6 turns in a wake or > 20 in an hour; a forced wake end; 3 policy denials of one tool; tier not normal;
+    > 6 turns in a wake or > 20 in an hour; a forced wake end; 3 policy denials of one tool; tier low_compute,
+    critical or dead ("high" does not stop it);
     any non-inference ledger entry; more than 4 offline wakes in a row (one offline wake is not a stop). Each check line
     also records runtime/sandbox memory and CPU (`docker stats`), the last line the peaks (never a stop rule). Log: `~/.automaton-logs/watch-*.log`. Ctrl+C stops only the watchdog.
   - One-off commands run through `docker/run-oneoff.mjs`: `init`, `ledger`, `settings` use `--no-deps`
