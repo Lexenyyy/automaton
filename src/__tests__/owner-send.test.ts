@@ -206,8 +206,9 @@ describe("the tier-walk template", () => {
       // drain 4: "all" empties the wallet; the total is the ledger: below $0 (dead at once) or $0 (dead after 5 min)
       const total = 0 - inference;
       expect(["dead", "critical"]).toContain(getSurvivalTier(total, WALK_SURVIVAL));
-      // revive: 0.20 USDC from MetaMask → above $0 → low_compute
-      expect(getSurvivalTier(20 - inference, WALK_SURVIVAL)).toBe("low_compute");
+      // revive: 0.25 USDC from MetaMask (owner, 2026-11-23) → above $0 → low_compute, clear of both boundaries
+      expect(getSurvivalTier(25 - inference, WALK_SURVIVAL)).toBe("low_compute");
+      expect(25 - inference - WALK_SURVIVAL.lowComputeCents).toBeGreaterThanOrEqual(6);
     }
   });
 });

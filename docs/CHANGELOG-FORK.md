@@ -1245,7 +1245,7 @@
     transfer 25¢, hour 60¢, day $1, reserve $0, creator only. Model changes off.
   - Drain plan (funded 0.50 USDC, ledger $0; checked by a test for 0–4¢ of inference): start ~$0.50 high → send 15¢
     → ~$0.35 normal → send 13¢ → ~$0.22 low_compute → send 14¢ → ~$0.08 critical → send all → ≤ $0 dead (at once
-    below $0, after 5 min at $0) → owner sends 0.20 USDC → ~$0.20 low_compute (revived).
+    below $0, after 5 min at $0) → owner sends 0.25 USDC (owner change from 0.20) → ~$0.21–0.25 low_compute (revived).
   Tests: `owner-send` (13: arguments and every recipient refusal; dry run prints and records nothing; a dry-run
   refusal; unknown project; confirmed send recorded like an agent payment with no ledger entry; INFO lines for owner
   and agent; `all`; the main template's $1 reserve refuses; empty recipient list; hourly window across owner sends;

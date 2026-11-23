@@ -275,7 +275,7 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         one wake per tier, no model call in dead, refund and revive).
         - [x] Tooling: owner `--wallet send <cents|all> [--confirm]` (creator only, same checks, dry run by default,
               recorded like an agent payment, no ledger entry); `automaton.tierwalk.json`; template/project pairing.
-        - [ ] The walk (owner): fund 0.50 USDC + ETH; drains 15¢ → 13¢ → 14¢ → all; revive with 0.20 USDC.
+        - [ ] The walk (owner): fund 0.50 USDC + ETH; drains 15¢ → 13¢ → 14¢ → all; revive with 0.25 USDC.
   - [ ] 8. Docs; "done when" checked.
 
 ## Phase 5a — Service base: general and reusable (1–2 weeks)
