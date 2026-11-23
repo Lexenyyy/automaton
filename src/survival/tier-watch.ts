@@ -12,7 +12,8 @@
  *     dead-state.ts, and the agent loop refuses to run).
  *   - Leaving dead: only here, only when the balance is ABOVE $0 again. The
  *     state becomes "sleeping" and the run loop resumes.
- *   - An unavailable balance read changes nothing (no timer, no tier change).
+ *   - Only a live balance read counts: an unavailable or cached (failed) read
+ *     changes nothing (no timer, no dead in/out, no tier change).
  *   - Every tier change (the effective tier: "dead" while the state is dead,
  *     otherwise the balance tier) is appended to kv survival_tier_changes
  *     (last 100) and logged as INFO with old tier, new tier and balance.
@@ -99,8 +100,11 @@ export function evaluateSurvival(
   const log = opts.log ?? ((m: string) => logger.info(m));
   const stateBefore = getAgentStateRaw(db);
 
-  // An unavailable balance says nothing about funds: no timer, no change.
-  if (input.balanceStatus === "unavailable") {
+  // Only a live read decides anything. "unavailable" (no read, no cached value)
+  // and "cached" (the read failed; the last good wallet value plus the current
+  // ledger) never start or advance the dead timer, enter or leave dead, or
+  // record a tier change.
+  if (input.balanceStatus !== "live") {
     return { tier: stateBefore === "dead" ? "dead" : ((getKv(db, TIER_KEY) as SurvivalTier | undefined) ?? input.balanceTier) };
   }
 

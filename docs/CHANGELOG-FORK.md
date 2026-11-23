@@ -1135,3 +1135,16 @@
   `survival-tier-audit`: the `TODAY:` tests flipped to `NOW (step 3)`. `heartbeat` (ping and check_credits no
   longer wake), `survival-settings` (+1 gap range; grace via the watch), `inference-router` (low_compute → nano).
   Baselines: Linux 2136 passed; Windows 2104 passed, 22 known failures, 10 skipped; `agent:verify` 161.
+- 2026-11-23: **Only a live balance read decides survival** (Phase 4, owner check after step 3; owner kept revival
+  without a wake gap). A failed wallet read was already never counted as $0 (the balance source falls back to the
+  last good value, "cached", or reports "unavailable"), and the survival watch ignored "unavailable". It did act on
+  "cached": the last good wallet value plus the current ledger, so a ledger change during an RPC outage could start
+  the dead timer or record a tier change from a failed read. Now the survival watch (`evaluateSurvival`) acts only on
+  status "live" (no timer, no dead in/out, no tier change otherwise), and the agent loop ends a wake as dead only on a
+  live read.
+  Tests: `survival-rpc-outage` (5, real scheduler and balance source, wallet-only balance with a $0 ledger, so a
+  failed read counted as $0 would be dead after the 60-minute grace): 90 minutes of failing reads after a good read;
+  a ledger change during the outage (fails without the fix: `normal → low_compute` recorded); a cold start with the
+  RPC down; recovery; the agent loop on an unreadable balance.
+  Baselines: Linux 2141 passed; Windows 2109 passed, 22 known failures, 10 skipped; `agent:verify` 161 (not rerun: no
+  sandbox/Docker change).

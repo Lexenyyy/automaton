@@ -33,10 +33,10 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 3
-  (tier behaviour): 2136 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after Phase 4 step 3 fix
+  (live reads only): 2141 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2104 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2109 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -105,7 +105,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   "tierWakeMinGapMinutes" }` (`src/survival/settings.ts`; defaults 500 / 50 / 10 cents, 60 min, 60 min; the main
   template sets none). Startup refuses thresholds not strictly in order, a grace outside 1..10080 min and a wake gap
   outside 1..1440 min; preflight prints them. A survival watch on every heartbeat tick (`src/survival/tier-watch.ts`)
-  enters dead (balance < $0, or <= $0 for the grace), leaves it only when the balance is above $0, records every tier
+  acts only on live balance reads (a failed/cached read changes nothing), enters dead (balance < $0, or <= $0 for
+  the grace), leaves it only when the balance is above $0, records every tier
   change (kv `survival_tier_changes`, INFO log) and wakes the agent once per change (never into dead, at most once per
   gap). Dead = heartbeat only: the run loop waits (`waitWhileDead`), no agent loop, no model call. low_compute agent
   turns use gpt-4.1-nano.

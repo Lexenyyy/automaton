@@ -597,8 +597,9 @@ export async function runAgentLoop(
 
         // Fork (Phase 4 step 3, F1): a balance below $0 ends the wake as dead,
         // before any model call. The heartbeat records the tier change and is
-        // the only way out (balance above $0 again).
-        if (effectiveTier === "dead") {
+        // the only way out (balance above $0 again). Only a live read decides
+        // (a cached figure after a failed read never makes the agent dead).
+        if (effectiveTier === "dead" && financial.balanceStatus === "live") {
           log(config, `[DEAD] Balance ${formatBalance(financial)} is below $0. Ending the wake without a model call.`);
           db.setAgentState("dead");
           onStateChange?.("dead");
