@@ -14,7 +14,7 @@ import { getSurvivalTier } from "../conway/credits.js";
 import { getActivityReport, formatActivityReport } from "../state/activity-report.js";
 import { walletReport } from "../agent/wallet-report.js";
 import { insertLedgerEntry } from "../state/ledger.js";
-import { NETWORKS } from "../identity/network.js";
+import { NETWORKS, activateNetwork, resetNetworkForTests } from "../identity/network.js";
 import { createTestDb } from "./mocks.js";
 import { DEFAULT_TREASURY_POLICY, type AutomatonDatabase } from "../types.js";
 
@@ -64,6 +64,30 @@ describe("entering dead: one WARN, not one per check", () => {
     tick(-1, 2, "unavailable");
     expect(warns).toHaveLength(1);
     expect(readDeadRecord(db.raw)?.reason).toBe("balance below $0 (seen by the agent loop)");
+  });
+});
+
+describe("the network in the notice comes from the active network (config), not a fixed string", () => {
+  afterEach(() => resetNetworkForTests());
+  const tickNoOverride = (cents: number, min: number) =>
+    evaluateSurvival(db.raw, { balanceCents: cents, balanceStatus: "live", balanceTier: getSurvivalTier(cents, S) }, S, {
+      now: T0 + min * 60_000, log: () => {}, warn: (m) => warns.push(m),
+    });
+
+  it("default (config network unset or testnet): Base Sepolia (testnet)", () => {
+    activateNetwork({ network: "testnet", walletAddress: WALLET }, {});
+    tickNoOverride(100, 0);
+    tickNoOverride(-1, 1);
+    expect(readDeadRecord(db.raw)?.network).toBe("Base Sepolia (testnet)");
+    expect(warns[0]).toContain(`Fund ${WALLET} on Base Sepolia (testnet)`);
+  });
+
+  it("config network mainnet with the owner's approval: Base mainnet", () => {
+    activateNetwork({ network: "mainnet", walletAddress: WALLET }, { AUTOMATON_MAINNET_APPROVED: WALLET });
+    tickNoOverride(100, 0);
+    tickNoOverride(-1, 1);
+    expect(readDeadRecord(db.raw)?.network).toBe("Base mainnet");
+    expect(buildDeadNotice(db.raw, S, { balanceCents: -1 })!.text).toContain(`Fund ${WALLET} on Base mainnet:`);
   });
 });
 

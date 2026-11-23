@@ -1199,3 +1199,9 @@
   "revived at", dying again warns again). `agent:verify` +2 (the real watchdog on a stand-in runtime marked dead
   reports the notice and stops with exit 2; `agent:status` shows it).
   Baselines: Linux 2172 passed; Windows 2140 passed, 22 known failures, 10 skipped; `agent:verify` 164.
+- 2026-11-23: **Confirmed: the network in the dead notice comes from the config** (owner check). The survival watch
+  takes the label from `getActiveNetwork()`, which the runtime activates at startup from `config.network` (mainnet
+  also needs `AUTOMATON_MAINNET_APPROVED`); the fixed "Base Sepolia (testnet)" strings were test fixtures only. New
+  tests without a network override: testnet → "Base Sepolia (testnet)", mainnet with approval → "Base mainnet" in
+  the record and the notice text. No source change.
+  Baselines: Linux 2174 passed; Windows 2142 passed, 22 known failures, 10 skipped; `agent:verify` 164 (not rerun).
