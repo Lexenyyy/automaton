@@ -33,6 +33,7 @@ import { checkHeartbeatHistoryDays } from "../heartbeat/history-retention.js";
 import { checkPaymentLimits, describePaymentLimits, looserThanDefaults } from "../agent/payment-limits.js";
 import { TRANSFER_TOOLS } from "../agent/policy-rules/financial.js";
 import { checkSurvivalSettings, describeSurvivalSettings, resolveSurvivalSettings } from "../survival/settings.js";
+import { checkWalletReadCacheSeconds, resolveWalletReadCacheSeconds } from "../survival/balance.js";
 import { checkSoulDefaults } from "../soul/reset.js";
 import { filterToolsForOrchestration, resolveOrchestrationMode } from "../agent/orchestration-mode.js";
 import { applyAgentSettings } from "../agent/settings.js";
@@ -359,6 +360,9 @@ export async function prepareRuntime(
   allowProblems.push(...checkPaymentLimits(treasuryPolicy));
   // Fork (Phase 4 step 2): refuse survival thresholds out of order or a dead grace below 1 minute.
   allowProblems.push(...checkSurvivalSettings(config));
+  // Fork (Phase 4): refuse an invalid wallet read cache.
+  const walletCacheProblem = checkWalletReadCacheSeconds(config);
+  if (walletCacheProblem) allowProblems.push(walletCacheProblem);
   allowProblems.push(...checkSoulDefaults(config));
   if (allowProblems.length) {
     if (lease) releaseRuntimeLease(db.raw, lease.instanceId);
@@ -422,6 +426,8 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
     const tp = rt.config.treasuryPolicy ?? DEFAULT_TREASURY_POLICY;
     lines.push(`INFO  payments: ${describePaymentLimits(tp, rt.config.creatorAddress)}`);
     lines.push(`INFO  survival tiers: ${describeSurvivalSettings(resolveSurvivalSettings(rt.config))}`);
+    const cacheS = resolveWalletReadCacheSeconds(rt.config);
+    lines.push(`INFO  wallet balance: read on chain ${cacheS === 0 ? "every time" : `at most every ${cacheS} s (fresh after send_usdc)`}`);
     const looser = looserThanDefaults(tp);
     if (looser.length) lines.push(`WARN  payment limits looser than the code defaults: ${looser.join("; ")}`);
     line(true, `Conway: ${rt.conwayMode}${rt.conwayMode === "off" ? " (own providers only; no Conway requests)" : ""}`);

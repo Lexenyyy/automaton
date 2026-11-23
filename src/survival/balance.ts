@@ -43,6 +43,8 @@ export interface BalanceSnapshot {
   checkedAt: string;
   /** Fork (run 5): when status is "cached", the time of the last good wallet read. */
   cachedAt?: string;
+  /** Fork (Phase 4): when status is "live", the time of the wallet read used (reused for walletReadCacheSeconds). */
+  walletReadAt?: string;
 }
 
 export interface BalanceSource {
@@ -81,6 +83,37 @@ const defaultWalletReader: WalletReader = async (address, chainType) => {
   return result.balance;
 };
 
+/**
+ * Fork (Phase 4): how long a successful wallet read is reused before the next
+ * on-chain read (config.walletReadCacheSeconds, default 300, 0 = read every
+ * time). The heartbeat reads the balance every 60 s tick and the agent loop
+ * once per turn; without this, about one RPC call a minute. send_usdc writes
+ * a fresh read right after a payment (usdc-transfer.ts).
+ */
+export const DEFAULT_WALLET_READ_CACHE_SECONDS = 300;
+export const MAX_WALLET_READ_CACHE_SECONDS = 3_600;
+
+/** A problem with config.walletReadCacheSeconds, or null when valid or unset. */
+export function checkWalletReadCacheSeconds(config: Pick<AutomatonConfig, "walletReadCacheSeconds">): string | null {
+  const v = config.walletReadCacheSeconds;
+  if (v === undefined) return null;
+  if (!Number.isInteger(v) || v < 0 || v > MAX_WALLET_READ_CACHE_SECONDS) {
+    return `walletReadCacheSeconds must be a whole number from 0 (always read) to ${MAX_WALLET_READ_CACHE_SECONDS} (got ${JSON.stringify(v)})`;
+  }
+  return null;
+}
+
+export function resolveWalletReadCacheSeconds(config: Pick<AutomatonConfig, "walletReadCacheSeconds"> | null | undefined): number {
+  return config && checkWalletReadCacheSeconds(config) === null && config.walletReadCacheSeconds !== undefined
+    ? config.walletReadCacheSeconds
+    : DEFAULT_WALLET_READ_CACHE_SECONDS;
+}
+
+/** The kv key of the last good wallet read (per network and wallet). Shared with send_usdc and the reserve rule. */
+export function walletCacheKey(networkKey: string, address: string): string {
+  return `wallet_usdc_cache:${networkKey}:${address.toLowerCase()}`;
+}
+
 export class OwnBalanceSource implements BalanceSource {
   readonly kind = "own" as const;
 
@@ -89,6 +122,11 @@ export class OwnBalanceSource implements BalanceSource {
     private readonly address: string,
     private readonly chainType?: string,
     private readonly readWallet: WalletReader = defaultWalletReader,
+    /**
+     * Reuse a successful read younger than this (ms); 0 = always read on chain.
+     * createBalanceSource passes config.walletReadCacheSeconds (default 300 s).
+     */
+    private readonly maxAgeMs: number = 0,
   ) {}
 
   async read(): Promise<BalanceSnapshot> {
@@ -98,14 +136,21 @@ export class OwnBalanceSource implements BalanceSource {
     // Mainnet counts only real money; testnet also counts test money (e.g. Stripe test mode).
     const ledgerCents = getLedgerBalanceCents(this.db, { liveOnly: network.mode === "mainnet" });
     // Cache per network AND wallet: a value is never reused for another chain or address.
-    const cacheKey = `wallet_usdc_cache:${networkKey}:${this.address.toLowerCase()}`;
+    const cacheKey = walletCacheKey(networkKey, this.address);
 
     let usdc: number | null = null;
     let status: BalanceStatus = "live";
     let cachedAt: string | undefined;
-    try {
+    let walletReadAt: string | undefined;
+    // Fork (Phase 4): reuse a recent successful read (status stays "live": it was a good read).
+    const recent = this.maxAgeMs > 0 ? readCache(this.db, cacheKey) : null;
+    if (recent && Date.now() - Date.parse(recent.at) < this.maxAgeMs && Date.parse(recent.at) <= Date.now()) {
+      usdc = recent.usdc;
+      walletReadAt = recent.at;
+    } else try {
       usdc = await this.readWallet(this.address, this.chainType);
-      setKv(this.db, cacheKey, JSON.stringify({ usdc, at: new Date().toISOString() }));
+      walletReadAt = new Date().toISOString();
+      setKv(this.db, cacheKey, JSON.stringify({ usdc, at: walletReadAt }));
     } catch (err: any) {
       const cached = getKv(this.db, cacheKey);
       if (cached) {
@@ -136,9 +181,21 @@ export class OwnBalanceSource implements BalanceSource {
       network: networkLabel,
       checkedAt: new Date().toISOString(),
       ...(cachedAt ? { cachedAt } : {}),
+      ...(walletReadAt ? { walletReadAt } : {}),
     };
     writeLegacyBalanceCache(this.db, snapshot);
     return snapshot;
+  }
+}
+
+function readCache(db: Database, key: string): { usdc: number; at: string } | null {
+  try {
+    const v = JSON.parse(getKv(db, key) ?? "null");
+    return v && Number.isFinite(Number(v.usdc)) && typeof v.at === "string" && Number.isFinite(Date.parse(v.at))
+      ? { usdc: Number(v.usdc), at: v.at }
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -196,7 +253,7 @@ export class ConwayBalanceSource implements BalanceSource {
 }
 
 export function createBalanceSource(params: {
-  config: Pick<AutomatonConfig, "balanceSource">;
+  config: Pick<AutomatonConfig, "balanceSource" | "walletReadCacheSeconds">;
   db: Database;
   conway: ConwayClient;
   address: string;
@@ -204,7 +261,8 @@ export function createBalanceSource(params: {
 }): BalanceSource {
   return params.config.balanceSource === "conway"
     ? new ConwayBalanceSource(params.db, params.conway, params.address, params.chainType)
-    : new OwnBalanceSource(params.db, params.address, params.chainType);
+    : new OwnBalanceSource(params.db, params.address, params.chainType, defaultWalletReader,
+      resolveWalletReadCacheSeconds(params.config) * 1000);
 }
 
 export function toFinancialState(s: BalanceSnapshot): FinancialState {

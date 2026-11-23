@@ -29,6 +29,7 @@ import { usdcAddressFor } from "../conway/x402.js";
 import { SpendTracker } from "./spend-tracker.js";
 import { resolveTransferAllowlist } from "./payment-limits.js";
 import { insertSpendRecord, onchainTxInsert } from "../state/database.js";
+import { walletCacheKey } from "../survival/balance.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -198,6 +199,8 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
     const setStatus = (s: "confirmed" | "failed") =>
       p.db.prepare("UPDATE onchain_transactions SET status = ?, gas_used = ? WHERE tx_hash = ?")
         .run(s, receipt.gasUsed !== undefined ? Number(receipt.gasUsed) : null, hash);
+    // Fork (Phase 4): refresh the cached wallet balance right after the payment.
+    await refreshWalletCache(p, receipt.status === "timeout");
     if (receipt.status === "success") {
       setStatus("confirmed");
       return { ok: true, status: "confirmed", txHash: hash, message: `Sent ${usd(amount)} to ${to} on ${p.network.label} (tx ${hash}, block ${receipt.blockNumber ?? "?"}).` };
@@ -210,6 +213,30 @@ export async function sendUsdc(p: SendUsdcParams): Promise<SendUsdcResult> {
     return { ok: true, status: "pending", txHash: hash, message: `Payment of ${usd(amount)} to ${to} was sent (tx ${hash}) but is not confirmed yet; it counts against the limits. Do not send it again.` };
   } finally {
     inFlight = false;
+  }
+}
+
+/**
+ * Fork (Phase 4): after a broadcast, the cached wallet balance
+ * (walletReadCacheSeconds; also read by the reserve rule) must not keep the
+ * pre-payment figure. Confirmed or reverted: write a fresh on-chain read.
+ * Pending, or the read fails: delete the cache entry, so the next balance read
+ * goes on chain and the reserve rule fails closed until then.
+ */
+async function refreshWalletCache(p: SendUsdcParams, pending: boolean): Promise<void> {
+  const key = walletCacheKey(p.network.caip2, p.from);
+  const drop = () => p.db.prepare("DELETE FROM kv WHERE key = ?").run(key);
+  if (pending) {
+    drop();
+    return;
+  }
+  try {
+    const units = await p.chain.usdcBalance(p.from);
+    p.db.prepare(
+      "INSERT INTO kv (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    ).run(key, JSON.stringify({ usdc: Number(units) / 1_000_000, at: new Date().toISOString() }));
+  } catch {
+    drop();
   }
 }
 

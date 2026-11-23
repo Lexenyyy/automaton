@@ -1148,3 +1148,17 @@
   RPC down; recovery; the agent loop on an unreadable balance.
   Baselines: Linux 2141 passed; Windows 2109 passed, 22 known failures, 10 skipped; `agent:verify` 161 (not rerun: no
   sandbox/Docker change).
+- 2026-11-23: **Wallet balance read cache** (Phase 4, owner check after step 3). The heartbeat reads the survival
+  balance on every 60 s tick and the agent loop once per turn; each read was an on-chain RPC call (about 60+ an hour;
+  true since change 3, not new in step 3).
+  - Setting `walletReadCacheSeconds` (`src/survival/balance.ts`; default 300, 0 = read on chain every time, max
+    3600; startup refuses other values; preflight prints it). `createBalanceSource` passes it to `OwnBalanceSource`,
+    which reuses a successful read younger than that (status stays "live"; the snapshot carries `walletReadAt`). A
+    failed read after the cache expired is still "cached"/"unavailable" (never live, never $0).
+  - `send_usdc` refreshes the cache right after a payment: confirmed or reverted → a fresh on-chain read is written;
+    pending, or that read fails → the entry is removed (the next read goes on chain, and the reserve rule fails
+    closed until then). `walletCacheKey()` is shared by the balance source, `send_usdc` and the reserve rule.
+  - Effect: 12 on-chain balance reads an hour instead of 60 from the heartbeat (default).
+  Tests: `wallet-read-cache` (8: 12 vs 60 reads in an hour of real ticks; reuse is live; expired + failing is
+  cached; setting and validation; refresh after confirmed, reverted, pending and a failed read).
+  Baselines: Linux 2149 passed; Windows 2117 passed, 22 known failures, 10 skipped; `agent:verify` 161.

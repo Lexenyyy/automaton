@@ -147,6 +147,11 @@ export interface AutomatonConfig {
    * src/survival/settings.ts). Defaults = the old hardcoded values:
    * highCents 500, normalCents 50, lowComputeCents 10, deadGraceMinutes 60.
    */
+  /**
+   * Seconds a successful on-chain wallet balance read is reused (fork, Phase 4;
+   * src/survival/balance.ts). Default 300, 0 = read on chain every time, max 3600.
+   */
+  walletReadCacheSeconds?: number;
   survival?: {
     highCents?: number;
     normalCents?: number;
