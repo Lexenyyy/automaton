@@ -215,11 +215,55 @@ Done when: testnet payment works within limits; over-limit payments are blocked 
   Status: met (see CHANGELOG 2026-11-22): payments within limits by the owner's test and by the agent; over-limit
   payments refused at the tool and the policy engine; wallet encrypted at rest, leak test, passphrase not in the sandbox.
 
-## Phase 4 — Survival system (1 week)
+## Phase 4 — Survival system (1 week) — IN PROGRESS
 - Credit monitor converts balance into runway estimate
 - Tiers: normal → low_compute → critical → dead, each mapped to a model
 - Tier and runway in context every turn; clean shutdown at zero with owner notification
 Done when: draining the testnet balance moves through all tiers correctly.
+
+Plan (owner-approved 2026-11-23; one commit per step, stop for review after step 1). Owner decisions: at dead the
+runtime stays up, heartbeat only (no model calls); the heartbeat wakes the agent only on a tier change; the walk drains
+with a new owner `--wallet send` (creator only, same checks as send_usdc); the throwaway wallet reuses the owner's
+secrets folder. The walk's settings live only in `automaton.tierwalk.json`: funded with 0.50 USDC, reserve $0, scaled
+thresholds, `deadGraceMinutes` ~5, transfer limits that let 0.50 drain. The main template, the main agent's volumes,
+wallet and lease are not touched (the walk is project `automaton-tierwalk`: own volumes, own state.db, own lease).
+  - [x] **1. Tier audit with characterization tests** (`survival-tier-audit`, no behaviour change). Today:
+
+        | tier (balance = ledger + wallet USDC) | loop state / mode | agent_turn model | heartbeat wakes the agent |
+        |---|---|---|---|
+        | high > $5.00 | running | gpt-4.1-mini | no |
+        | normal > $0.50 | running | gpt-4.1-mini | no |
+        | low_compute > $0.10 | low_compute, low-compute mode | gpt-4.1-mini (same as normal) | no |
+        | critical >= $0 | critical, low-compute mode | gpt-4.1-nano | every ping (15 min): "Distress" |
+        | dead < $0 (or 1 h at <= $0, heartbeat) | see below | none (router answers without a call) | every ping |
+
+        Findings (the fix list for step 3; each pinned by a `TODAY:` test that step flips):
+        - F1 `dead` is not terminal: the heartbeat sets it after 1 h at <= $0, but the next wake's loop sets
+          waking → running/critical and calls the model (routing by balance, i.e. critical → nano). The run loop in
+          `src/index.ts` re-enters the agent loop every 5 min while `dead` (code reading).
+        - F2 Distress wakes: `heartbeat_ping` asks for a wake on every ping (15 min) while critical or dead, and a
+          wake event ends any sleep at the next 30 s check, below `sleepConfig.minSeconds`. Bounded today only by
+          `maxWakesPerDay` (48) and the money caps.
+        - F3 Leaving `dead` on funding is accidental: `check_credits` clears the timer but not the state; only the
+          loop's overwrite (F1) brings the agent back.
+        - F4 Thresholds and the 1 h dead grace are hardcoded (`SURVIVAL_THRESHOLDS`, `DEAD_GRACE_PERIOD_MS`).
+        - F5 low_compute routes `agent_turn` to the same model as normal (only lower token/cost ceilings);
+          `modelStrategy.lowComputeModel` (nano) is not used by the router for agent turns.
+        - F6 Unused upstream helpers: `survival/low-compute.ts` (would pick gpt-5-mini for low tiers),
+          `survival/funding.ts`, `survival/monitor.ts`. Owner notices exist only as kv (`last_distress`).
+        - No runway estimate anywhere.
+  - [ ] 2. Thresholds as settings (`survival`: `highCents`, `normalCents`, `lowComputeCents`, `deadGraceMinutes`);
+        startup refuses unordered values; normal template keeps today's values.
+  - [ ] 3. Tier behaviour fixes: F1 (no model call in dead; stays dead until the balance is above zero, checked
+        without the model), F2 (heartbeat wakes only on a tier change), F3 (funding leaves dead explicitly), tier
+        transitions recorded and logged. F5/F6: proposal to the owner in that step.
+  - [ ] 4. Runway estimate (ledger spend rate → time to the next lower tier and to zero) in the wake status,
+        `agent:status`, preflight.
+  - [ ] 5. Clean stop at zero with an owner notice (banner in `agent:status` / `agent:wallet`, WARN log, watchdog).
+  - [ ] 6. Watchdog `--allow-tiers` (default still stops on low_compute/critical/dead).
+  - [ ] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,
+        one wake per tier, no model call in dead, refund and revive).
+  - [ ] 8. Docs; "done when" checked.
 
 ## Phase 5a — Service base: general and reusable (1–2 weeks)
 - Small web server with a per-request payment endpoint (x402 or USDC invoice), with no job logic in it

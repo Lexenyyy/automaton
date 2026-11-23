@@ -1070,3 +1070,15 @@
   Phase 3 "done when" met: testnet payment within limits (owner one-off and the agent itself), over-limit payments
   blocked in code at two layers (payment test, 9/9), key never leaks (encrypted at rest, leak test, passphrase
   absent from the sandbox).
+- 2026-11-23: **Phase 4 plan approved; step 1: tier audit** (characterization tests only, no behaviour change).
+  Owner decisions: dead = stay up, heartbeat only; heartbeat wakes only on a tier change; the walk drains with an owner
+  `--wallet send` (creator only, same checks); the throwaway wallet reuses the secrets folder; the walk's settings (0.50
+  USDC, reserve $0, scaled thresholds, `deadGraceMinutes` ~5) only in `automaton.tierwalk.json`.
+  `src/__tests__/survival-tier-audit.test.ts` (9) pins today's behaviour: thresholds $5 / $0.50 / $0.10 / >= 0
+  (negative = dead); agent_turn routing high/normal/low_compute → gpt-4.1-mini, critical → gpt-4.1-nano, dead → no
+  model; `heartbeat_ping` asks for a wake on every ping while critical or dead; `check_credits` wakes only on a change
+  into critical and sets dead after 1 h at <= 0, and funding clears the timer but not the state; a wake event ends a
+  sleep at the next 30 s check (below the sleep floor); a wake in state dead overwrites it and calls the model.
+  Findings F1–F6 and the tier table are in ROADMAP Phase 4; the `TODAY:` tests are flipped by the steps that change
+  them. No source change.
+  Baselines: Linux 2106 passed; Windows 2074 passed, 22 known failures, 10 skipped; `agent:verify` 161 (not rerun).
