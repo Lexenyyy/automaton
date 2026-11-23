@@ -710,7 +710,56 @@ db.close();`], { allowFail: false });
   const stDead = status();
   check(W, "agent:status shows the dead notice while dead",
     stDead.stdout.includes("!!! DEAD since 2026-11-23 20:00:00 UTC (verify)"), stDead.stdout.trim().slice(0, 500));
+
+  // --allow-tiers (Phase 4 step 6): only real tier names; skips only the tier stops.
+  for (const bad of [["--allow-tiers", "sleepy"], ["--allow-tiers", "critical,zombie"], ["--allow-tiers"], ["--allow-tiers", "--once"]]) {
+    const wb = watch([...bad, "--once"].filter((v, i, arr) => !(v === "--once" && arr.indexOf("--once") !== i)));
+    check(W, `--allow-tiers refuses ${JSON.stringify(bad.slice(1).join(" ") || "(no value)")} before watching (exit 2)`,
+      wb.status === 2 && wb.stderr.includes("--allow-tiers takes a comma list of tier names") && !wb.stdout.includes("check:"),
+      `exit ${wb.status}: ${wb.stderr.trim()}`);
+  }
+  standInW(`${PROJECT}-w1e`, KEEP);
+  const wAllow = watch(["--once", "--allow-tiers", "low_compute,critical,dead"]);
+  check(W, "--allow-tiers low_compute,critical,dead: banner, dead notice reported, no stop, agent left running",
+    wAllow.status === 0 && wAllow.stdout.includes("!!! --allow-tiers: the watchdog will NOT stop on tier(s): low_compute, critical, dead.") &&
+      wAllow.stdout.includes("!!! Still stops on tier(s): none. All other stop rules stay on: money caps (run 5c, hour 3c)") &&
+      wAllow.stdout.includes("DEAD NOTICE (not stopping: --allow-tiers dead): DEAD since 2026-11-23 20:00:00 UTC (verify)") &&
+      wAllow.stdout.includes("(allowed by --allow-tiers)") && wAllow.stdout.includes("all checks passed") && runtimeIds("running") !== "",
+    (wAllow.stdout + wAllow.stderr).trim().split("\n").filter((l) => /!!!|DEAD|STOP|passed|check:/.test(l)).join(" | ").slice(0, 900));
+  const beforeCost = new Date().toISOString();
+  docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+import { insertLedgerEntry } from "/app/dist/state/ledger.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+insertLedgerEntry(db.raw, { kind: "inference_cost", amountCents: -1, amountMc: -600, livemode: true, source: "verify-allow-tiers" });
+db.close();`], { allowFail: false });
+  const wCap = watch(["--once", "--since", beforeCost, "--allow-tiers", "low_compute,critical,dead", "--max-run-cents", "0.5"]);
+  check(W, "--allow-tiers never turns off the money cap: spend above --max-run-cents still stops the run (exit 2)",
+    wCap.status === 2 && wCap.stdout.includes("STOP: inference spend since start 0.600c > 0.5c") && runtimeIds("running") === "",
+    (wCap.stdout + wCap.stderr).trim().split("\n").filter((l) => /STOP|DEAD/.test(l)).join(" | "));
+  standInW(`${PROJECT}-w1g`, KEEP);
+  standInW(`${PROJECT}-w1h`, KEEP);
+  const wTwo = watch(["--once", "--allow-tiers", "low_compute,critical,dead"]);
+  check(W, "--allow-tiers never turns off the runtime checks: two runtimes still stop the run (exit 2)",
+    wTwo.status === 2 && /STOP: 2 runtimes are running/.test(wTwo.stdout) && runtimeIds("running") === "",
+    (wTwo.stdout + wTwo.stderr).trim().split("\n").filter((l) => /STOP/.test(l)).join(" | "));
   setDead(false);
+  // Default unchanged: a critical tier still stops the run without --allow-tiers.
+  docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+db.setKV("last_tick_tier", "critical");
+db.close();`], { allowFail: false });
+  standInW(`${PROJECT}-w1f`, KEEP);
+  const wCrit = watch(["--once"]);
+  check(W, "default (no --allow-tiers): tier critical stops the run (exit 2)",
+    wCrit.status === 2 && wCrit.stdout.includes("STOP: survival tier critical") && runtimeIds("running") === "",
+    (wCrit.stdout + wCrit.stderr).trim().split("\n").filter((l) => /STOP/.test(l)).join(" | "));
+  docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+db.deleteKV("last_tick_tier");
+db.close();`], { allowFail: false });
   standInW(`${PROJECT}-w1b`, KEEP);
   const beforeGrant = new Date().toISOString();
   oneoff(["--", "--ledger", "grant", "0.01"]);

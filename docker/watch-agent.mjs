@@ -5,7 +5,7 @@
  *   node docker/watch-agent.mjs [--project <name>] [--hours <h>] [--interval <s>]
  *        [--max-run-cents <c>] [--max-hour-cents <c>] [--max-wake-turns <n>]
  *        [--max-hour-turns <n>] [--max-denials <n>] [--max-offline-wakes <n>]
- *        [--since <ISO time>] [--once]
+ *        [--since <ISO time>] [--once] [--allow-tiers low_compute,critical,dead]
  *
  * Every --interval seconds (default 300) it checks Docker (agent:status logic)
  * and the activity report from state.db (`runtime --activity --json --since
@@ -26,7 +26,8 @@
  *   - one tool denied by policy --max-denials times (default 3)
  *   - more than --max-offline-wakes wakes in a row offline (default 4, about
  *     4 h with the 30/60/120-min backoff); a single offline wake is not a stop
- *   - survival tier low_compute, critical or dead
+ *   - survival tier low_compute, critical or dead (or agent state dead, after printing
+ *     its owner notice); --allow-tiers <list> skips only these tier stops (tier walk)
  *   - any ledger entry other than inference cost (grants, transfers, revenue)
  *   - the activity report unreadable 3 checks in a row
  * Each check line also shows memory and CPU of the runtime and sandbox
@@ -75,6 +76,30 @@ const limits = {
   maxOfflineWakes: num("--max-offline-wakes", 4, 1),
 };
 const once = args.includes("--once");
+
+// --allow-tiers (Phase 4 step 6, for the tier walk): a comma list of tier names
+// the watchdog does NOT stop on. Only real tier names; anything else (or no
+// value) is refused before watching. It changes nothing else: the money caps,
+// turn and denial limits, forced wake ends, offline wakes, non-inference ledger
+// entries and the runtime count / old-image (build) checks all stay on.
+const TIER_NAMES = ["high", "normal", "low_compute", "critical", "dead"];
+const STOP_TIERS = ["low_compute", "critical", "dead"]; // the default stop rule
+const allowTiers = new Set();
+if (args.includes("--allow-tiers")) {
+  const raw = opt("--allow-tiers");
+  const list = raw === undefined || raw.startsWith("--") ? [] : raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const bad = list.filter((t) => !TIER_NAMES.includes(t));
+  if (list.length === 0 || bad.length > 0) {
+    console.error(
+      `${WHO}: --allow-tiers takes a comma list of tier names (${TIER_NAMES.join(", ")})` +
+        (bad.length ? `; not a tier: ${bad.join(", ")}` : `; got ${JSON.stringify(raw ?? "")}`),
+    );
+    process.exit(2);
+  }
+  for (const t of list) allowTiers.add(t);
+}
+const stopTiers = STOP_TIERS.filter((t) => !allowTiers.has(t));
+let lastDeadNoticeShown = null;
 
 // --since: count from an earlier time, e.g. when restarting the watchdog for a
 // run already in progress. Default: now. --hours always counts from now.
@@ -177,7 +202,8 @@ function check() {
   })();
 
   out(
-    `check: ${runtimes[0].name} build ${runtimes[0].commit} | state ${a.agentState}, tier ${a.tier ?? "?"} | ` +
+    `check: ${runtimes[0].name} build ${runtimes[0].commit} | state ${a.agentState}, tier ${a.tier ?? "?"}` +
+      `${allowTiers.has(a.tier) || (a.agentState === "dead" && allowTiers.has("dead")) ? " (allowed by --allow-tiers)" : ""} | ` +
       `since start: ${s.turns} turns, ${cents(s.spendMc)}c | last hour: ${hourTurns} turns, ${cents(hourSpendMc)}c | ` +
       `this wake: ${a.turnsThisWake} turns | last wake end: ${wakeEnd?.reason ?? "-"}` +
       (a.offlineStreak > 0 ? ` | OFFLINE ${a.offlineStreak} wake(s) in a row` : "") +
@@ -199,10 +225,21 @@ function check() {
   // Phase 4 step 5: a dead agent's owner notice (since when, wallet to fund, amounts) is
   // reported on its own line before the stop, so it is in the console and the watch log.
   if (a.agentState === "dead") {
-    out(`DEAD NOTICE: ${a.deadNotice?.text ?? "the agent is dead (no notice recorded yet)"}`);
-    return `the agent is dead (state dead, tier ${a.tier ?? "?"})`;
+    const text = a.deadNotice?.text ?? "the agent is dead (no notice recorded yet)";
+    if (!allowTiers.has("dead")) {
+      out(`DEAD NOTICE: ${text}`);
+      return `the agent is dead (state dead, tier ${a.tier ?? "?"})`;
+    }
+    // Allowed (tier walk): report the notice once per entry into dead, keep watching.
+    const key = a.deadNotice?.since ?? text;
+    if (key !== lastDeadNoticeShown) {
+      out(`DEAD NOTICE (not stopping: --allow-tiers dead): ${text}`);
+      lastDeadNoticeShown = key;
+    }
+  } else {
+    lastDeadNoticeShown = null;
   }
-  if (["low_compute", "critical", "dead"].includes(a.tier)) {
+  if (stopTiers.includes(a.tier)) {
     return `survival tier ${a.tier}, state ${a.agentState}`;
   }
   // An offline wake end ("offline: …") is not forced: the agent sleeps and retries
@@ -220,6 +257,13 @@ out(
     `${limits.maxHourTurns} turns/hour, ${limits.maxDenials} denials/tool, ${limits.maxOfflineWakes} offline wakes; ` +
     `counting from ${startIso}. Config template: ${configTemplate().value ?? "invalid"}. Log: ${logFile}`,
 );
+if (allowTiers.size > 0) {
+  out(`!!! --allow-tiers: the watchdog will NOT stop on tier(s): ${[...allowTiers].join(", ")}` +
+    `${[...allowTiers].some((t) => t === "high" || t === "normal") ? " (high and normal never stop it anyway)" : ""}.`);
+  out(`!!! Still stops on tier(s): ${stopTiers.length ? stopTiers.join(", ") : "none"}. All other stop rules stay on: ` +
+    `money caps (run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c), turns per wake/hour, policy denials, forced wake ends, ` +
+    `offline wakes, non-inference ledger entries, runtime count and old-image (build) checks.`);
+}
 if (runningRuntimes(project, WHO).length === 0) {
   out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);
   process.exit(1);

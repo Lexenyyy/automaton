@@ -269,7 +269,8 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
   - [x] 5. Clean stop at zero with an owner notice: one WARN per entry into dead; notice (since when, wallet to fund,
         amounts to revive and to reach normal; no secrets) in `agent:status` and `agent:wallet` while dead; reviving
         clears it and records "revived at"; the watchdog reports it, then stops gracefully.
-  - [ ] 6. Watchdog `--allow-tiers` (default still stops on low_compute/critical/dead).
+  - [x] 6. Watchdog `--allow-tiers` (only real tier names; skips only the listed tier stops; money caps, runtime and
+        build checks stay on; start banner; default still stops on low_compute/critical/dead).
   - [ ] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,
         one wake per tier, no model call in dead, refund and revive).
   - [ ] 8. Docs; "done when" checked.

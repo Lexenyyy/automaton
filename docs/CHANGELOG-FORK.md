@@ -1205,3 +1205,20 @@
   tests without a network override: testnet → "Base Sepolia (testnet)", mainnet with approval → "Base mainnet" in
   the record and the notice text. No source change.
   Baselines: Linux 2174 passed; Windows 2142 passed, 22 known failures, 10 skipped; `agent:verify` 164 (not rerun).
+- 2026-11-23: **Watchdog `--allow-tiers`** (Phase 4 step 6, for the tier walk). `pnpm agent:watch --allow-tiers
+  low_compute,critical,dead` (`docker/watch-agent.mjs`):
+  - Only real tier names (high, normal, low_compute, critical, dead), comma-separated. An unknown name, no value, or a
+    following flag taken as the value is refused before anything is watched (exit 2).
+  - It only skips the tier stops listed (and, with `dead`, the dead-state stop; the dead notice is then printed once
+    per entry into dead as `DEAD NOTICE (not stopping: --allow-tiers dead): …`). Every other rule stays on: the money
+    caps (`--max-run-cents`, `--max-hour-cents`; the runtime's hourly/daily/lifetime caps are separate and untouched),
+    turns per wake/hour, policy denials, forced wake ends, offline wakes, non-inference ledger entries, and the runtime
+    count and old-image (build) checks.
+  - When used, the start prints a banner (`!!! --allow-tiers: the watchdog will NOT stop on tier(s): …` and `!!! Still
+    stops on tier(s): …. All other stop rules stay on: …`), and check lines mark an allowed tier `(allowed by
+    --allow-tiers)`.
+  - Default unchanged: without the option, low_compute, critical and dead stop the run.
+  Tests: `agent:verify` +8 (four bad values refused before watching; allowed dead: banner, notice, no stop, agent left
+  running; the money cap still stops with `--allow-tiers`; two runtimes still stop with `--allow-tiers`; default:
+  critical still stops).
+  Baselines: Linux 2174 passed; Windows 2142 passed, 22 known failures, 10 skipped; `agent:verify` 172.
