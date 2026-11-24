@@ -173,7 +173,7 @@ describe("reviving clears the notice and records 'revived at'", () => {
     expect(getActivityReport(db.raw).deadNotice).toBeNull();
     expect(getTierChanges(db.raw).at(-1)).toMatchObject({
       from: "dead", to: "normal",
-      note: "revived at 2026-11-23T20:30:00.000Z (dead since 2026-11-23T20:01:00.000Z); agent woken",
+      note: "revived at 2026-11-23T20:30:00.000Z (dead since 2026-11-23T20:01:00.000Z); wake requested",
     });
     expect(infos).toContain("Agent state: revived at 2026-11-23T20:30:00.000Z (dead since 2026-11-23T20:01:00.000Z); balance $0.60 is above $0 again. Resuming.");
     // dying again later writes a new record and warns again (one per entry)

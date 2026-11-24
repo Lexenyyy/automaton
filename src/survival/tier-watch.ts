@@ -185,7 +185,8 @@ export function evaluateSurvival(
   const lastWake = getKv(db, LAST_TIER_WAKE_KEY);
   const gapOk = !lastWake || nowMs - new Date(lastWake).getTime() >= settings.tierWakeMinGapMinutes * 60_000;
   const woke = effective !== "dead" && gapOk;
-  const wakeNote = woke ? "agent woken" : `no wake: within ${settings.tierWakeMinGapMinutes} min of the last tier-change wake`;
+  // "wake requested": the watch queues a wake; it does not see the agent wake.
+  const wakeNote = woke ? "wake requested" : `no wake: within ${settings.tierWakeMinGapMinutes} min of the last tier-change wake`;
   const note = effective === "dead"
     ? `dead (${deadNote || "state dead"}): no wake, no model calls`
     : revivedNote ? `${revivedNote}; ${wakeNote}` : wakeNote;

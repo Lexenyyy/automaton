@@ -279,7 +279,20 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
               2026-11-24: funded, high and normal wakes OK; paused after drain 2 (wallet 0.22 USDC, low_compute):
               the low_compute wake routed to gpt-4.1-nano, shut down by OpenAI on 2026-10-23 (404, 5 failed turns,
               no cost). Resume after the model fix with `--wake-now` (one low_compute wake on the new cheap model),
-              then drain 3.
+              then drain 3. Resumed 2026-11-24 on 8a91aa2 (low_compute wake on gpt-6-luna); drain 3 sent (0.07 USDC):
+              the tier-change wake was lost to a startup race (see the fix below); the critical wake came from the
+              pending sleep ending at 18:19:43 instead.
+        - [x] Fix after the walk (owner-approved 2026-11-24, one commit): lost tier-change wake at restart.
+              `run` starts the heartbeat (first tick at once) before it deletes old wake requests for a pending
+              startup sleep (`src/index.ts`), so a tier-change wake from that first tick can be deleted 20 ms later.
+              - Delete old wake requests before `heartbeat.start()`, not after; a wake during the pending sleep
+                then ends it within 30 s.
+              - Each heartbeat wake request is queued once: the scheduler queues it, `onWakeRequest` only logs
+                (today both queue it).
+              - Tier history note "agent woken" → "wake requested" (`src/survival/tier-watch.ts`; it records the
+                request, not the wake).
+              - Test: a wake request queued by the first tick during a pending startup sleep is not lost.
+              - `pnpm build`, `pnpm test:linux`, `agent:verify`; CHANGELOG-FORK entry.
         - [ ] Model fix (owner decision: gpt-6-luna for all tiers, reasoning effort none), one commit each:
           - [x] 1/3 Cheap model as a setting (routing slots from `modelStrategy`), gpt-6-luna in the cheap and
                 critical slots, `reasoningEffort` setting, preflight confirms every model with the provider's free

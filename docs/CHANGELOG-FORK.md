@@ -1341,3 +1341,21 @@
   reads the real clock, so from 2026-11-24 17:00 UTC its spend fell out of the 24 h window and the runway line changed
   (found while testing the startup race fix). The test now pins the clock to `NOW` (fake `Date` only). No product code
   changed. Baselines unchanged.
+- 2026-11-24: **Startup race: a tier-change wake at restart is no longer lost** (found in the tier walk, drain 3).
+  `run` started the heartbeat, whose first check runs at once, and only then deleted the old wake requests for a
+  pending startup sleep. When the balance read was fast, the survival watch queued "low_compute → critical" and the
+  startup code deleted it 20 ms later; the agent slept until its old sleep ended (27 min) and the tier history still
+  said "agent woken". In drain 2 the read was slower and the wake worked.
+  - `src/index.ts`: the pending startup sleep is decided, old wake requests deleted (`dropStaleWakeEvents`,
+    `src/agent/startup-sleep.ts`) and the state set to sleeping BEFORE `heartbeat.start()`. A wake request queued
+    after that (including one from the first check) ends the sleep at the next 30 s check. Side effect: the first
+    check can no longer have its "dead" overwritten by the startup "sleeping". The "Honouring the pending sleep" line
+    says how many old wake requests were deleted.
+  - Each heartbeat wake request is queued once (owner: the scheduler queues it, `onWakeRequest` only logs). Before,
+    the run callback queued every one a second time.
+  - Tier history note "agent woken" → "wake requested" (owner; the watch records the request, not the wake). The
+    stored boolean field `woke` keeps its name so older history records still read the same.
+  Tests: `startup-sleep` +2 (old requests deleted, one queued afterwards ends the sleep at the first check; `run()`
+  deletes before `heartbeat.start()` and never after, `onWakeRequest` does not queue); tier-watch and dead-notice
+  expectations renamed. Baselines: Linux 2217 passed; Windows 2185 passed, 22 known failures, 10 skipped;
+  `agent:verify` 182.

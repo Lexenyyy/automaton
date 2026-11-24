@@ -14,7 +14,6 @@ import { provision } from "./identity/provision.js";
 import { loadConfig, resolvePath } from "./config.js";
 import { createDatabase } from "./state/database.js";
 import { createHeartbeatDaemon } from "./heartbeat/daemon.js";
-import { consumeNextWakeEvent, insertWakeEvent } from "./state/database.js";
 import { runAgentLoop } from "./agent/loop.js";
 import { loadSkills } from "./skills/loader.js";
 import { initStateVersioning } from "./git/state-versioning.js";
@@ -25,7 +24,7 @@ import { bootstrapTopup } from "./conway/topup.js";
 import { isContainerSandbox } from "./sandbox/transport.js";
 import { prepareRuntime, runPreflight } from "./runtime/prepare.js";
 import { formatLeaseHolder, readRuntimeLease, releaseRuntimeLease, startLeaseHeartbeat } from "./runtime/instance-lease.js";
-import { pendingStartupSleep, waitForSleepOrWake } from "./agent/startup-sleep.js";
+import { dropStaleWakeEvents, pendingStartupSleep, waitForSleepOrWake } from "./agent/startup-sleep.js";
 import { effectiveSleepUntil, resolveSleepSettings } from "./agent/sleep-limits.js";
 import {
   beginInferenceShutdown,
@@ -601,6 +600,23 @@ async function run(): Promise<void> {
     logger.warn(`[${new Date().toISOString()}] Bootstrap topup skipped: ${err.message}`);
   }
 
+  // Fork: a restart honours a sleep that is still pending (the agent's own or
+  // a forced one), so restarting does not cost a wake. --wake-now overrides.
+  // Decided BEFORE the heartbeat starts: its first check runs at once and may
+  // queue a wake (a tier change seen at startup) that must end this sleep;
+  // only wake requests from before this start are deleted (startup-sleep.ts).
+  const wakeNow = process.argv.includes("--wake-now");
+  // Fork (Phase 4 step 3): a dead agent stays dead across restarts (and
+  // --wake-now); the run loop below waits for the heartbeat to see a balance
+  // above $0. Honouring a pending sleep here would have set "sleeping".
+  const startDead = db.getAgentState() === "dead";
+  if (startDead) {
+    logger.info(`[${new Date().toISOString()}] Agent state is dead: no wake and no model call until the balance is above $0.`);
+  }
+  const pending = startDead ? null : pendingStartupSleep((k) => db.getKV(k), Date.now(), wakeNow);
+  const droppedWakes = pending ? dropStaleWakeEvents(db.raw) : 0;
+  if (pending) db.setAgentState("sleeping");
+
   // Start heartbeat daemon (Phase 1.1: DurableScheduler)
   const heartbeat = createHeartbeatDaemon({
     identity,
@@ -610,10 +626,10 @@ async function run(): Promise<void> {
     rawDb: db.raw,
     conway,
     social,
+    // Fork (after the tier walk): log only. The scheduler queues the wake event
+    // itself; queueing it here too put every heartbeat wake in the queue twice.
     onWakeRequest: (reason) => {
       logger.info(`[HEARTBEAT] Wake request: ${reason}`);
-      // Phase 1.1: Use wake_events table instead of KV wake_request
-      insertWakeEvent(db.raw, 'heartbeat', reason);
     },
   });
 
@@ -680,25 +696,14 @@ async function run(): Promise<void> {
     );
   }
 
-  // Fork: a restart honours a sleep that is still pending (the agent's own or
-  // a forced one), so restarting does not cost a wake. --wake-now overrides.
-  const wakeNow = process.argv.includes("--wake-now");
-  // Fork (Phase 4 step 3): a dead agent stays dead across restarts (and
-  // --wake-now); the run loop below waits for the heartbeat to see a balance
-  // above $0. Honouring a pending sleep here would have set "sleeping".
-  const startDead = db.getAgentState() === "dead";
-  if (startDead) {
-    logger.info(`[${new Date().toISOString()}] Agent state is dead: no wake and no model call until the balance is above $0.`);
-  }
-  const pending = startDead ? null : pendingStartupSleep((k) => db.getKV(k), Date.now(), wakeNow);
+  // The pending sleep (decided before the heartbeat started, see above).
+  // A wake request the heartbeat queues from here on ends it at the next check.
   if (pending) {
-    // Stale wake events from before this start would end the sleep at once.
-    while (consumeNextWakeEvent(db.raw));
-    db.setAgentState("sleeping");
     logger.info(
       `[${new Date().toISOString()}] Honouring the pending sleep until ${new Date(pending.untilMs).toISOString()}` +
-        `${pending.reason ? ` (${pending.reason})` : ""}. To wake the agent now, start it with --wake-now ` +
-        "(pnpm agent:run --wake-now).",
+        `${pending.reason ? ` (${pending.reason})` : ""}` +
+        `${droppedWakes ? `; ${droppedWakes} wake request(s) from before this start deleted` : ""}. ` +
+        "To wake the agent now, start it with --wake-now (pnpm agent:run --wake-now).",
     );
     const end = await waitForSleepOrWake(db.raw, pending.untilMs);
     logger.info(

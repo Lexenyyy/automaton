@@ -93,7 +93,7 @@ describe("tier changes: recorded, logged as INFO, one wake per change with a min
     tick(400, 1, { log: (m) => logs.push(m) });
     tick(30, 2, { log: (m) => logs.push(m) });
     expect(logs).toEqual([
-      "Tier change: high → normal (balance $4.00); agent woken",
+      "Tier change: high → normal (balance $4.00); wake requested",
       "Tier change: normal → low_compute (balance $0.30); no wake: within 30 min of the last tier-change wake",
     ]);
     expect(getTierChanges(db.raw).map((c) => [c.from, c.to, c.balanceCents, c.woke])).toEqual([

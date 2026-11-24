@@ -2,10 +2,12 @@
  * Fork, Phase 1: a restart honours a pending sleep (--wake-now overrides).
  */
 
+import fs from "fs";
+import { fileURLToPath } from "url";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createTestDb } from "./mocks.js";
-import { insertWakeEvent } from "../state/database.js";
-import { pendingStartupSleep, waitForSleepOrWake } from "../agent/startup-sleep.js";
+import { consumeNextWakeEvent, insertWakeEvent } from "../state/database.js";
+import { dropStaleWakeEvents, pendingStartupSleep, waitForSleepOrWake } from "../agent/startup-sleep.js";
 
 const NOW = Date.parse("2026-11-16T15:35:08.000Z");
 
@@ -67,5 +69,33 @@ describe("waitForSleepOrWake", () => {
     });
     expect(end).toEqual({ woken: true, source: "heartbeat", reason: "inbox message" });
     expect(steps).toBe(2);
+  });
+});
+
+describe("startup race (tier walk, drain 3): a wake from the heartbeat's first check is not lost", () => {
+  it("old wake requests are deleted; one queued after that (first heartbeat check) ends the pending sleep", async () => {
+    insertWakeEvent(db.raw, "heartbeat", "old: before this start");
+    insertWakeEvent(db.raw, "heartbeat", "old: second");
+    expect(dropStaleWakeEvents(db.raw)).toBe(2);
+    // The heartbeat starts now; its first check sees the tier change at once.
+    insertWakeEvent(db.raw, "heartbeat", "Survival tier changed: low_compute → critical (balance $0.07)");
+    let steps = 0;
+    const end = await waitForSleepOrWake(db.raw, NOW + 3_600_000, { now: () => NOW, sleep: async () => void steps++ });
+    expect(end).toEqual({ woken: true, source: "heartbeat", reason: "Survival tier changed: low_compute → critical (balance $0.07)" });
+    expect(steps).toBe(1); // the first 30 s check
+    expect(consumeNextWakeEvent(db.raw)).toBeUndefined();
+  });
+
+  it("run(): old wake requests are deleted before heartbeat.start(), never after; onWakeRequest only logs", () => {
+    const src = fs.readFileSync(fileURLToPath(new URL("../index.ts", import.meta.url)), "utf8");
+    const drop = src.indexOf("dropStaleWakeEvents(db.raw)");
+    const start = src.indexOf("heartbeat.start()");
+    expect(drop).toBeGreaterThan(0);
+    expect(start).toBeGreaterThan(drop);
+    expect(src.slice(start)).not.toMatch(/consumeNextWakeEvent|dropStaleWakeEvents/);
+    const cb = src.slice(src.indexOf("onWakeRequest:"), src.indexOf("heartbeat.start()"));
+    expect(cb).not.toContain("insertWakeEvent");
+    // The pending sleep's "sleeping" state is set before the heartbeat can enter dead.
+    expect(src.indexOf('if (pending) db.setAgentState("sleeping")')).toBeLessThan(start);
   });
 });

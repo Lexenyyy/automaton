@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after model fix 3/3 (gpt-6-luna everywhere): 2215 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after the startup race fix: 2217 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2183 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2185 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix

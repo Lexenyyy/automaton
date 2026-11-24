@@ -36,6 +36,20 @@ export function pendingStartupSleep(
   return { untilMs, reason: reason ?? getKV("sleep_reason") ?? null };
 }
 
+/**
+ * Delete the wake requests still queued from before this start (they would end
+ * a pending startup sleep at once). Call it BEFORE the heartbeat starts: the
+ * heartbeat's first check runs at once and may queue a wake that must count
+ * (a tier change seen at startup). Until 2026-11-24 this ran after
+ * heartbeat.start(), and in the tier walk (drain 3) the tier-change wake was
+ * deleted 20 ms after it was queued. Returns how many were deleted.
+ */
+export function dropStaleWakeEvents(db: Database): number {
+  let dropped = 0;
+  while (consumeNextWakeEvent(db)) dropped++;
+  return dropped;
+}
+
 export type SleepEnd = { woken: false } | { woken: true; source: string; reason: string };
 
 /**
