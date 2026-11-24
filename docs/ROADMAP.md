@@ -215,11 +215,15 @@ Done when: testnet payment works within limits; over-limit payments are blocked 
   Status: met (see CHANGELOG 2026-11-22): payments within limits by the owner's test and by the agent; over-limit
   payments refused at the tool and the policy engine; wallet encrypted at rest, leak test, passphrase not in the sandbox.
 
-## Phase 4 — Survival system (1 week) — IN PROGRESS
+## Phase 4 — Survival system (1 week) — DONE 2026-11-24
 - Credit monitor converts balance into runway estimate
 - Tiers: normal → low_compute → critical → dead, each mapped to a model
 - Tier and runway in context every turn; clean shutdown at zero with owner notification
 Done when: draining the testnet balance moves through all tiers correctly.
+  Status: met 2026-11-24 (tier walk, step 7): high → normal → low_compute → critical → dead → revived (low_compute),
+  every tier entered at the expected balance, gpt-6-luna in every live tier, no model call while dead, dead notice and
+  revive as designed; 0.598¢ real inference for the whole walk. Two wake-timing defects found on the way: the lost
+  tier-change wake is fixed (607ef6c); the extra wake at restart is an open follow-up (step 7, below), not a tier error.
 
 Plan (owner-approved 2026-11-23; one commit per step, stop for review after step 1). Owner decisions: at dead the
 runtime stays up, heartbeat only (no model calls); the heartbeat wakes the agent only on a tier change; the walk drains
@@ -271,17 +275,34 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         clears it and records "revived at"; the watchdog reports it, then stops gracefully.
   - [x] 6. Watchdog `--allow-tiers` (only real tier names; skips only the listed tier stops; money caps, runtime and
         build checks stay on; start banner; default still stops on low_compute/critical/dead).
-  - [ ] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,
+  - [x] 7. Tier walk in project `automaton-tierwalk` (`automaton.tierwalk.json`, owner `--wallet send` drain,
         one wake per tier, no model call in dead, refund and revive).
         - [x] Tooling: owner `--wallet send <cents|all> [--confirm]` (creator only, same checks, dry run by default,
               recorded like an agent payment, no ledger entry); `automaton.tierwalk.json`; template/project pairing.
-        - [ ] The walk (owner): fund 0.50 USDC + ETH; drains 15¢ → 13¢ → 14¢ → all; revive with 0.25 USDC.
-              2026-11-24: funded, high and normal wakes OK; paused after drain 2 (wallet 0.22 USDC, low_compute):
-              the low_compute wake routed to gpt-4.1-nano, shut down by OpenAI on 2026-10-23 (404, 5 failed turns,
-              no cost). Resume after the model fix with `--wake-now` (one low_compute wake on the new cheap model),
-              then drain 3. Resumed 2026-11-24 on 8a91aa2 (low_compute wake on gpt-6-luna); drain 3 sent (0.07 USDC):
-              the tier-change wake was lost to a startup race (see the fix below); the critical wake came from the
-              pending sleep ending at 18:19:43 instead.
+        - [x] The walk (owner), 2026-11-24 (UTC; from the saved runtime and watchdog logs and `agent:status`):
+
+              | step | wallet after | tier (balance) | wake(s) | model | cost |
+              |---|---|---|---|---|---|
+              | fund 0.50 USDC + 0.0003 ETH, start 12:14 | 0.50 | high ($0.50) | 12:14, 12:44 (own sleep end) | gpt-4.1-mini | 0.083¢, 0.103¢ |
+              | drain 1: 15¢, 13:29 | 0.35 | normal ($0.34) | 13:29 tier change; 13:30 again (extra, see below) | gpt-4.1-mini | 0.123¢, 0.144¢ |
+              | drain 2: 13¢, 13:31 | 0.22 | low_compute ($0.21) | 13:32 tier change | gpt-4.1-nano: 404, 5 failed calls | 0 |
+              | model fix 1–3; resume `--wake-now` 17:49 | 0.22 | low_compute ($0.21) | 17:49 | gpt-6-luna | 0.043¢ |
+              | drain 3: 14¢, 17:52 | 0.08 | critical ($0.07) | 18:20 (sleep end; tier-change wake lost) | gpt-6-luna | 0.048¢ |
+              | drain 4: all (8¢), 18:48 | 0.00 | dead (-$0.01) at once | none; old sleep end 18:50 ignored | none | 0 |
+              | revive: owner sent 0.25 USDC | 0.25 | low_compute ($0.24) at 18:54:04 | 18:54 (one) | gpt-6-luna | 0.054¢ |
+
+              Total real inference 0.598¢ (lifetime of the walk wallet); 0.50 USDC returned to the creator by the
+              drains; 0.25 USDC + leftover ETH remain (owner returns the USDC with `--wallet send all`, keeps the
+              volume for future walks). Dead: one WARN, notice with wallet and revive/normal amounts (also printed
+              by the watchdog), 13 heartbeat checks in 6 min, no model call. Watchdog: never stopped (Ctrl+C only,
+              around each drain); at most 3 turns and 0.370¢ in an hour (13:31 check).
+        - [ ] Follow-up (found in the review, not fixed): an extra wake at restart. Without a pending sleep, `run`
+              enters the agent loop at once, and the loop deletes queued wake requests when it starts
+              (`src/agent/loop.ts`). If the heartbeat's first check queues a tier-change wake just after that, the
+              agent runs its wake, sleeps, and the same request wakes it again 30 s later (drain 1: 13:30:31,
+              +0.144¢). 607ef6c removed the duplicate copy but not this. Candidate fix: when a wake ends, drop wake
+              requests queued before that wake's status was built (the agent already saw the tier). Owner decides
+              when (before the 72 h main run is sensible; cost per occurrence ~0.15¢).
         - [x] Fix after the walk (owner-approved 2026-11-24, one commit): lost tier-change wake at restart.
               `run` starts the heartbeat (first tick at once) before it deletes old wake requests for a pending
               startup sleep (`src/index.ts`), so a tier-change wake from that first tick can be deleted 20 ms later.
@@ -293,7 +314,7 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
                 request, not the wake).
               - Test: a wake request queued by the first tick during a pending startup sleep is not lost.
               - `pnpm build`, `pnpm test:linux`, `agent:verify`; CHANGELOG-FORK entry.
-        - [ ] Model fix (owner decision: gpt-6-luna for all tiers, reasoning effort none), one commit each:
+        - [x] Model fix (owner decision: gpt-6-luna for all tiers, reasoning effort none), one commit each:
           - [x] 1/3 Cheap model as a setting (routing slots from `modelStrategy`), gpt-6-luna in the cheap and
                 critical slots, `reasoningEffort` setting, preflight confirms every model with the provider's free
                 model list (FAIL if missing, WARN with a shutdown date).
@@ -303,10 +324,11 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
           - [x] 3/3 Main model gpt-4.1-mini (shuts down 2027-01-14) → gpt-6-luna; `allowedModels` only gpt-6-luna;
                 `switch_model` removed from the main and paytest tool allowlists (owner); per-route ceilings
                 re-checked; the main agent has no stored model value (`agent:settings`, read-only, 2026-11-24).
-          - [ ] Owner: preflight of the main and tier-walk projects with the real key: every model OK, no WARN.
+          - [x] Owner: preflight of the main and tier-walk projects with the real key: every model OK, no WARN
+                (2026-11-24, build 8a91aa2: gpt-6-luna listed, no shutdown date; tier walk only WARN reserve $0).
           - Later (Phase 7): the orchestration worker registry (`provider-registry.ts`) still lists gpt-4.1-nano and
             sends no reasoning effort; fix before orchestration is turned on.
-  - [ ] 8. Docs; "done when" checked.
+  - [x] 8. Docs; "done when" checked (met, see the status under "Done when" above).
 
 ## Phase 5a — Service base: general and reusable (1–2 weeks)
 - Small web server with a per-request payment endpoint (x402 or USDC invoice), with no job logic in it

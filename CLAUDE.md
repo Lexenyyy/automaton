@@ -124,7 +124,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   the last 24 h → time to the next lower tier and to $0) is in the agent's status, `agent:status` and preflight.
   Dead: one WARN per entry; an owner notice (since when, wallet address to fund, amounts to revive and to reach
   normal; kv `dead_notice`, `src/survival/dead-notice.ts`) is the first line of `agent:status` and `agent:wallet` while
-  dead; reviving clears it and records "revived at"; the watchdog prints `DEAD NOTICE: …` and stops gracefully.
+  dead; reviving clears it and records "revived at"; the watchdog prints `DEAD NOTICE: …` and stops gracefully. Phase 4 closed 2026-11-24 (tier walk: all tiers, dead and
+  revive, 0.598¢; ROADMAP step 7 has the table and one open follow-up, an extra wake at restart).
 - **Heartbeat history:** `"heartbeatHistoryDays": 7` in the template (code default 7, 0 = keep all); the scheduler
   deletes older `heartbeat_history` rows at most once an hour.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule

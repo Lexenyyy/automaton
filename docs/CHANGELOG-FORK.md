@@ -1359,3 +1359,13 @@
   deletes before `heartbeat.start()` and never after, `onWakeRequest` does not queue); tier-watch and dead-notice
   expectations renamed. Baselines: Linux 2217 passed; Windows 2185 passed, 22 known failures, 10 skipped;
   `agent:verify` 182.
+- 2026-11-24: **Phase 4 closed: tier walk recorded** (step 8; ROADMAP Phase 4 has the full table). Project
+  `automaton-tierwalk`, Base Sepolia, funded with 0.50 USDC: high (2 wakes, gpt-4.1-mini) → drain 15¢ → normal
+  → drain 13¢ → low_compute (gpt-4.1-nano 404: walk paused, model fix 1–3, resumed on gpt-6-luna) → drain 14¢ →
+  critical (gpt-6-luna) → drain all → dead at once (-$0.01; one WARN, notice, no wake and no model call, old sleep
+  end ignored) → owner sent 0.25 USDC → revived at 18:54:04 UTC into low_compute, one wake on gpt-6-luna. Real
+  inference for the whole walk: 0.598¢; the watchdog never stopped. "Done when" (draining moves through all tiers
+  correctly): met. Defects found: retired nano (model fix 1–3), lost tier-change wake at restart (607ef6c), and an
+  extra wake 30 s after a restart wake when the first heartbeat check sees a tier change (drain 1, +0.144¢): open
+  follow-up in the ROADMAP, not fixed. The walk wallet keeps 0.25 USDC (the owner returns it) and its volume stays
+  for future walks. Docs only.
