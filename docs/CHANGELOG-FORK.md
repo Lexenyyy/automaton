@@ -1294,3 +1294,27 @@
   router (slots from settings, no nano/gpt-5-mini), preflight (a retired allowed model FAILs; a rejected key FAILs
   once, no key printed), and the tests that named nano.
   Baselines: Linux 2204 passed; Windows 2172 passed, 22 known failures, 10 skipped; `agent:verify` 179.
+- 2026-11-24: **Model fix 2/3: a missing model ends the wake at once; the agent stays asleep until restarted.**
+  In the tier walk, the 404 `model_not_found` was retried as a normal error: 5 turns, then a 5-minute sleep. Owner
+  change to the plan: no retry every 30 minutes, since only the owner can fix the config.
+  - `src/inference/model-unavailable.ts`: the client recognises the provider's answer (OpenAI 404, or 400 with
+    `model_not_found`, or a 404 saying the model does not exist; Anthropic 404 `not_found_error` about the model) and
+    raises `ModelUnavailableError` (model, provider, code; the message never carries the response body). Other errors
+    (401, 429, 5xx, other 404s and 400s) keep their old paths.
+  - Agent loop: one ERROR line (`Model unavailable: <model> (<provider>: <code>). The agent stays asleep until the
+    runtime is restarted. …`), no "Turn failed" line, no second model call; claimed inbox messages go back to
+    received; the wake ends with `model unavailable: <model> (…); asleep until restarted`; no sleep timer.
+  - `src/agent/model-stop.ts`: kv `model_unavailable` (model, provider, code, since). While it is set the run loop
+    waits (no agent loop, no model call; wake requests from the heartbeat or tier changes are consumed and ignored).
+    Only a restart (`--run` start) clears it, with an INFO line; if the config still names that model, the next wake
+    stops again after one call.
+  - `agent:status`: first line `!!! MODEL UNAVAILABLE since <UTC>: <model> (<provider>: <code>). The agent stays
+    asleep until the runtime is restarted … Fix the model in the config …, run preflight, then restart.`, and the
+    state line says `(MODEL UNAVAILABLE: asleep until restarted)`; `--activity --json` has `modelUnavailable`.
+  - Watchdog: new stop rule (also with `--allow-tiers`, which only skips tier rules): it prints
+    `MODEL UNAVAILABLE: …`, then stops the agent gracefully (exit 2).
+  Tests: `model-unavailable` (7: OpenAI/Anthropic/text answers recognised; other errors not; one request, no
+  retries; the record in the activity report and its text; cleared only by a restart; the wait ignores wake requests;
+  the loop: one call, one ERROR line, no "Turn failed", wake-end reason, no sleep timer). `agent:verify` +2
+  (`agent:status` shows the notice; the watchdog prints it and stops, with `--allow-tiers`).
+  Baselines: Linux 2211 passed; Windows 2179 passed, 22 known failures, 10 skipped; `agent:verify` 181.

@@ -23,6 +23,8 @@
  *   - turns in the last hour                   > --max-hour-turns (default 20)
  *   - a wake ended by force: loop guard, cycle limit, budget cap, wake limit,
  *     consecutive errors
+ *   - a model the provider no longer serves ("MODEL UNAVAILABLE": the agent is
+ *     asleep until restarted); its notice is printed first; not affected by --allow-tiers
  *   - one tool denied by policy --max-denials times (default 3)
  *   - more than --max-offline-wakes wakes in a row offline (default 4, about
  *     4 h with the 30/60/120-min backoff); a single offline wake is not a stop
@@ -210,6 +212,12 @@ function check() {
       resourceText(runtimes[0].name),
   );
 
+  // Fork (after the tier walk): a model the provider no longer serves stops the agent until restart.
+  // Reported on its own line, then the agent is stopped; --allow-tiers has no effect on this rule.
+  if (a.modelUnavailable) {
+    out(`MODEL UNAVAILABLE: ${a.modelUnavailable.text}`);
+    return `model unavailable: ${a.modelUnavailable.model} (${a.modelUnavailable.provider}: ${a.modelUnavailable.code})`;
+  }
   if (s.spendMc > limits.maxRunCents * 1000) return `inference spend since start ${cents(s.spendMc)}c > ${limits.maxRunCents}c`;
   if (hourSpendMc > limits.maxHourCents * 1000) return `inference spend in the last hour ${cents(hourSpendMc)}c > ${limits.maxHourCents}c`;
   if (a.wakeStartedAt && a.wakeStartedAt >= startIso && a.turnsThisWake > limits.maxWakeTurns) {
@@ -261,7 +269,7 @@ if (allowTiers.size > 0) {
   out(`!!! --allow-tiers: the watchdog will NOT stop on tier(s): ${[...allowTiers].join(", ")}` +
     `${[...allowTiers].some((t) => t === "high" || t === "normal") ? " (high and normal never stop it anyway)" : ""}.`);
   out(`!!! Still stops on tier(s): ${stopTiers.length ? stopTiers.join(", ") : "none"}. All other stop rules stay on: ` +
-    `money caps (run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c), turns per wake/hour, policy denials, forced wake ends, ` +
+    `money caps (run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c), turns per wake/hour, policy denials, forced wake ends, model unavailable, ` +
     `offline wakes, non-inference ledger entries, runtime count and old-image (build) checks.`);
 }
 if (runningRuntimes(project, WHO).length === 0) {

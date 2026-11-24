@@ -10,6 +10,7 @@ import { formatUsdMc, getInferenceCostSinceMc, getLifetimeInferenceCostMc } from
 import { computeRunway, formatRunway, type Runway } from "../survival/runway.js";
 import { DEFAULT_SURVIVAL_SETTINGS, type SurvivalThresholds } from "../survival/settings.js";
 import { buildDeadNotice, type DeadNotice } from "../survival/dead-notice.js";
+import { formatModelStop, readModelUnavailable, type ModelStopRecord } from "../agent/model-stop.js";
 
 export interface ActivityReport {
   agentState: string;
@@ -40,6 +41,8 @@ export interface ActivityReport {
   runwayText: string;
   /** Fork (Phase 4 step 5): the owner notice while the agent is dead (null otherwise). */
   deadNotice: DeadNotice | { text: string } | null;
+  /** Fork (after the tier walk): the model-unavailable stop (asleep until restart), or null. */
+  modelUnavailable: (ModelStopRecord & { text: string }) | null;
 }
 
 export interface SinceStats {
@@ -110,8 +113,10 @@ export function getActivityReport(
   const thisWake = wakeStart
     ? (db.prepare("SELECT COUNT(*) AS n FROM turns WHERE timestamp >= ?").get(wakeStart) as { n: number }).n
     : 0;
+  const modelStop = readModelUnavailable(db);
   return {
     deadNotice,
+    modelUnavailable: modelStop ? { ...modelStop, text: formatModelStop(modelStop) } : null,
     runway,
     runwayText: runway ? formatRunway(runway) : "Runway: unknown (no balance read yet)",
     tier: kv(db, "last_tick_tier"),
@@ -148,8 +153,9 @@ const isFuture = (iso: string | null, now: Date): iso is string =>
 export function formatActivityReport(r: ActivityReport, now: Date = new Date()): string {
   const lines = [
     "=== AGENT ACTIVITY (state.db) ===",
+    ...(r.modelUnavailable ? [`!!! ${r.modelUnavailable.text}`] : []),
     ...(r.deadNotice ? [`!!! ${r.deadNotice.text}`] : []),
-    `State:             ${r.agentState}`,
+    `State:             ${r.agentState}${r.modelUnavailable ? " (MODEL UNAVAILABLE: asleep until restarted)" : ""}`,
     `Last turn:         ${r.lastTurnAt ? `${r.lastTurnAt} (${ago(r.lastTurnAt, now)})` : "none"}`,
     `Survival tier:     ${r.tier ?? "unknown"}`,
     `Runway:            ${r.runwayText.replace(/^Runway: /, "")}`,

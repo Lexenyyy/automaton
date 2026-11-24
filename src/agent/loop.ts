@@ -72,6 +72,8 @@ import { nextBudgetWindow, pauseForBudget } from "../inference/budget-pause.js";
 import { isIdleOnlyTool, selectContextTurns } from "./idle-only-tools.js";
 import { StatusToolCache } from "./status-snapshot.js";
 import { recordWakeEnd, recordWakeStart } from "./wake-state.js";
+import { isModelUnavailable } from "../inference/model-unavailable.js";
+import { recordModelUnavailable } from "./model-stop.js";
 import { admitWake, nextUtcDay, resolveSleepSettings } from "./sleep-limits.js";
 import { resolveMaxTurnsPerWake } from "./turn-limits.js";
 import {
@@ -1121,6 +1123,23 @@ export async function runAgentLoop(
 
       consecutiveErrors = 0;
     } catch (err: any) {
+      // Fork (after the tier walk's gpt-4.1-nano 404): a model the provider does not
+      // serve is the owner's to fix. One ERROR line, the wake ends at once, and the
+      // agent stays asleep until the runtime is restarted (model-stop.ts); no retries.
+      if (isModelUnavailable(err)) {
+        if (claimedMessages.length > 0) resetInboxToReceived(db.raw, claimedMessages.map((m) => m.id));
+        recordModelUnavailable(db.raw, err);
+        logger.error(
+          `[ERROR] Model unavailable: ${err.model} (${err.provider}: ${err.code}). The agent stays asleep until the ` +
+            "runtime is restarted. Fix the model in the config, run preflight, then restart.",
+        );
+        wakeEndReason = `model unavailable: ${err.model} (${err.provider}: ${err.code}); asleep until restarted`;
+        db.deleteKV("sleep_until");
+        db.setAgentState("sleeping");
+        onStateChange?.("sleeping");
+        running = false;
+        continue;
+      }
       consecutiveErrors++;
       log(config, `[ERROR] Turn failed: ${err.message}`);
 

@@ -668,6 +668,18 @@ async function run(): Promise<void> {
     });
   }
 
+  // Fork (after the tier walk): a restart is the owner's answer to a
+  // "model unavailable" stop, so it clears the stop (the agent wakes again).
+  const { clearModelUnavailableOnStart, formatModelStop, readModelUnavailable, waitWhileModelUnavailable } =
+    await import("./agent/model-stop.js");
+  const clearedStop = clearModelUnavailableOnStart(db.raw);
+  if (clearedStop) {
+    logger.info(
+      `[${new Date().toISOString()}] Restart clears the model-unavailable stop (${clearedStop.model}, ${clearedStop.provider}: ` +
+        `${clearedStop.code}, since ${clearedStop.since}). If the config still names that model, the next wake stops again.`,
+    );
+  }
+
   // Fork: a restart honours a sleep that is still pending (the agent's own or
   // a forced one), so restarting does not cost a wake. --wake-now overrides.
   const wakeNow = process.argv.includes("--wake-now");
@@ -715,6 +727,16 @@ async function run(): Promise<void> {
         continue;
       }
 
+      // Fork (after the tier walk): a model the provider no longer serves stops
+      // the agent until restart: no agent loop, no model call, wakes ignored.
+      const modelStop = readModelUnavailable(db.raw);
+      if (modelStop) {
+        // INFO: the agent loop already logged the one ERROR line.
+        logger.info(`[${new Date().toISOString()}] Waiting until restart. ${formatModelStop(modelStop)}`);
+        await waitWhileModelUnavailable(db.raw);
+        continue;
+      }
+
       // Reload skills (may have changed since last loop)
       try {
         skills = loadSkills(skillsDir, db, { containerSandbox: isContainerSandbox(config.sandbox) });
@@ -745,6 +767,8 @@ async function run(): Promise<void> {
       });
 
       // Agent loop exited (sleeping or dead)
+      // Fork: a model-unavailable stop is handled at the top of the loop (no sleep timer).
+      if (readModelUnavailable(db.raw)) continue;
       const state = db.getAgentState();
 
       if (state === "dead") {

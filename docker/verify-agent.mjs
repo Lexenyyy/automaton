@@ -791,6 +791,28 @@ db.close();`], { allowFail: false });
     wTwo.status === 2 && /STOP: 2 runtimes are running/.test(wTwo.stdout) && runtimeIds("running") === "",
     (wTwo.stdout + wTwo.stderr).trim().split("\n").filter((l) => /STOP/.test(l)).join(" | "));
   setDead(false);
+  // Model unavailable (after the tier walk): agent:status shows it first; the watchdog reports it and
+  // stops, also with --allow-tiers (it is not a tier rule).
+  const setModelStop = (on) => docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
+    `import { createDatabase } from "/app/dist/state/database.js";
+const db = createDatabase(process.env.HOME + "/.automaton/state.db");
+${on
+  ? `db.setKV("model_unavailable", JSON.stringify({ model: "gpt-4.1-nano", provider: "openai", code: "model_not_found", since: "2026-11-24T12:00:00.000Z" }));`
+  : `db.deleteKV("model_unavailable");`}
+db.close();`], { allowFail: false });
+  setModelStop(true);
+  const stModel = status();
+  check(W, "agent:status shows MODEL UNAVAILABLE first: model, since, asleep until restarted, what to fix",
+    stModel.stdout.includes("!!! MODEL UNAVAILABLE since 2026-11-24 12:00:00 UTC: gpt-4.1-nano (openai: model_not_found). The agent stays asleep until the runtime is restarted") &&
+      stModel.stdout.includes("(MODEL UNAVAILABLE: asleep until restarted)"),
+    stModel.stdout.trim().slice(0, 600));
+  standInW(`${PROJECT}-w1m`, KEEP);
+  const wModel = watch(["--once", "--allow-tiers", "low_compute,critical,dead"]);
+  check(W, "model unavailable: the watchdog prints the notice and stops gracefully (exit 2), even with --allow-tiers",
+    wModel.status === 2 && wModel.stdout.includes("MODEL UNAVAILABLE: MODEL UNAVAILABLE since 2026-11-24 12:00:00 UTC: gpt-4.1-nano") &&
+      wModel.stdout.includes("STOP: model unavailable: gpt-4.1-nano (openai: model_not_found)") && runtimeIds("running") === "",
+    `exit ${wModel.status}; ` + wModel.stdout.split("\n").filter((l) => /MODEL|STOP/.test(l)).join(" | "));
+  setModelStop(false);
   // Default unchanged: a critical tier still stops the run without --allow-tiers.
   docker([...COMPOSE, "run", "--rm", "-T", "--no-deps", "--entrypoint", "node", "runtime", "--input-type=module", "-e",
     `import { createDatabase } from "/app/dist/state/database.js";

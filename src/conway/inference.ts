@@ -16,6 +16,7 @@ import type {
 } from "../types.js";
 import { ResilientHttpClient } from "./http-client.js";
 import { isOpenAiReasoningModel } from "../inference/types.js";
+import { modelUnavailableFromResponse } from "../inference/model-unavailable.js";
 
 const INFERENCE_TIMEOUT_MS = 60_000;
 
@@ -256,6 +257,9 @@ async function chatViaOpenAiCompatible(params: {
 
   if (!resp.ok) {
     const text = await resp.text();
+    // Fork: a retired or unknown model is the owner's to fix; no retries (model-unavailable.ts).
+    const unavailable = modelUnavailableFromResponse(resp.status, text, params.model, params.backend);
+    if (unavailable) throw unavailable;
     throw new Error(
       `Inference error (${params.backend}): ${resp.status}: ${text}`,
     );
@@ -348,6 +352,8 @@ async function chatViaAnthropic(params: {
 
   if (!resp.ok) {
     const text = await resp.text();
+    const unavailable = modelUnavailableFromResponse(resp.status, text, params.model, "anthropic");
+    if (unavailable) throw unavailable;
     throw new Error(`Inference error (anthropic): ${resp.status}: ${text}`);
   }
 
