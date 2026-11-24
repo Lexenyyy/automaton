@@ -1336,3 +1336,8 @@
   settings tests keep two models to test switching). `agent:verify` +1 (9 tools offered); its model checks now
   expect gpt-6-luna only.
   Baselines: Linux 2215 passed; Windows 2183 passed, 22 known failures, 10 skipped; `agent:verify` 182.
+- 2026-11-24: **Test fix: the runway status test no longer depends on the date.** `runway.test.ts` ("the wake-up
+  status carries the runway") built its ledger around a fixed `NOW` (2026-11-23 18:00 UTC), but `buildStatusSnapshot`
+  reads the real clock, so from 2026-11-24 17:00 UTC its spend fell out of the 24 h window and the runway line changed
+  (found while testing the startup race fix). The test now pins the clock to `NOW` (fake `Date` only). No product code
+  changed. Baselines unchanged.

@@ -2,7 +2,7 @@
  * Runway estimate (fork, Phase 4 step 4): src/survival/runway.ts and where it is shown.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, onTestFinished, vi } from "vitest";
 import { computeRunway, formatRunway, formatDuration, runwayLine } from "../survival/runway.js";
 import { DEFAULT_SURVIVAL_SETTINGS } from "../survival/settings.js";
 import { insertLedgerEntry } from "../state/ledger.js";
@@ -120,6 +120,11 @@ describe("where the runway is shown", () => {
   });
 
   it("the wake-up status carries the runway; an unreadable balance gives 'unknown'", () => {
+    // buildStatusSnapshot reads the real clock: pin it to NOW, or the spend below
+    // leaves the 24 h window a day after NOW (this test failed from 2026-11-24 17:00 UTC).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    onTestFinished(() => { vi.useRealTimers(); });
     grant(500, 2);
     spend(1000, 1);
     const fin = (status: string): FinancialState => ({
