@@ -20,7 +20,7 @@ import type {
 } from "../types.js";
 import { ModelRegistry } from "./registry.js";
 import { InferenceBudgetTracker } from "./budget.js";
-import { DEFAULT_ROUTING_MATRIX, TASK_TIMEOUTS } from "./types.js";
+import { buildRoutingMatrix, TASK_TIMEOUTS } from "./types.js";
 import { MC_PER_CENT } from "../state/ledger.js";
 
 type Database = BetterSqlite3.Database;
@@ -345,7 +345,8 @@ export class InferenceRouter {
     return result;
   }
 
-  private getPreference(tier: SurvivalTier, taskType: InferenceTaskType): ModelPreference | undefined {
-    return DEFAULT_ROUTING_MATRIX[tier]?.[taskType];
+  /** Fork: the matrix for the owner's model settings (slots filled from modelStrategy). */
+  getPreference(tier: SurvivalTier, taskType: InferenceTaskType): ModelPreference | undefined {
+    return buildRoutingMatrix(this.budget.config)[tier]?.[taskType];
   }
 }

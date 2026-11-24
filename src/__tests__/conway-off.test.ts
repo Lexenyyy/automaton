@@ -33,6 +33,11 @@ function stubFetch() {
       throw new Error("test: Conway must not be called");
     }
     otherRequests.push(url);
+    // Fork (model check): the free OpenAI model list answers with today's models.
+    if (url === "https://api.openai.com/v1/models") {
+      const data = [{ id: "gpt-4.1-mini", shutdown_date: "2027-01-14" }, { id: "gpt-6-luna", shutdown_date: null }];
+      return new Response(JSON.stringify({ object: "list", data }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     const reply = (one: any) => ({ jsonrpc: "2.0", id: one.id, result: one.method === "eth_chainId" ? SEPOLIA_CHAIN_ID_HEX : "0x0" });
     const payload = Array.isArray(body) ? body.map(reply) : reply(body);
@@ -237,7 +242,13 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
     expect(report.ok).toBe(true);
     expect(text).toContain("Conway: off (own providers only; no Conway requests)");
     expect(text).toContain("model gpt-4.1-mini: provider openai, key present");
-    expect(text).toContain("model gpt-4.1-nano: provider openai, key present");
+    expect(text).toContain("model gpt-6-luna: provider openai, key present");
+    // Fork (model check): both models confirmed by the free model list; mini's shutdown date is a WARN.
+    expect(text).toContain("PASS  model gpt-6-luna: listed by openai, no shutdown date");
+    expect(text).toContain("PASS  model gpt-4.1-mini: listed by openai");
+    expect(text).toMatch(/WARN {2}model gpt-4\.1-mini: openai shuts it down on 2027-01-14 \(\d+ days\)/);
+    expect(text).toContain("INFO  reasoning effort (OpenAI reasoning models only): none");
+    expect(otherRequests.filter((u) => u === "https://api.openai.com/v1/models")).toHaveLength(1);
     expect(text).toContain("social relay: off");
     expect(text).toContain(`${hidden.size} Conway-only hidden`);
     expect(text).not.toContain("test-openai-key");
@@ -263,6 +274,28 @@ describe("startup without a Conway key (prepareRuntime / --preflight)", () => {
     rt.db.close();
 
     expect(conwayRequests).toEqual([]);
+  });
+
+  it("fork (model check): a configured model the provider no longer lists FAILs preflight; a rejected key FAILs once, no key printed", async () => {
+    stubFetch();
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    const { getWallet } = await import("../identity/wallet.js");
+    await getWallet();
+    const { runPreflight } = await import("../runtime/prepare.js");
+    const retired = await runPreflight(
+      { ...(await setup()), agentSettings: { model: { allowedModels: ["gpt-4.1-mini", "gpt-4.1-nano"] } } } as any,
+      { fetchModelList: async () => ({ ok: true, models: new Map([["gpt-4.1-mini", { id: "gpt-4.1-mini" }], ["gpt-6-luna", { id: "gpt-6-luna" }]]) }) },
+    );
+    expect(retired.ok).toBe(false);
+    expect(retired.lines).toContain("FAIL  model gpt-4.1-nano: not offered by openai (retired or unknown); the agent cannot use it");
+    expect(retired.lines.at(-1)).toMatch(/PREFLIGHT FAILED/);
+
+    const rejected = await runPreflight(await setup(), { fetchModelList: async () => ({ ok: false, reason: "HTTP 401, invalid_api_key, key rejected" }) });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.lines.filter((l) => l.startsWith("FAIL"))).toEqual([
+      "FAIL  model list (openai): could not read (HTTP 401, invalid_api_key, key rejected); models not confirmed",
+    ]);
+    expect(rejected.lines.join("\n")).not.toContain("test-openai-key");
   });
 
   it("preflight fails clearly when a model has no usable key", async () => {

@@ -15,6 +15,7 @@ import type {
   InferenceToolDefinition,
 } from "../types.js";
 import { ResilientHttpClient } from "./http-client.js";
+import { isOpenAiReasoningModel } from "../inference/types.js";
 
 const INFERENCE_TIMEOUT_MS = 60_000;
 
@@ -34,6 +35,8 @@ interface InferenceClientOptions {
    * backend then fails with a clear error and nothing is sent.
    */
   conwayEnabled?: boolean;
+  /** Fork: `reasoning_effort` for OpenAI reasoning models (see isOpenAiReasoningModel). */
+  reasoningEffort?: string;
 }
 
 type InferenceBackend = "conway" | "openai" | "anthropic" | "ollama";
@@ -78,10 +81,11 @@ export function createInferenceClient(
       conwayEnabled,
     });
 
-    // Newer models (o-series, gpt-5.x, gpt-4.1) require max_completion_tokens.
+    // Newer models (o-series, gpt-5 and later, gpt-4.1) require max_completion_tokens.
     // Ollama always uses max_tokens.
+    const reasoningModel = backend !== "ollama" && isOpenAiReasoningModel(model);
     const usesCompletionTokens =
-      backend !== "ollama" && /^(o[1-9]|gpt-5|gpt-4\.1)/.test(model);
+      backend !== "ollama" && (reasoningModel || /^gpt-4\.1/.test(model));
     const tokenLimit = opts?.maxTokens || maxTokens;
 
     const body: Record<string, unknown> = {
@@ -94,6 +98,12 @@ export function createInferenceClient(
       body.max_completion_tokens = tokenLimit;
     } else {
       body.max_tokens = tokenLimit;
+    }
+
+    // Fork: reasoning effort (modelStrategy.reasoningEffort) for OpenAI reasoning
+    // models only; gpt-6-luna takes tool calls on Chat Completions only with "none".
+    if (reasoningModel && backend === "openai" && options.reasoningEffort) {
+      body.reasoning_effort = options.reasoningEffort;
     }
 
     if (opts?.temperature !== undefined) {
@@ -142,7 +152,7 @@ export function createInferenceClient(
    */
   const setLowComputeMode = (enabled: boolean): void => {
     if (enabled) {
-      currentModel = options.lowComputeModel || "gpt-5-mini";
+      currentModel = options.lowComputeModel || "gpt-6-luna";
       maxTokens = 4096;
     } else {
       currentModel = options.defaultModel;

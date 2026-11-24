@@ -1253,3 +1253,44 @@
   project name; a recipient refused; refused while a runtime runs; the template/project pairing both ways; the
   tier-walk template passes preflight).
   Baselines: Linux 2187 passed; Windows 2155 passed, 22 known failures, 10 skipped; `agent:verify` 178.
+- 2026-11-24: **Tier walk paused at drain 2: `gpt-4.1-nano` is retired** (OpenAI shut it down on 2026-10-23). The
+  normal → low_compute wake routed to nano as planned, got `404 model_not_found` 5 times (no cost) and slept; the walk
+  wallet is at 0.22 USDC, low_compute. Causes: the routing table hardcoded model names (nano in every cheap slot), and
+  preflight only checked that a key exists. OpenAI's model list (owner run, 2026-11-24) also shows `gpt-4.1-mini`
+  shutting down on 2027-01-14 and `gpt-5-mini`/`gpt-5-nano` on 2026-12-11.
+  Owner decision: **gpt-6-luna for all tiers, `reasoning_effort` "none"**. Checked on the model pages: standard
+  $0.10 / $0.50 per 1M tokens (cached input $0.01), no shutdown date; on Chat Completions it takes tool calls only with
+  `reasoning_effort` "none". gpt-5.6-luna ($0.20 / $1.20) is twice the price. Owner test calls (own key, 2026-11-24):
+  tools + effort none → `check_balance({})`, 0 reasoning tokens, 0.0024¢; tools + effort low → refused (400) as
+  documented; no tools + `temperature: 0` → OK, 0.0009¢ (about 0.003¢ of the $5 testing budget, not in the agent's
+  ledger). Estimated cost per wake at run 6's usage (~12k input, ~300 output tokens): ~0.135¢ (gpt-4.1-mini ~0.53¢).
+  Fix in three commits, each stopped for review.
+- 2026-11-24: **Model fix 1/3: the cheap model is a setting, and preflight confirms every model with the provider.**
+  - Routing table (`src/inference/types.ts`): it holds slots (`main` = `modelStrategy.inferenceModel`, `cheap` =
+    `lowComputeModel`, `critical` = `criticalModel`), filled from the owner's settings by `buildRoutingMatrix`; the
+    router uses the config's matrix. Token limits and per-call ceilings per tier are unchanged. Dropped: the
+    hardcoded `gpt-5-mini` fallback in high (shuts down 2026-12-11) and every `gpt-4.1-nano` entry. Side effect: an
+    agent `switch_model` (owner's `allowedModels` only) now also changes the routed main model; before, routing ignored it.
+  - Registry: `gpt-6-luna` added (cost per 1k: input 1, output 5 hundredths of a cent; cached input is counted at the
+    full input price, so recorded costs are never too low); `gpt-4.1-nano` removed (disabled on startup).
+  - `modelStrategy.reasoningEffort` (new; `none|minimal|low|medium|high`, default `none`; startup refuses others):
+    sent as `reasoning_effort` only to OpenAI reasoning models (gpt-5 and later, o-series; not `*-chat*`). Reasoning
+    models now always get `max_completion_tokens` (gpt-6 matched no name pattern before and would have got `max_tokens`).
+  - Code defaults and all three templates (main, paytest, tier walk): `lowComputeModel` and `criticalModel`
+    `gpt-6-luna`, `reasoningEffort` `none`; `allowedModels` `gpt-4.1-mini`, `gpt-6-luna`. The main model stays
+    `gpt-4.1-mini` until fix 3/3.
+  - Preflight model check (`src/inference/model-check.ts`): every model the agent could use (main, cheap, critical
+    and `allowedModels`) is looked up in the provider's free model list (`GET /v1/models`, OpenAI and Anthropic, one
+    call per provider, no model call). Not listed: FAIL. List unreadable (key rejected, offline): one FAIL, its models
+    "not checked". Listed with a shutdown date: WARN with the days left, "SOON" within 30 days, "replace it now"
+    after. Never prints the key or the provider's error body (OpenAI's 401 body quotes part of the key): status and
+    error code only. Preflight also prints the reasoning effort.
+  - `agent:verify`: verify's fake OpenAI key is rejected by the model check, so its preflight checks now pass when
+    that rejection is the only FAIL (no switch to skip the check); +1 check (models "not checked", reasoning effort
+    none, no nano).
+  Tests: `model-check` (14: which models; list parsing incl. Unix-second dates; 401 gives status and code only;
+  unreachable and timeout; Anthropic headers; retired model FAILs; shutdown WARN/SOON/passed; unreadable list one
+  FAIL; reasoning effort values; reasoning-model detection; request body for gpt-6-luna and gpt-4.1-mini; no setting),
+  router (slots from settings, no nano/gpt-5-mini), preflight (a retired allowed model FAILs; a rejected key FAILs
+  once, no key printed), and the tests that named nano.
+  Baselines: Linux 2204 passed; Windows 2172 passed, 22 known failures, 10 skipped; `agent:verify` 179.

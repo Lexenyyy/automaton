@@ -52,6 +52,18 @@ delete env.AUTOMATON_CONFIG_TEMPLATE; // verify always uses the normal template 
 const results = [];
 const check = (group, name, ok, detail = "") => results.push({ group, name, ok: Boolean(ok), detail: String(detail) });
 
+// Fork (model check): preflight confirms every model with the provider's free
+// model list. Verify uses a fake OpenAI key, which OpenAI rejects, so preflight
+// fails on exactly that one line and nothing else. Verify adds no switch to skip
+// the check; "passes" below means: that rejection is the only FAIL.
+const MODEL_LIST_REJECTED = /^FAIL {2}model list \(openai\): could not read \(HTTP 401[^)]*key rejected\); models not confirmed$/;
+const failLines = (out) => String(out).split("\n").map((l) => l.trim()).filter((l) => l.startsWith("FAIL"));
+const preflightOkButFakeKey = (out) => {
+  const fails = failLines(out);
+  return String(out).includes("PREFLIGHT FAILED") && fails.length === 1 && MODEL_LIST_REJECTED.test(fails[0]);
+};
+const failSummary = (out) => failLines(out).join(" | ").slice(0, 500) || "no FAIL lines";
+
 function docker(args, { input, allowFail = true, timeoutMs = 300_000 } = {}) {
   const r = spawnSync("docker", args, { cwd: ROOT, env, input, encoding: "utf-8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
   if (!allowFail && r.status !== 0) {
@@ -373,8 +385,13 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   // no model call, agent not started; one read-only RPC call to Base Sepolia).
   const pre = docker([...COMPOSE, "run", "--rm", "-T", "runtime", "--preflight"]);
   const preOut = pre.out + pre.err;
-  check("entrypoint", "--preflight passes with no Conway key", pre.code === 0 && preOut.includes("PREFLIGHT PASSED"),
-    pre.code === 0 ? "" : preOut.split("\n").filter((l) => /FAIL|Error|error/.test(l)).join(" | ").slice(0, 500));
+  check("entrypoint", "--preflight passes with no Conway key (only FAIL: OpenAI rejects verify's fake key in the model check)",
+    preflightOkButFakeKey(preOut), failSummary(preOut));
+  check("entrypoint", "--preflight asks OpenAI's model list (fake key rejected: one FAIL; models 'not checked'; reasoning effort none)",
+    preOut.includes("INFO  model gpt-6-luna: not checked (openai model list unavailable)") &&
+      preOut.includes("INFO  model gpt-4.1-mini: not checked (openai model list unavailable)") &&
+      preOut.includes("INFO  reasoning effort (OpenAI reasoning models only): none") && !/gpt-4\.1-nano/.test(preOut),
+    preOut.split("\n").filter((l) => /model|reasoning/.test(l)).join(" | ").slice(0, 600));
   check("entrypoint", "--preflight: Conway off, sandbox reached as uid 10002, model key from secrets",
     preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
     preOut.includes("model gpt-4.1-mini: provider openai, key present"));
@@ -505,12 +522,12 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     `exit ${ledgerOneoff.status}; sandbox ${sandboxIds(true) || "none"}`);
   const preOneoff = oneoff(["--needs-sandbox", "--", "--preflight"]);
   check("one-off commands", "preflight passes and stops the sandbox it started",
-    preOneoff.status === 0 && preOneoff.stdout.includes("PREFLIGHT PASSED") && sandboxIds(true) === "",
-    `exit ${preOneoff.status}; sandbox ${sandboxIds(true) || "none"}`);
+    preflightOkButFakeKey(preOneoff.stdout) && sandboxIds(true) === "",
+    `exit ${preOneoff.status}; sandbox ${sandboxIds(true) || "none"}; ${failSummary(preOneoff.stdout)}`);
   docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
   const preKeep = oneoff(["--needs-sandbox", "--", "--preflight"]);
   check("one-off commands", "preflight leaves an already running sandbox running",
-    preKeep.status === 0 && sandboxIds(false) !== "", `exit ${preKeep.status}`);
+    preflightOkButFakeKey(preKeep.stdout) && sandboxIds(false) !== "", `exit ${preKeep.status}; ${failSummary(preKeep.stdout)}`);
   // Config template switch (AUTOMATON_CONFIG_TEMPLATE, Phase 3 step 7).
   const withTemplate = (value, args) => spawnSync(process.execPath, [oneoffScript, "--project", PROJECT, ...args],
     { encoding: "utf-8", env: { ...env, AUTOMATON_CONFIG_TEMPLATE: value }, timeout: 300_000 });
@@ -519,8 +536,8 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
     badTpl.status === 2 && badTpl.stderr.includes("AUTOMATON_CONFIG_TEMPLATE must look like"), `exit ${badTpl.status}: ${badTpl.stderr.trim()}`);
   const payTpl = withTemplate("./automaton.paytest.json", ["--needs-sandbox", "--", "--preflight"]);
   check("one-off commands", "the paytest template: noted, preflight passes, send_usdc offered",
-    payTpl.status === 0 && payTpl.stderr.includes("note: config template ./automaton.paytest.json") &&
-      payTpl.stdout.includes("PREFLIGHT PASSED") && payTpl.stdout.includes("INFO  payment tools offered: send_usdc"),
+    payTpl.stderr.includes("note: config template ./automaton.paytest.json") &&
+      preflightOkButFakeKey(payTpl.stdout) && payTpl.stdout.includes("INFO  payment tools offered: send_usdc"),
     `exit ${payTpl.status}; ${(payTpl.stdout.split("\n").find((l) => l.includes("payment tools")) ?? payTpl.stdout.slice(-300)).trim()}`);
   // Owner --wallet send (Phase 4 step 7) on the unfunded throwaway wallet: plan printed, dry run refuses, nothing sent.
   const wsDry = oneoff(["--", "--wallet", "send", "10"]);
@@ -545,7 +562,7 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   // The tier-walk template passes the real startup checks (throwaway verify project, direct compose run).
   const twPre = spawnSync("docker", [...COMPOSE, "run", "--rm", "-T", "runtime", "--preflight"], { cwd: ROOT, encoding: "utf-8", env: tplEnv("./automaton.tierwalk.json"), timeout: 300_000 });
   check("one-off commands", "the tier-walk template passes preflight: scaled tiers, reserve $0, creator only, no payment tool for the agent",
-    twPre.status === 0 && twPre.stdout.includes("PREFLIGHT PASSED") &&
+    preflightOkButFakeKey(twPre.stdout) &&
       twPre.stdout.includes("INFO  survival tiers: high > $0.40, normal > $0.30, low_compute > $0.15, critical >= $0.00, dead below $0 or after 5 min at <= $0; tier-change wakes at least 1 min apart") &&
       twPre.stdout.includes("per transfer $0.25, hour $0.60, day $1.00, reserve $0.00") && twPre.stdout.includes("INFO  payment tools offered: none"),
     `exit ${twPre.status}: ${(twPre.stdout + twPre.stderr).split("\n").filter((l) => /FAIL|survival tiers|payments:|payment tools|PREFLIGHT/.test(l)).join(" | ")}`);
@@ -594,7 +611,7 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   docker([...COMPOSE, "rm", "-f", "sandbox"]);
   const preLive = oneoff(["--needs-sandbox", "--", "--preflight"]);
   check("one agent per project", "a one-off never removes a sandbox another runtime uses",
-    preLive.status === 0 && sandboxIds(false) !== "" && preLive.stderr.includes("sandbox left running"),
+    preflightOkButFakeKey(preLive.stdout) && sandboxIds(false) !== "" && preLive.stderr.includes("sandbox left running"),
     `exit ${preLive.status}; sandbox ${sandboxIds(false) || "none"}`);
   docker(["rm", "-f", LIVE]);
 

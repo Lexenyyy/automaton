@@ -167,6 +167,9 @@ describe("leak test: a known key never shows up in startup output", () => {
     (await import("../identity/wallet.js")).encryptExistingWallet();
 
     vi.stubGlobal("fetch", vi.fn(async (_input: any, init?: any) => {
+      if (String(_input) === "https://api.openai.com/v1/models") {
+        return new Response(JSON.stringify({ data: [{ id: "gpt-4.1-mini" }, { id: "gpt-6-luna" }] }), { status: 200 });
+      }
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       const reply = (one: any) => ({ jsonrpc: "2.0", id: one.id, result: one.method === "eth_chainId" ? SEPOLIA_CHAIN_ID_HEX : "0x0" });
       return new Response(JSON.stringify(Array.isArray(body) ? body.map(reply) : reply(body)), { status: 200, headers: { "Content-Type": "application/json" } });

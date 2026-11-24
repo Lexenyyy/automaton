@@ -38,7 +38,7 @@ describe("owner limits", () => {
   it("defaults: genesis changes off, model changes on for the three strategy models only", () => {
     const limits = resolveSettingsLimits(config());
     expect(limits.genesisPrompt).toEqual({ allowAgentChanges: false, maxChangesPerDay: 1, maxLength: 2000 });
-    expect(limits.model).toEqual({ allowAgentChanges: true, allowedModels: ["gpt-4.1-mini", "gpt-4.1-nano"], maxChangesPerDay: 4 });
+    expect(limits.model).toEqual({ allowAgentChanges: true, allowedModels: ["gpt-4.1-mini", "gpt-6-luna"], maxChangesPerDay: 4 });
   });
 
   it("uses the owner's explicit values, and never allows more than 2000 characters", () => {
@@ -46,12 +46,12 @@ describe("owner limits", () => {
       config({
         agentSettings: {
           genesisPrompt: { allowAgentChanges: true, maxChangesPerDay: 2, maxLength: 50_000 },
-          model: { allowAgentChanges: false, allowedModels: ["gpt-4.1-nano"], maxChangesPerDay: 0 },
+          model: { allowAgentChanges: false, allowedModels: ["gpt-6-luna"], maxChangesPerDay: 0 },
         },
       }),
     );
     expect(limits.genesisPrompt).toEqual({ allowAgentChanges: true, maxChangesPerDay: 2, maxLength: 2000 });
-    expect(limits.model).toEqual({ allowAgentChanges: false, allowedModels: ["gpt-4.1-nano"], maxChangesPerDay: 0 });
+    expect(limits.model).toEqual({ allowAgentChanges: false, allowedModels: ["gpt-6-luna"], maxChangesPerDay: 0 });
   });
 
   it("ignores invalid limit values (falls back to the safe defaults)", () => {
@@ -96,11 +96,11 @@ describe("inference model", () => {
       ok: false,
       error: expect.stringContaining("not in the owner's allowed models"),
     });
-    expect(setInferenceModelByAgent(c, db.raw, "gpt-4.1-nano", "save money", DAY1).ok).toBe(true);
-    expect(c.inferenceModel).toBe("gpt-4.1-nano");
-    expect(c.modelStrategy!.inferenceModel).toBe("gpt-4.1-nano");
+    expect(setInferenceModelByAgent(c, db.raw, "gpt-6-luna", "save money", DAY1).ok).toBe(true);
+    expect(c.inferenceModel).toBe("gpt-6-luna");
+    expect(c.modelStrategy!.inferenceModel).toBe("gpt-6-luna");
     // The allowlist comes from the owner's original config, not the changed one.
-    expect(resolveSettingsLimits(c).model.allowedModels).toEqual(["gpt-4.1-mini", "gpt-4.1-nano"]);
+    expect(resolveSettingsLimits(c).model.allowedModels).toEqual(["gpt-4.1-mini", "gpt-6-luna"]);
     expect(setInferenceModelByAgent(c, db.raw, "gpt-4.1-mini", "back", DAY1).ok).toBe(true);
   });
 
@@ -108,19 +108,19 @@ describe("inference model", () => {
     const c = config();
     const db = createTestDb();
     for (let i = 0; i < 4; i++) {
-      expect(setInferenceModelByAgent(c, db.raw, i % 2 ? "gpt-4.1-mini" : "gpt-4.1-nano", "r", DAY1).ok).toBe(true);
+      expect(setInferenceModelByAgent(c, db.raw, i % 2 ? "gpt-4.1-mini" : "gpt-6-luna", "r", DAY1).ok).toBe(true);
     }
-    expect(setInferenceModelByAgent(c, db.raw, "gpt-4.1-nano", "r", DAY1_LATER)).toEqual({
+    expect(setInferenceModelByAgent(c, db.raw, "gpt-6-luna", "r", DAY1_LATER)).toEqual({
       ok: false,
       error: expect.stringContaining("daily limit reached (4/4"),
     });
-    expect(setInferenceModelByAgent(c, db.raw, "gpt-4.1-nano", "r", DAY2).ok).toBe(true);
+    expect(setInferenceModelByAgent(c, db.raw, "gpt-6-luna", "r", DAY2).ok).toBe(true);
   });
 
   it("is refused when the owner turned model changes off", () => {
     const c = config({ agentSettings: { model: { allowAgentChanges: false } } });
     const db = createTestDb();
-    expect(setInferenceModelByAgent(c, db.raw, "gpt-4.1-nano", "r", DAY1).ok).toBe(false);
+    expect(setInferenceModelByAgent(c, db.raw, "gpt-6-luna", "r", DAY1).ok).toBe(false);
     expect(c.inferenceModel).toBe("gpt-4.1-mini");
   });
 });
@@ -130,19 +130,19 @@ describe("startup and owner commands", () => {
     const db = createTestDb();
     const before = config({ agentSettings: { genesisPrompt: { allowAgentChanges: true } } });
     setGenesisPromptByAgent(before, db.raw, "Agent purpose.", "r", DAY1);
-    setInferenceModelByAgent(before, db.raw, "gpt-4.1-nano", "r", DAY1);
+    setInferenceModelByAgent(before, db.raw, "gpt-6-luna", "r", DAY1);
 
     const restart = config({ agentSettings: { genesisPrompt: { allowAgentChanges: true } } });
     expect(applyAgentSettings(restart, db.raw)).toEqual({ applied: ["genesis_prompt", "inference_model"], ignored: [] });
     expect(restart.genesisPrompt).toBe("Agent purpose.");
-    expect(restart.inferenceModel).toBe("gpt-4.1-nano");
+    expect(restart.inferenceModel).toBe("gpt-6-luna");
   });
 
   it("ignores stored values once the owner tightens the limits", () => {
     const db = createTestDb();
     const before = config({ agentSettings: { genesisPrompt: { allowAgentChanges: true } } });
     setGenesisPromptByAgent(before, db.raw, "Agent purpose.", "r", DAY1);
-    setInferenceModelByAgent(before, db.raw, "gpt-4.1-nano", "r", DAY1);
+    setInferenceModelByAgent(before, db.raw, "gpt-6-luna", "r", DAY1);
 
     const tightened = config({ agentSettings: { model: { allowedModels: ["gpt-4.1-mini"] } } });
     const result = applyAgentSettings(tightened, db.raw);
@@ -156,7 +156,7 @@ describe("startup and owner commands", () => {
   it("reset removes the agent's values and keeps an append-only history", () => {
     const db = createTestDb();
     const c = config();
-    setInferenceModelByAgent(c, db.raw, "gpt-4.1-nano", "r", DAY1);
+    setInferenceModelByAgent(c, db.raw, "gpt-6-luna", "r", DAY1);
     expect(resetAgentSettings(db.raw, DAY1)).toEqual(["inference_model"]);
     expect(resetAgentSettings(db.raw, DAY1)).toEqual([]);
     expect(db.raw.prepare("SELECT COUNT(*) n FROM agent_settings").get()).toEqual({ n: 0 });
@@ -220,8 +220,8 @@ describe("the two tools never write the config file", () => {
     const { model } = tools();
 
     expect(await model.execute({ model_id: "gpt-5-mini", reason: "r" }, ctx)).toContain("not in the owner's allowed models");
-    expect(await model.execute({ model_id: "gpt-4.1-nano", reason: "r" }, ctx)).toContain("stored in the database");
-    expect(c.inferenceModel).toBe("gpt-4.1-nano");
+    expect(await model.execute({ model_id: "gpt-6-luna", reason: "r" }, ctx)).toContain("stored in the database");
+    expect(c.inferenceModel).toBe("gpt-6-luna");
     expect(writeSpy.mock.calls.some(([p]) => /automaton\.json$/.test(String(p)))).toBe(false);
   });
 

@@ -233,11 +233,34 @@ describe("InferenceRouter", () => {
       expect(model!.modelId).toBe("gpt-4.1-mini");
     });
 
-    it("prefers gpt-4.1-mini over gpt-5-mini in the high tier", () => {
+    it("uses the main model in the high tier; never gpt-5-mini (shuts down 2026-12-11)", () => {
       expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-4.1-mini");
       expect(router.selectModel("high", "planning")!.modelId).toBe("gpt-4.1-mini");
-      registry.setEnabled("gpt-4.1-mini", false);
-      expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-5-mini");
+      for (const tier of Object.keys(DEFAULT_ROUTING_MATRIX) as Array<keyof typeof DEFAULT_ROUTING_MATRIX>) {
+        for (const pref of Object.values(DEFAULT_ROUTING_MATRIX[tier])) expect(pref.candidates).not.toContain("gpt-5-mini");
+      }
+    });
+
+    it("fork: model names come from the owner's modelStrategy (slots), not from code", () => {
+      const custom = new InferenceRouter(db, registry, new InferenceBudgetTracker(db, {
+        ...DEFAULT_MODEL_STRATEGY_CONFIG, inferenceModel: "gpt-6-luna", lowComputeModel: "gpt-4.1-mini", criticalModel: "gpt-4.1",
+      }));
+      expect(custom.selectModel("high", "agent_turn")!.modelId).toBe("gpt-6-luna");
+      expect(custom.selectModel("normal", "agent_turn")!.modelId).toBe("gpt-6-luna");
+      expect(custom.selectModel("normal", "heartbeat_triage")!.modelId).toBe("gpt-4.1-mini");
+      expect(custom.selectModel("low_compute", "agent_turn")!.modelId).toBe("gpt-4.1-mini");
+      expect(custom.selectModel("critical", "agent_turn")!.modelId).toBe("gpt-4.1");
+      expect(custom.selectModel("critical", "summarization")).toBeNull();
+      expect(custom.selectModel("dead", "agent_turn")).toBeNull();
+      // Limits stay with the tier, whatever the model.
+      expect(custom.getPreference("critical", "agent_turn")).toEqual({ candidates: ["gpt-4.1"], maxTokens: 2048, ceilingCents: 3 });
+    });
+
+    it("fork: no routing candidate names gpt-4.1-nano (shut down 2026-10-23)", () => {
+      for (const tier of Object.keys(DEFAULT_ROUTING_MATRIX) as Array<keyof typeof DEFAULT_ROUTING_MATRIX>) {
+        for (const pref of Object.values(DEFAULT_ROUTING_MATRIX[tier])) expect(pref.candidates).not.toContain("gpt-4.1-nano");
+      }
+      expect(registry.get("gpt-4.1-nano")?.enabled ?? false).toBe(false);
     });
 
     it("never routes to gpt-5.2 or gpt-5.3 by default", () => {
@@ -252,14 +275,15 @@ describe("InferenceRouter", () => {
     it("returns cheaper model for low_compute tier", () => {
       const model = router.selectModel("low_compute", "agent_turn");
       expect(model).not.toBeNull();
-      // Fork (Phase 4 step 3, F5, owner-approved): nano, cheaper than normal's gpt-4.1-mini.
-      expect(model!.modelId).toBe("gpt-4.1-nano");
+      // Fork (Phase 4 step 3, F5, owner-approved): the cheap model (gpt-6-luna since
+      // 2026-11-24; was gpt-4.1-nano), cheaper than normal's gpt-4.1-mini.
+      expect(model!.modelId).toBe("gpt-6-luna");
     });
 
     it("returns minimal model for critical tier", () => {
       const model = router.selectModel("critical", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-4.1-nano");
+      expect(model!.modelId).toBe("gpt-6-luna");
     });
 
     it("returns null for dead tier", () => {
@@ -276,7 +300,7 @@ describe("InferenceRouter", () => {
       registry.setEnabled("gpt-4.1-mini", false);
       const model = router.selectModel("normal", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-4.1-nano");
+      expect(model!.modelId).toBe("gpt-6-luna");
     });
   });
 
@@ -770,7 +794,8 @@ describe("Static Model Baseline", () => {
     const ids = STATIC_MODEL_BASELINE.map((m) => m.modelId);
     expect(ids).toContain("gpt-4.1");
     expect(ids).toContain("gpt-4.1-mini");
-    expect(ids).toContain("gpt-4.1-nano");
+    expect(ids).toContain("gpt-6-luna");
+    expect(ids).not.toContain("gpt-4.1-nano"); // shut down by OpenAI on 2026-10-23
     expect(ids).toContain("gpt-5.2");
     expect(ids).toContain("gpt-5.3");
   });
@@ -989,8 +1014,9 @@ describe("Inference DB Helpers", () => {
 describe("DEFAULT_MODEL_STRATEGY_CONFIG", () => {
   it("has sensible defaults", () => {
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel).toBe("gpt-4.1-mini");
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-4.1-nano");
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-4.1-nano");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-6-luna");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-6-luna");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.reasoningEffort).toBe("none");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.enableModelFallback).toBe(true);
     // Fork budgets (change 1c): $1/day testing cap
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.dailyBudgetCents).toBe(100);

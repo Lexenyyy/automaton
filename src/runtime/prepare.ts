@@ -20,6 +20,13 @@ import { createConwayClient } from "../conway/client.js";
 import { createInferenceClient, resolveInferenceBackend } from "../conway/inference.js";
 import { loadHeartbeatConfig, syncHeartbeatToDb } from "../heartbeat/config.js";
 import { ModelRegistry } from "../inference/registry.js";
+import {
+  checkReasoningEffort,
+  collectConfiguredModels,
+  fetchModelList,
+  modelCheckLines,
+  type ListedProvider,
+} from "../inference/model-check.js";
 import { loadSkills } from "../skills/loader.js";
 import { createSocialClient } from "../social/client.js";
 import { PolicyEngine } from "../agent/policy-engine.js";
@@ -298,7 +305,8 @@ export async function prepareRuntime(
     apiKey,
     defaultModel: config.inferenceModel,
     maxTokens: config.maxTokensPerTurn,
-    lowComputeModel: config.modelStrategy?.lowComputeModel || "gpt-4.1-nano",
+    lowComputeModel: config.modelStrategy?.lowComputeModel || DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel,
+    reasoningEffort: config.modelStrategy?.reasoningEffort ?? DEFAULT_MODEL_STRATEGY_CONFIG.reasoningEffort,
     openaiApiKey: modelKeys.openaiApiKey,
     anthropicApiKey: modelKeys.anthropicApiKey,
     ollamaBaseUrl,
@@ -365,6 +373,9 @@ export async function prepareRuntime(
   const walletCacheProblem = checkWalletReadCacheSeconds(config);
   if (walletCacheProblem) allowProblems.push(walletCacheProblem);
   allowProblems.push(...checkSoulDefaults(config));
+  // Fork (after the tier walk): refuse an unknown reasoning effort.
+  const effortProblem = checkReasoningEffort(config);
+  if (effortProblem) allowProblems.push(effortProblem);
   if (allowProblems.length) {
     if (lease) releaseRuntimeLease(db.raw, lease.instanceId);
     db.close();
@@ -399,7 +410,10 @@ export async function prepareRuntime(
  * `--preflight`: the real startup path plus checks; then exit. Returns the
  * report lines and whether everything passed. Never prints key values.
  */
-export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boolean; lines: string[] }> {
+export async function runPreflight(
+  config: AutomatonConfig,
+  opts: { fetchModelList?: typeof fetchModelList } = {},
+): Promise<{ ok: boolean; lines: string[] }> {
   const lines: string[] = ["=== PREFLIGHT ==="];
   let ok = true;
   const line = (pass: boolean, text: string) => {
@@ -449,9 +463,12 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
         : "INFO  runtime lease: free (no agent running on this database)",
     );
 
-    // Models: each strategy model must have a usable provider (no model call).
-    const s = rt.config.modelStrategy;
-    const models = [...new Set([rt.config.inferenceModel, s?.inferenceModel, s?.lowComputeModel, s?.criticalModel].filter(Boolean) as string[])];
+    // Models: each model the agent could use (strategy models and the models it
+    // may switch to) must have a usable provider, and (fork, after the tier walk)
+    // must be listed by that provider: one free model list call per provider,
+    // no model call. Not listed, or the list unreadable: FAIL.
+    const models = collectConfiguredModels(rt.config);
+    const byProvider = new Map<ListedProvider, string[]>();
     for (const model of models) {
       try {
         const backend = resolveInferenceBackend(model, {
@@ -461,10 +478,25 @@ export async function runPreflight(config: AutomatonConfig): Promise<{ ok: boole
           conwayEnabled: rt.conwayMode === "on",
         });
         line(true, `model ${model}: provider ${backend}, key ${backend === "ollama" ? "not needed" : "present"}`);
+        if (backend === "openai" || backend === "anthropic") {
+          byProvider.set(backend, [...(byProvider.get(backend) ?? []), model]);
+        } else {
+          lines.push(`INFO  model ${model}: availability not checked (${backend})`);
+        }
       } catch (err: any) {
         line(false, `model ${model}: ${err?.message ?? String(err)}`);
       }
     }
+    for (const [provider, providerModels] of byProvider) {
+      const key = provider === "openai" ? rt.modelKeys.openaiApiKey : rt.modelKeys.anthropicApiKey;
+      const list = await (opts.fetchModelList ?? fetchModelList)(provider, key as string);
+      for (const l of modelCheckLines(provider, providerModels, list)) {
+        if (l.level === "PASS" || l.level === "FAIL") line(l.level === "PASS", l.text);
+        else lines.push(`${l.level}  ${l.text}`);
+      }
+    }
+    const effort = rt.config.modelStrategy?.reasoningEffort ?? DEFAULT_MODEL_STRATEGY_CONFIG.reasoningEffort;
+    lines.push(`INFO  reasoning effort (OpenAI reasoning models only): ${effort ?? "not sent"}`);
 
     // Sandbox (container mode): one harmless command through the socket.
     if (isContainerSandbox(rt.config.sandbox)) {

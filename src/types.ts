@@ -1422,12 +1422,24 @@ export interface ModelStrategyConfig {
   perCallCeilingCents: number; // 0 = no limit; fork default: 5
   enableModelFallback: boolean; // default: true
   anthropicApiVersion: string; // default: "2023-06-01"
+  /**
+   * Fork (after the tier walk's nano 404): `reasoning_effort` sent to OpenAI
+   * reasoning models (gpt-5 and later, o-series); never sent to other models.
+   * On Chat Completions, gpt-6-luna takes tool calls only with "none".
+   * Startup refuses other values. Default "none".
+   */
+  reasoningEffort?: ReasoningEffort;
 }
+
+export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   inferenceModel: "gpt-4.1-mini",
-  lowComputeModel: "gpt-4.1-nano",
-  criticalModel: "gpt-4.1-nano",
+  // Fork: gpt-4.1-nano was shut down by OpenAI on 2026-10-23 (owner decision 2026-11-24:
+  // gpt-6-luna, standard $0.10 / $0.50 per 1M tokens, tool calls with reasoning_effort none).
+  lowComputeModel: "gpt-6-luna",
+  criticalModel: "gpt-6-luna",
   maxTokensPerTurn: 4096,
   dailyBudgetCents: 100,
   lifetimeBudgetCents: 500,
@@ -1436,6 +1448,7 @@ export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
   perCallCeilingCents: 5,
   enableModelFallback: true,
   anthropicApiVersion: "2023-06-01",
+  reasoningEffort: "none",
 };
 
 // === Phase 3.1: Replication & Lifecycle Types ===

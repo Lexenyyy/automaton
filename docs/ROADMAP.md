@@ -276,6 +276,20 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
         - [x] Tooling: owner `--wallet send <cents|all> [--confirm]` (creator only, same checks, dry run by default,
               recorded like an agent payment, no ledger entry); `automaton.tierwalk.json`; template/project pairing.
         - [ ] The walk (owner): fund 0.50 USDC + ETH; drains 15¢ → 13¢ → 14¢ → all; revive with 0.25 USDC.
+              2026-11-24: funded, high and normal wakes OK; paused after drain 2 (wallet 0.22 USDC, low_compute):
+              the low_compute wake routed to gpt-4.1-nano, shut down by OpenAI on 2026-10-23 (404, 5 failed turns,
+              no cost). Resume after the model fix with `--wake-now` (one low_compute wake on the new cheap model),
+              then drain 3.
+        - [ ] Model fix (owner decision: gpt-6-luna for all tiers, reasoning effort none), one commit each:
+          - [x] 1/3 Cheap model as a setting (routing slots from `modelStrategy`), gpt-6-luna in the cheap and
+                critical slots, `reasoningEffort` setting, preflight confirms every model with the provider's free
+                model list (FAIL if missing, WARN with a shutdown date).
+          - [ ] 2/3 `model_not_found`: one clear ERROR, the wake ends at once ("model unavailable"), forced sleep; the
+                watchdog reports it and stops.
+          - [ ] 3/3 Main model gpt-4.1-mini (shuts down 2027-01-14) → gpt-6-luna; per-route ceilings re-checked;
+                the main agent's stored `switch_model` value checked.
+          - Later (Phase 7): the orchestration worker registry (`provider-registry.ts`) still lists gpt-4.1-nano and
+            sends no reasoning effort; fix before orchestration is turned on.
   - [ ] 8. Docs; "done when" checked.
 
 ## Phase 5a — Service base: general and reusable (1–2 weeks)

@@ -3,7 +3,8 @@
  * docs/ROADMAP.md "Phase 4"). The "TODAY:" tests of step 1 were flipped in
  * step 3 to the new behaviour ("NOW (step 3):"): no distress wakes on pings,
  * dead handled by the survival watch on every tick, no model call in dead,
- * low_compute agent turns on gpt-4.1-nano (F5). Details: survival-tier-watch.test.ts.
+ * low_compute agent turns on the cheap model (F5; gpt-6-luna since 2026-11-24, was
+ * gpt-4.1-nano, shut down by OpenAI). Details: survival-tier-watch.test.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -34,15 +35,15 @@ describe("tier thresholds (hardcoded today: SURVIVAL_THRESHOLDS)", () => {
 });
 
 describe("model routing per tier (agent_turn, default registry and strategy)", () => {
-  it("NOW (step 3, F5): high/normal → gpt-4.1-mini, low_compute/critical → gpt-4.1-nano, dead → none (no model call)", () => {
+  it("NOW (step 3, F5; cheap model gpt-6-luna since 2026-11-24): high/normal → gpt-4.1-mini, low_compute/critical → gpt-6-luna, dead → none (no model call)", () => {
     const registry = new ModelRegistry(db.raw);
     registry.initialize();
     const router = new InferenceRouter(db.raw, registry, new InferenceBudgetTracker(db.raw, DEFAULT_MODEL_STRATEGY_CONFIG));
     const pick = (t: Parameters<typeof router.selectModel>[0]) => router.selectModel(t, "agent_turn")?.modelId ?? null;
     expect(pick("high")).toBe("gpt-4.1-mini");
     expect(pick("normal")).toBe("gpt-4.1-mini");
-    expect(pick("low_compute")).toBe("gpt-4.1-nano");
-    expect(pick("critical")).toBe("gpt-4.1-nano");
+    expect(pick("low_compute")).toBe("gpt-6-luna");
+    expect(pick("critical")).toBe("gpt-6-luna");
     expect(pick("dead")).toBeNull();
   });
 });

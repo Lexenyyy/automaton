@@ -168,6 +168,9 @@ describe("startup refuses invalid survival settings (preflight path)", () => {
     delete process.env.AUTOMATON_WALLET_PASSPHRASE;
     vi.resetModules();
     vi.stubGlobal("fetch", vi.fn(async (_i: any, init?: any) => {
+      if (String(_i) === "https://api.openai.com/v1/models") {
+        return new Response(JSON.stringify({ data: [{ id: "gpt-4.1-mini" }, { id: "gpt-6-luna" }] }), { status: 200 });
+      }
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       const reply = (one: any) => ({ jsonrpc: "2.0", id: one.id, result: one.method === "eth_chainId" ? "0x14a34" : "0x0" });
       return new Response(JSON.stringify(Array.isArray(body) ? body.map(reply) : reply(body)), { status: 200, headers: { "Content-Type": "application/json" } });
