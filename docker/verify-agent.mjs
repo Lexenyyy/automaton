@@ -387,14 +387,15 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   const preOut = pre.out + pre.err;
   check("entrypoint", "--preflight passes with no Conway key (only FAIL: OpenAI rejects verify's fake key in the model check)",
     preflightOkButFakeKey(preOut), failSummary(preOut));
-  check("entrypoint", "--preflight asks OpenAI's model list (fake key rejected: one FAIL; models 'not checked'; reasoning effort none)",
+  check("entrypoint", "--preflight asks OpenAI's model list for gpt-6-luna only (fake key rejected: one FAIL; 'not checked'; reasoning effort none)",
     preOut.includes("INFO  model gpt-6-luna: not checked (openai model list unavailable)") &&
-      preOut.includes("INFO  model gpt-4.1-mini: not checked (openai model list unavailable)") &&
-      preOut.includes("INFO  reasoning effort (OpenAI reasoning models only): none") && !/gpt-4\.1-nano/.test(preOut),
+      preOut.includes("INFO  reasoning effort (OpenAI reasoning models only): none") && !/gpt-4\.1-(nano|mini)/.test(preOut),
     preOut.split("\n").filter((l) => /model|reasoning/.test(l)).join(" | ").slice(0, 600));
   check("entrypoint", "--preflight: Conway off, sandbox reached as uid 10002, model key from secrets",
     preOut.includes("Conway: off (own providers only") && preOut.includes("sandbox: reachable, runs as uid 10002") &&
-    preOut.includes("model gpt-4.1-mini: provider openai, key present"));
+    preOut.includes("model gpt-6-luna: provider openai, key present"));
+  check("entrypoint", "--preflight with the normal template: 9 tools offered (switch_model removed, model fix 3/3)",
+    / INFO {2}tools: 9 offered,|^INFO {2}tools: 9 offered,/m.test(preOut), preOut.split("\n").find((l) => l.includes("tools:")) ?? "no tools line");
   check("build commit", "--preflight prints the build commit", preOut.includes(`build: ${BUILD_COMMIT}`));
   check("entrypoint", "--preflight: template wake limits (6 turns per wake, 1800 s sleep floor, 48 wakes/day)",
     preOut.includes("wake limits: 6 turns per wake, sleep at least 1800 s, 48 wakes per UTC day"));

@@ -200,7 +200,8 @@ export const DEFAULT_SANDBOX_WORKSPACE = "/workspace";
 
 export const DEFAULT_CONFIG: Partial<AutomatonConfig> = {
   conwayApiUrl: "https://api.conway.tech",
-  inferenceModel: "gpt-4.1-mini",
+  // Fork (model fix 3/3, owner decision 2026-11-24): gpt-4.1-mini shuts down on 2027-01-14.
+  inferenceModel: "gpt-6-luna",
   maxTokensPerTurn: 4096,
   heartbeatConfigPath: "~/.automaton/heartbeat.yml",
   dbPath: "~/.automaton/state.db",
@@ -1435,7 +1436,8 @@ export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high"] as
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export const DEFAULT_MODEL_STRATEGY_CONFIG: ModelStrategyConfig = {
-  inferenceModel: "gpt-4.1-mini",
+  // Fork (model fix 3/3): gpt-6-luna in every slot; the tiers differ by token limits and per-call ceilings.
+  inferenceModel: "gpt-6-luna",
   // Fork: gpt-4.1-nano was shut down by OpenAI on 2026-10-23 (owner decision 2026-11-24:
   // gpt-6-luna, standard $0.10 / $0.50 per 1M tokens, tool calls with reasoning_effort none).
   lowComputeModel: "gpt-6-luna",

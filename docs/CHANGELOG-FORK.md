@@ -1318,3 +1318,21 @@
   the loop: one call, one ERROR line, no "Turn failed", wake-end reason, no sleep timer). `agent:verify` +2
   (`agent:status` shows the notice; the watchdog prints it and stops, with `--allow-tiers`).
   Baselines: Linux 2211 passed; Windows 2179 passed, 22 known failures, 10 skipped; `agent:verify` 181.
+- 2026-11-24: **Model fix 3/3: gpt-6-luna is the main model too; the agent can no longer switch models.**
+  - Code defaults (`DEFAULT_CONFIG.inferenceModel`, `DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel`, the setup
+    fallback) and all three templates (top-level `inferenceModel` and `modelStrategy.inferenceModel`): `gpt-6-luna`.
+    Every slot (main, cheap, critical) now names gpt-6-luna; the tiers differ by token limits and per-call ceilings.
+    `gpt-4.1-mini` stays in the price registry (it still works until 2027-01-14) but no template names it.
+  - `agentSettings.model`: `allowedModels: ["gpt-6-luna"]`, `allowAgentChanges: false` in all three templates;
+    `switch_model` removed from the main and paytest `toolAllowlist` (owner; the main template offers 9 core tools).
+  - Ceilings re-checked: the router's per-call estimate at ~12k input tokens with 8,192 output tokens reserved (high
+    tier) falls from ~1.8¢ (mini) to ~0.53¢ (luna), well under the 5¢ per-call cap; the hourly/daily/lifetime caps
+    are unchanged. No ceiling needed changing.
+  - The main agent's stored settings (`agent:settings`, read-only): no agent model value, so nothing to reset.
+  - Preflight with the templates now checks gpt-6-luna only; with the owner's model list (no shutdown date) that is
+    one PASS and no WARN (tested per template).
+  Tests: `model-check` +4 (each template: only gpt-6-luna, effort none, model changes off, no `switch_model`, one PASS
+  and no WARN against the owner's list; code defaults), router/audit/settings tests moved to gpt-6-luna (the
+  settings tests keep two models to test switching). `agent:verify` +1 (9 tools offered); its model checks now
+  expect gpt-6-luna only.
+  Baselines: Linux 2215 passed; Windows 2183 passed, 22 known failures, 10 skipped; `agent:verify` 182.

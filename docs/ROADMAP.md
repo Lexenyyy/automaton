@@ -287,9 +287,10 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
           - [x] 2/3 `model_not_found`: one clear ERROR, the wake ends at once ("model unavailable"); the agent stays
                 asleep until restarted (owner change: no retry every 30 min); `agent:status` shows it first; the
                 watchdog reports it and stops.
-          - [ ] 3/3 Main model gpt-4.1-mini (shuts down 2027-01-14) → gpt-6-luna; `allowedModels` only gpt-6-luna
-                (owner decision: `switch_model`, in the main template's tool allowlist, can pick nothing else);
-                per-route ceilings re-checked; the main agent's stored `switch_model` value checked.
+          - [x] 3/3 Main model gpt-4.1-mini (shuts down 2027-01-14) → gpt-6-luna; `allowedModels` only gpt-6-luna;
+                `switch_model` removed from the main and paytest tool allowlists (owner); per-route ceilings
+                re-checked; the main agent has no stored model value (`agent:settings`, read-only, 2026-11-24).
+          - [ ] Owner: preflight of the main and tier-walk projects with the real key: every model OK, no WARN.
           - Later (Phase 7): the orchestration worker registry (`provider-registry.ts`) still lists gpt-4.1-nano and
             sends no reasoning effort; fix before orchestration is turned on.
   - [ ] 8. Docs; "done when" checked.

@@ -22,8 +22,9 @@
   },
   "sleepConfig": { "minSeconds": 1800, "maxWakesPerDay": 48 },
   "heartbeatHistoryDays": 7,
+  "inferenceModel": "gpt-6-luna",
   "modelStrategy": {
-    "lowComputeModel": "gpt-6-luna", "criticalModel": "gpt-6-luna", "reasoningEffort": "none",
+    "inferenceModel": "gpt-6-luna", "lowComputeModel": "gpt-6-luna", "criticalModel": "gpt-6-luna", "reasoningEffort": "none",
     "hourlyBudgetCents": 5, "dailyBudgetCents": 30
   },
   "treasuryPolicy": {
@@ -39,13 +40,12 @@
     "exec", "read_file", "write_file",
     "check_balance", "sleep",
     "update_soul", "view_soul",
-    "remember_fact", "recall_facts",
-    "switch_model"
+    "remember_fact", "recall_facts"
   ],
   "socialRelayUrl": "",
   "agentSettings": {
     "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },
-    "model": { "allowAgentChanges": true, "allowedModels": ["gpt-4.1-mini", "gpt-6-luna"], "maxChangesPerDay": 4 }
+    "model": { "allowAgentChanges": false, "allowedModels": ["gpt-6-luna"], "maxChangesPerDay": 4 }
   },
   "dbPath": "~/.automaton/state.db",
   "heartbeatConfigPath": "~/.automaton/heartbeat.yml",

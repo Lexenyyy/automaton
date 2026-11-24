@@ -14,7 +14,9 @@ import {
 } from "../inference/model-check.js";
 import { isOpenAiReasoningModel } from "../inference/types.js";
 import { createInferenceClient } from "../conway/inference.js";
-import { DEFAULT_MODEL_STRATEGY_CONFIG } from "../types.js";
+import fs from "node:fs";
+import path from "node:path";
+import { DEFAULT_CONFIG, DEFAULT_MODEL_STRATEGY_CONFIG, type AutomatonConfig } from "../types.js";
 import { createTestConfig } from "./mocks.js";
 
 const NOW = new Date("2026-11-24T12:00:00Z");
@@ -32,6 +34,32 @@ describe("which models are checked", () => {
       agentSettings: { model: { allowedModels: ["gpt-4.1-mini", "gpt-6-luna", "gpt-5.4-mini"] } },
     } as any);
     expect(collectConfiguredModels(config)).toEqual(["gpt-4.1-mini", "gpt-6-luna", "gpt-4.1", "gpt-5.4-mini"]);
+  });
+});
+
+describe("the templates after model fix 3/3 (owner: gpt-6-luna only, no switch_model)", () => {
+  // The owner's model list of 2026-11-24: gpt-6-luna has no shutdown date.
+  const OWNER_LIST = list(["gpt-6-luna"], ["gpt-4.1-mini", "2027-01-14"], ["gpt-5-mini", "2026-12-11"]);
+  for (const name of ["testnet", "paytest", "tierwalk"]) {
+    it(`${name}: every model the agent could use is gpt-6-luna; preflight lines all PASS, no shutdown WARN; no switch_model`, () => {
+      const raw = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../docker", `automaton.${name}.json`), "utf-8"));
+      const config = {
+        ...DEFAULT_CONFIG, ...raw, modelStrategy: { ...DEFAULT_MODEL_STRATEGY_CONFIG, ...raw.modelStrategy },
+      } as AutomatonConfig;
+      expect(collectConfiguredModels(config)).toEqual(["gpt-6-luna"]);
+      expect(config.modelStrategy!.reasoningEffort).toBe("none");
+      expect(raw.agentSettings.model).toMatchObject({ allowAgentChanges: false, allowedModels: ["gpt-6-luna"] });
+      expect(raw.toolAllowlist).not.toContain("switch_model");
+      expect(modelCheckLines("openai", collectConfiguredModels(config), OWNER_LIST, NOW)).toEqual([
+        { level: "PASS", text: "model gpt-6-luna: listed by openai, no shutdown date" },
+      ]);
+    });
+  }
+
+  it("the code defaults name gpt-6-luna in every slot", () => {
+    expect(DEFAULT_CONFIG.inferenceModel).toBe("gpt-6-luna");
+    expect([DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel, DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel, DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel])
+      .toEqual(["gpt-6-luna", "gpt-6-luna", "gpt-6-luna"]);
   });
 });
 

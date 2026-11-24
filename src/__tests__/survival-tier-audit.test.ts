@@ -35,13 +35,13 @@ describe("tier thresholds (hardcoded today: SURVIVAL_THRESHOLDS)", () => {
 });
 
 describe("model routing per tier (agent_turn, default registry and strategy)", () => {
-  it("NOW (step 3, F5; cheap model gpt-6-luna since 2026-11-24): high/normal → gpt-4.1-mini, low_compute/critical → gpt-6-luna, dead → none (no model call)", () => {
+  it("NOW (step 3, F5; gpt-6-luna in every slot since 2026-11-24): high/normal/low_compute/critical → gpt-6-luna, dead → none (no model call)", () => {
     const registry = new ModelRegistry(db.raw);
     registry.initialize();
     const router = new InferenceRouter(db.raw, registry, new InferenceBudgetTracker(db.raw, DEFAULT_MODEL_STRATEGY_CONFIG));
     const pick = (t: Parameters<typeof router.selectModel>[0]) => router.selectModel(t, "agent_turn")?.modelId ?? null;
-    expect(pick("high")).toBe("gpt-4.1-mini");
-    expect(pick("normal")).toBe("gpt-4.1-mini");
+    expect(pick("high")).toBe("gpt-6-luna");
+    expect(pick("normal")).toBe("gpt-6-luna");
     expect(pick("low_compute")).toBe("gpt-6-luna");
     expect(pick("critical")).toBe("gpt-6-luna");
     expect(pick("dead")).toBeNull();

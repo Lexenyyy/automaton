@@ -230,12 +230,12 @@ describe("InferenceRouter", () => {
     it("returns correct model for normal/agent_turn", () => {
       const model = router.selectModel("normal", "agent_turn");
       expect(model).not.toBeNull();
-      expect(model!.modelId).toBe("gpt-4.1-mini");
+      expect(model!.modelId).toBe("gpt-6-luna");
     });
 
     it("uses the main model in the high tier; never gpt-5-mini (shuts down 2026-12-11)", () => {
-      expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-4.1-mini");
-      expect(router.selectModel("high", "planning")!.modelId).toBe("gpt-4.1-mini");
+      expect(router.selectModel("high", "agent_turn")!.modelId).toBe("gpt-6-luna");
+      expect(router.selectModel("high", "planning")!.modelId).toBe("gpt-6-luna");
       for (const tier of Object.keys(DEFAULT_ROUTING_MATRIX) as Array<keyof typeof DEFAULT_ROUTING_MATRIX>) {
         for (const pref of Object.values(DEFAULT_ROUTING_MATRIX[tier])) expect(pref.candidates).not.toContain("gpt-5-mini");
       }
@@ -323,13 +323,13 @@ describe("InferenceRouter", () => {
       );
 
       expect(result.content).toBe("Hello!");
-      expect(result.model).toBe("gpt-4.1-mini");
+      expect(result.model).toBe("gpt-6-luna");
       expect(result.finishReason).toBe("stop");
 
       // Verify cost was recorded
       const costs = inferenceGetSessionCosts(db, "test-session");
       expect(costs.length).toBe(1);
-      expect(costs[0].model).toBe("gpt-4.1-mini");
+      expect(costs[0].model).toBe("gpt-6-luna");
     });
 
     it("computes actualCostCents accurately from token usage", async () => {
@@ -1013,7 +1013,7 @@ describe("Inference DB Helpers", () => {
 
 describe("DEFAULT_MODEL_STRATEGY_CONFIG", () => {
   it("has sensible defaults", () => {
-    expect(DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel).toBe("gpt-4.1-mini");
+    expect(DEFAULT_MODEL_STRATEGY_CONFIG.inferenceModel).toBe("gpt-6-luna");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.lowComputeModel).toBe("gpt-6-luna");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.criticalModel).toBe("gpt-6-luna");
     expect(DEFAULT_MODEL_STRATEGY_CONFIG.reasoningEffort).toBe("none");
@@ -1094,6 +1094,7 @@ describe("daily inference cap", () => {
     // With the old fixed 1000-token estimate this would be ~0.16c and pass a 1c ceiling.
     const tracker = new InferenceBudgetTracker(db, {
       ...DEFAULT_MODEL_STRATEGY_CONFIG,
+      inferenceModel: "gpt-4.1-mini", // the mechanism, with mini's prices
       perCallCeilingCents: 1,
     });
     const registry = new ModelRegistry(db);

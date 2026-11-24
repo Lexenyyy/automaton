@@ -27,7 +27,8 @@ function config(overrides: Partial<AutomatonConfig> = {}): AutomatonConfig {
   return createTestConfig({
     genesisPrompt: "Owner genesis prompt.",
     inferenceModel: "gpt-4.1-mini",
-    modelStrategy: { ...DEFAULT_MODEL_STRATEGY_CONFIG },
+    // Two models, to test switching (the templates allow only gpt-6-luna since model fix 3/3).
+    modelStrategy: { ...DEFAULT_MODEL_STRATEGY_CONFIG, inferenceModel: "gpt-4.1-mini" },
     ...overrides,
   });
 }

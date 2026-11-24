@@ -30,8 +30,9 @@
     "deadGraceMinutes": 5,
     "tierWakeMinGapMinutes": 1
   },
+  "inferenceModel": "gpt-6-luna",
   "modelStrategy": {
-    "lowComputeModel": "gpt-6-luna", "criticalModel": "gpt-6-luna", "reasoningEffort": "none",
+    "inferenceModel": "gpt-6-luna", "lowComputeModel": "gpt-6-luna", "criticalModel": "gpt-6-luna", "reasoningEffort": "none",
     "hourlyBudgetCents": 5, "dailyBudgetCents": 30
   },
   "treasuryPolicy": {
@@ -47,7 +48,7 @@
   "socialRelayUrl": "",
   "agentSettings": {
     "genesisPrompt": { "allowAgentChanges": false, "maxChangesPerDay": 1, "maxLength": 2000 },
-    "model": { "allowAgentChanges": false, "allowedModels": ["gpt-4.1-mini", "gpt-6-luna"], "maxChangesPerDay": 1 }
+    "model": { "allowAgentChanges": false, "allowedModels": ["gpt-6-luna"], "maxChangesPerDay": 1 }
   },
   "dbPath": "~/.automaton/state.db",
   "heartbeatConfigPath": "~/.automaton/heartbeat.yml",

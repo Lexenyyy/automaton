@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after model fix 2/3 (model unavailable): 2211 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after model fix 3/3 (gpt-6-luna everywhere): 2215 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2179 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2183 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -43,7 +43,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (181 checks after model fix 2/3).
+  (182 checks after model fix 3/3).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -81,9 +81,10 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   and nothing is sent to Conway: the Conway client refuses every call, the model client never uses
   the Conway backend, x402 to Conway hosts is refused, Conway-only tools are hidden. Model keys come
   from the secrets folder (env `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
-- **Models:** settings, not code. The routing table has slots filled from `modelStrategy`: main = `inferenceModel`
-  (gpt-4.1-mini until model fix 3/3), cheap (heartbeat triage, low_compute) = `lowComputeModel`, critical =
-  `criticalModel` (both gpt-6-luna). `modelStrategy.reasoningEffort` (template `none`) is sent only to OpenAI
+- **Models:** settings, not code. The routing table has slots filled from `modelStrategy`: main = `inferenceModel`,
+  cheap (heartbeat triage, low_compute) = `lowComputeModel`, critical = `criticalModel`; all three are gpt-6-luna
+  (owner decision 2026-11-24; tiers differ by token limits and per-call ceilings), also the top-level
+  `inferenceModel` and the only `allowedModels` entry. `modelStrategy.reasoningEffort` (template `none`) is sent only to OpenAI
   reasoning models; gpt-6-luna takes tool calls on Chat Completions only with `none`. Preflight looks up every model
   the agent could use (also `allowedModels`) in the provider's free model list: not listed or list unreadable = FAIL,
   a shutdown date = WARN with the days left. gpt-4.1-nano was shut down 2026-10-23; gpt-4.1-mini shuts down 2027-01-14.
@@ -131,13 +132,14 @@ Two containers from `docker/compose.agent.yml`, testnet only:
 - **Owner-only soul sections:** `"soulConfig": { "ownerOnlySections": ["corePurpose"] }` (the default; `[]` = none).
   Policy rule `authority.soul_owner_only` denies the agent's `update_soul` there (owner-requested under rule 4); the
   owner changes them via `soulConfig.defaultCorePurpose` and `pnpm agent:soul:reset`.
-- **Tool allowlist:** the template's `toolAllowlist` offers only 10 core tools (`exec`, `read_file`,
-  `write_file`, `check_balance`, `sleep`, `update_soul`, `view_soul`, `remember_fact`, `recall_facts`,
-  `switch_model`); others are neither offered nor executable. Startup refuses unknown names or a list
+- **Tool allowlist:** the template's `toolAllowlist` offers only 9 core tools (`exec`, `read_file`,
+  `write_file`, `check_balance`, `sleep`, `update_soul`, `view_soul`, `remember_fact`, `recall_facts`);
+  `switch_model` was removed in model fix 3/3 (only one allowed model); others are neither offered nor executable. Startup refuses unknown names or a list
   without `sleep`. `modify_heartbeat` stays out until the Phase 5b roadmap item (owner-set minimum interval).
 - **Settings the agent changes itself** (`update_genesis_prompt`, `switch_model`) are stored in the
   database (`agent_settings`), never in the config, within the owner's `agentSettings` limits in the
-  config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day.
+  config: genesis prompt changes OFF by default; models only from the allowlist, max 4 changes/day (the templates
+  turn model changes off and do not offer `switch_model`).
 - Commands:
   - `pnpm agent:build` (`docker/build-agent.mjs`: images labelled with the git commit, `-dirty` with
     uncommitted changes; warns if a running agent still runs an older image), `agent:init`, `agent:verify`
