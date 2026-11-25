@@ -33,9 +33,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after the startup race fix: 2217 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after the extra-wake fix: 2220 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2185 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2188 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -125,7 +125,8 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   Dead: one WARN per entry; an owner notice (since when, wallet address to fund, amounts to revive and to reach
   normal; kv `dead_notice`, `src/survival/dead-notice.ts`) is the first line of `agent:status` and `agent:wallet` while
   dead; reviving clears it and records "revived at"; the watchdog prints `DEAD NOTICE: …` and stops gracefully. Phase 4 closed 2026-11-24 (tier walk: all tiers, dead and
-  revive, 0.598¢; ROADMAP step 7 has the table and one open follow-up, an extra wake at restart).
+  revive, 0.598¢; ROADMAP step 7 has the table). A tier-change wake to the tier the agent's last answered turn ran in
+  (kv `agent_turn_tier`) is consumed without waking it, except a revival from dead.
 - **Heartbeat history:** `"heartbeatHistoryDays": 7` in the template (code default 7, 0 = keep all); the scheduler
   deletes older `heartbeat_history` rows at most once an hour.
 - **Soul updates per wake:** `"soulConfig": { "maxUpdatesPerWake": 2 }` (0 = no limit), enforced by policy rule

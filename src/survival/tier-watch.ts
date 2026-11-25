@@ -38,6 +38,8 @@ export const TIER_CHANGES_KEY = "survival_tier_changes";
 export const LAST_TIER_WAKE_KEY = "last_tier_wake_at";
 export const ZERO_SINCE_KEY = "zero_credits_since";
 export const MAX_TIER_CHANGES = 100;
+/** Fork (after the tier walk): the tier of the agent's last turn the model answered (set by the agent loop). */
+export const AGENT_TURN_TIER_KEY = "agent_turn_tier";
 
 export interface TierChange {
   at: string;
@@ -76,6 +78,33 @@ const delKv = (db: Database, key: string): void => {
   db.prepare("DELETE FROM kv WHERE key = ?").run(key);
 };
 const usd = (cents: number) => `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`;
+
+/** The agent loop records the tier of each turn the model answered (it saw that tier in its status). */
+export function recordAgentTurnTier(db: Database, tier: SurvivalTier): void {
+  setKv(db, AGENT_TURN_TIER_KEY, tier);
+}
+
+/**
+ * Fork (after the tier walk): a tier-change wake request that tells the agent
+ * nothing new. In drain 1 the heartbeat's first check after a restart queued
+ * "high → normal" just after the starting wake had cleared the queue; that wake
+ * ran in normal, slept, and the same request woke it again 30 s later.
+ * A request is "already seen" when it is a tier change, its new tier is the tier
+ * of the agent's last answered turn, and it is not a revival (from dead).
+ * Returns a note for the log, or null (the request wakes the agent).
+ */
+export function tierWakeAlreadySeen(db: Database, event: { payload: string }): string | null {
+  let p: { kind?: string; from?: string; to?: string };
+  try {
+    p = JSON.parse(event.payload || "{}");
+  } catch {
+    return null;
+  }
+  if (p?.kind !== "tier_change" || !p.to || p.from === "dead") return null;
+  const seen = getKv(db, AGENT_TURN_TIER_KEY);
+  if (seen !== p.to) return null;
+  return `tier change ${p.from ?? "?"} → ${p.to} already seen: the agent's last turn ran in ${seen}`;
+}
 
 function lastKnownBalance(db: Database): number {
   try {

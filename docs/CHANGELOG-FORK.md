@@ -1369,3 +1369,14 @@
   extra wake 30 s after a restart wake when the first heartbeat check sees a tier change (drain 1, +0.144¢): open
   follow-up in the ROADMAP, not fixed. The walk wallet keeps 0.25 USDC (the owner returns it) and its volume stays
   for future walks. Docs only.
+- 2026-11-26: **No extra wake for a tier change the agent already acted on** (tier walk follow-up, owner request).
+  In drain 1 a restart wake ran in normal, and the "high → normal" request that the first heartbeat check queued just
+  after the wake had cleared the queue woke the agent again 30 s later (+0.144¢). 607ef6c removed only its duplicate.
+  - The agent loop records the tier of each turn the model answered (kv `agent_turn_tier`, `recordAgentTurnTier`).
+  - `waitForSleepOrWake` (both the startup sleep and the normal sleep) checks every queued request at each 30 s check:
+    a tier-change request to that same tier is consumed without waking the agent (`tierWakeAlreadySeen`,
+    `src/survival/tier-watch.ts`; INFO "Wake request not used (tier change A → B already seen …). Still sleeping.").
+    A revival (from dead), a different tier, any other request, or no recorded turn still wakes it, also when it is
+    queued behind a skipped one.
+  Tests: `startup-sleep` +3 (the drain-1 case; the cases that must still wake; the loop records the tier).
+  Baselines: Linux 2220 passed; Windows 2188 passed, 22 known failures, 10 skipped; `agent:verify` 182.

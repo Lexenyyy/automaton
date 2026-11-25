@@ -11,6 +11,7 @@
 
 import type { Database } from "better-sqlite3";
 import { consumeNextWakeEvent } from "../state/database.js";
+import { tierWakeAlreadySeen } from "../survival/tier-watch.js";
 
 export interface PendingSleep {
   untilMs: number;
@@ -55,11 +56,14 @@ export type SleepEnd = { woken: false } | { woken: true; source: string; reason:
 /**
  * Wait until untilMs (at least 10 s), checking for a wake event every 30 s.
  * The same wait the run loop uses for the sleeping state.
+ * Fork (after the tier walk): a tier-change request whose tier the agent's last
+ * turn already ran in is consumed without waking it (tierWakeAlreadySeen);
+ * onSkip gets a note for the log. Every other request wakes the agent.
  */
 export async function waitForSleepOrWake(
   db: Database,
   untilMs: number,
-  deps: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+  deps: { now?: () => number; sleep?: (ms: number) => Promise<void>; onSkip?: (note: string) => void } = {},
 ): Promise<SleepEnd> {
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -69,8 +73,15 @@ export async function waitForSleepOrWake(
   while (slept < sleepMs) {
     await sleep(checkInterval);
     slept += checkInterval;
-    const wakeEvent = consumeNextWakeEvent(db);
-    if (wakeEvent) return { woken: true, source: wakeEvent.source, reason: wakeEvent.reason };
+    let wakeEvent;
+    while ((wakeEvent = consumeNextWakeEvent(db))) {
+      const seen = tierWakeAlreadySeen(db, wakeEvent);
+      if (seen) {
+        deps.onSkip?.(`Wake request not used (${seen}): ${wakeEvent.reason}`);
+        continue;
+      }
+      return { woken: true, source: wakeEvent.source, reason: wakeEvent.reason };
+    }
   }
   return { woken: false };
 }

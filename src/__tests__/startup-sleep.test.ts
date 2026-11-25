@@ -5,7 +5,9 @@
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createTestDb } from "./mocks.js";
+import { MockConwayClient, MockInferenceClient, createTestConfig, createTestDb, createTestIdentity, noToolResponse } from "./mocks.js";
+import { runAgentLoop } from "../agent/loop.js";
+import { AGENT_TURN_TIER_KEY } from "../survival/tier-watch.js";
 import { consumeNextWakeEvent, insertWakeEvent } from "../state/database.js";
 import { dropStaleWakeEvents, pendingStartupSleep, waitForSleepOrWake } from "../agent/startup-sleep.js";
 
@@ -84,6 +86,44 @@ describe("startup race (tier walk, drain 3): a wake from the heartbeat's first c
     expect(end).toEqual({ woken: true, source: "heartbeat", reason: "Survival tier changed: low_compute → critical (balance $0.07)" });
     expect(steps).toBe(1); // the first 30 s check
     expect(consumeNextWakeEvent(db.raw)).toBeUndefined();
+  });
+
+  it("drain 1: a tier change to the tier the agent's last turn ran in does not wake it again", async () => {
+    db.setKV(AGENT_TURN_TIER_KEY, "normal"); // the restart wake ran in normal
+    insertWakeEvent(db.raw, "heartbeat", "Survival tier changed: high → normal (balance $0.34)", { kind: "tier_change", from: "high", to: "normal" });
+    const skipped: string[] = [];
+    const end = await waitForSleepOrWake(db.raw, NOW + 75_000, { now: () => NOW, sleep: async () => {}, onSkip: (n) => skipped.push(n) });
+    expect(end).toEqual({ woken: false });
+    expect(skipped).toEqual([
+      "Wake request not used (tier change high → normal already seen: the agent's last turn ran in normal): Survival tier changed: high → normal (balance $0.34)",
+    ]);
+    expect(consumeNextWakeEvent(db.raw)).toBeUndefined();
+  });
+
+  it("still wakes: a new tier, a revival, no recorded turn, other requests (also queued behind a skipped one)", async () => {
+    const wakes = async () =>
+      (await waitForSleepOrWake(db.raw, NOW + 3_600_000, { now: () => NOW, sleep: async () => {} })).woken;
+    db.setKV(AGENT_TURN_TIER_KEY, "normal");
+    insertWakeEvent(db.raw, "heartbeat", "to low_compute", { kind: "tier_change", from: "normal", to: "low_compute" });
+    expect(await wakes()).toBe(true);
+    insertWakeEvent(db.raw, "heartbeat", "revived", { kind: "tier_change", from: "dead", to: "normal" });
+    expect(await wakes()).toBe(true);
+    insertWakeEvent(db.raw, "heartbeat", "inbox message");
+    expect(await wakes()).toBe(true);
+    insertWakeEvent(db.raw, "heartbeat", "seen", { kind: "tier_change", from: "high", to: "normal" });
+    insertWakeEvent(db.raw, "heartbeat", "task wake", { taskName: "check_x" });
+    const end = await waitForSleepOrWake(db.raw, NOW + 3_600_000, { now: () => NOW, sleep: async () => {} });
+    expect(end).toEqual({ woken: true, source: "heartbeat", reason: "task wake" });
+    db.deleteKV(AGENT_TURN_TIER_KEY);
+    insertWakeEvent(db.raw, "heartbeat", "no turn recorded", { kind: "tier_change", from: "high", to: "normal" });
+    expect(await wakes()).toBe(true);
+  });
+
+  it("the agent loop records the tier of a turn the model answered", async () => {
+    const inference = new MockInferenceClient([noToolResponse("nothing to do")]);
+    await runAgentLoop({ identity: createTestIdentity(), config: createTestConfig(), db, conway: new MockConwayClient(), inference });
+    expect(inference.calls).toHaveLength(1);
+    expect(["high", "normal", "low_compute", "critical"]).toContain(db.getKV(AGENT_TURN_TIER_KEY));
   });
 
   it("run(): old wake requests are deleted before heartbeat.start(), never after; onWakeRequest only logs", () => {

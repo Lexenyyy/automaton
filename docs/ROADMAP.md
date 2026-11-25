@@ -223,7 +223,7 @@ Done when: draining the testnet balance moves through all tiers correctly.
   Status: met 2026-11-24 (tier walk, step 7): high → normal → low_compute → critical → dead → revived (low_compute),
   every tier entered at the expected balance, gpt-6-luna in every live tier, no model call while dead, dead notice and
   revive as designed; 0.598¢ real inference for the whole walk. Two wake-timing defects found on the way: the lost
-  tier-change wake is fixed (607ef6c); the extra wake at restart is an open follow-up (step 7, below), not a tier error.
+  tier-change wake is fixed (607ef6c); the extra wake at restart is fixed too (step 7 follow-up, 2026-11-26).
 
 Plan (owner-approved 2026-11-23; one commit per step, stop for review after step 1). Owner decisions: at dead the
 runtime stays up, heartbeat only (no model calls); the heartbeat wakes the agent only on a tier change; the walk drains
@@ -296,13 +296,14 @@ wallet and lease are not touched (the walk is project `automaton-tierwalk`: own 
               volume for future walks). Dead: one WARN, notice with wallet and revive/normal amounts (also printed
               by the watchdog), 13 heartbeat checks in 6 min, no model call. Watchdog: never stopped (Ctrl+C only,
               around each drain); at most 3 turns and 0.370¢ in an hour (13:31 check).
-        - [ ] Follow-up (found in the review, not fixed): an extra wake at restart. Without a pending sleep, `run`
+        - [x] Follow-up (found in the review; fixed 2026-11-26, owner request): an extra wake at restart. Without a pending sleep, `run`
               enters the agent loop at once, and the loop deletes queued wake requests when it starts
               (`src/agent/loop.ts`). If the heartbeat's first check queues a tier-change wake just after that, the
               agent runs its wake, sleeps, and the same request wakes it again 30 s later (drain 1: 13:30:31,
-              +0.144¢). 607ef6c removed the duplicate copy but not this. Candidate fix: when a wake ends, drop wake
-              requests queued before that wake's status was built (the agent already saw the tier). Owner decides
-              when (before the 72 h main run is sensible; cost per occurrence ~0.15¢).
+              +0.144¢). 607ef6c removed the duplicate copy but not this. Fix: the agent loop records the tier of
+              each turn the model answered (kv `agent_turn_tier`); the sleep wait (startup and normal) consumes a
+              tier-change request to that same tier without waking (INFO "Wake request not used …"), except a
+              revival (from dead). Every other request still wakes the agent.
         - [x] Fix after the walk (owner-approved 2026-11-24, one commit): lost tier-change wake at restart.
               `run` starts the heartbeat (first tick at once) before it deletes old wake requests for a pending
               startup sleep (`src/index.ts`), so a tier-change wake from that first tick can be deleted 20 ms later.

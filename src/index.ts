@@ -696,6 +696,9 @@ async function run(): Promise<void> {
     );
   }
 
+  // Fork (after the tier walk): a tier-change wake the agent already acted on is not used (INFO line).
+  const logWakeSkip = (note: string) => logger.info(`[${new Date().toISOString()}] ${note}. Still sleeping.`);
+
   // The pending sleep (decided before the heartbeat started, see above).
   // A wake request the heartbeat queues from here on ends it at the next check.
   if (pending) {
@@ -705,7 +708,7 @@ async function run(): Promise<void> {
         `${droppedWakes ? `; ${droppedWakes} wake request(s) from before this start deleted` : ""}. ` +
         "To wake the agent now, start it with --wake-now (pnpm agent:run --wake-now).",
     );
-    const end = await waitForSleepOrWake(db.raw, pending.untilMs);
+    const end = await waitForSleepOrWake(db.raw, pending.untilMs, { onSkip: logWakeSkip });
     logger.info(
       `[${new Date().toISOString()}] ${end.woken ? `Woken by ${end.source}: ${end.reason}` : "Pending sleep is over"}.`,
     );
@@ -800,7 +803,7 @@ async function run(): Promise<void> {
         );
 
         // Sleep, but check for wake requests periodically (Phase 1.1 wake_events)
-        const end = await waitForSleepOrWake(db.raw, sleepUntil);
+        const end = await waitForSleepOrWake(db.raw, sleepUntil, { onSkip: logWakeSkip });
         if (end.woken) {
           logger.info(`[${new Date().toISOString()}] Woken by ${end.source}: ${end.reason}`);
         }

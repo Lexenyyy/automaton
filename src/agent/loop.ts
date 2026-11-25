@@ -37,6 +37,7 @@ import {
 import { sanitizeInput } from "./injection-defense.js";
 import { getSurvivalTier } from "../conway/credits.js";
 import { resolveSurvivalSettings } from "../survival/settings.js";
+import { recordAgentTurnTier } from "../survival/tier-watch.js";
 import { createBalanceSource, toFinancialState, formatBalance } from "../survival/balance.js";
 import {
   claimInboxMessages,
@@ -784,6 +785,15 @@ export async function runAgentLoop(
         const timeoutErr = new Error(routerResult.content || "Inference timeout");
         timeoutErr.name = "TimeoutError";
         throw timeoutErr;
+      }
+
+      // Fork (after the tier walk): the model answered a turn in this tier, so
+      // a tier-change wake to this same tier tells the agent nothing new
+      // (survival/tier-watch.ts tierWakeAlreadySeen).
+      try {
+        recordAgentTurnTier(db.raw, survivalTier);
+      } catch {
+        // bookkeeping only; never blocks the turn
       }
       // A model call succeeded: the network is back.
       if (getOfflineStreak(db.raw) > 0) clearOfflineStreak(db.raw);
