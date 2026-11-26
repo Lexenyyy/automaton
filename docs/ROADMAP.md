@@ -182,6 +182,29 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         `agent:facts:delete` (`471231d`); [x] H4 memory/CPU in the watchdog log.
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
+        Plan (owner decisions 2026-11-26): separate hosting budget, at most €7/month (CLAUDE.md rule 3); Hetzner
+        Cloud CX23 (x86, 2 vCPU, 4 GB) with IPv4; the VPS agent starts fresh with its own new wallet (`agent:init`);
+        the Windows agent stays as a local test agent (never the same volumes on both). Steps, one commit each where
+        code changes, stop for review after each:
+        - [ ] 1. Supervision: `agent:supervise` restarts a crashed runtime after 120 s (longer than the 90 s lease),
+              at most 3 times per 60 min, then gives up and leaves it stopped; `agent:down`/`agent:kill` write a stop
+              marker so an owner stop is never restarted; the watchdog reports a pending restart (not a stop) and
+              stops on a supervisor that gave up.
+        - [ ] 2. Linux host check of the `docker/*.mjs` scripts (home and log paths, `docker` CLI, signals) and a
+              systemd unit that starts the supervisor at boot (and the watchdog for a run), with the stop-marker
+              rule decided for boots after an owner stop.
+        - [ ] 3. VPS setup (owner, step-by-step instructions): CX23 in Falkenstein, Nuremberg or Helsinki; SSH keys
+              only, no password login; firewall with only SSH open (no ports until Phase 5a); automatic security
+              updates without automatic reboots; Docker Engine, Node 22, pnpm; repo clone; secrets folder outside the
+              repo (`chmod 700`, new wallet passphrase, kept offline too); `agent:build`, `agent:verify` on the VPS.
+        - [ ] 4. New agent on the VPS: `agent:init` (new encrypted wallet), test USDC and ETH from the owner's
+              MetaMask (small), `agent:wallet`, preflight (gpt-6-luna PASS, no WARN except expected ones).
+        - [ ] 5. Smoke test: 3 h under `agent:supervise` with `agent:watch --hours 3`. Owner crash test: stop the
+              runtime container with `docker kill` (not `agent:kill`): the supervisor restarts it after 120 s and the
+              watchdog reports it; then `agent:down`: no restart.
+        - [ ] 6. The 72 h run: `agent:supervise` + `agent:watch --hours 72 --max-run-cents 20` (expected 5–10¢).
+              During it, pause/resume (`agent:down`, then supervise `--resume`) and kill (`agent:kill`) once each.
+        - [ ] 7. Read-only review (list below), "done when" checked, Phase 2 closed.
   - After each run, review (read-only): wake times vs chosen sleeps, turns and tokens per wake (does context
     grow?), spend per wake, ledger vs OpenAI usage, soul versions, facts table growth, heartbeat failures,
     container memory/CPU, database size, new errors in the saved log.

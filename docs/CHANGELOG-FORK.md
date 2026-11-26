@@ -1380,3 +1380,8 @@
     queued behind a skipped one.
   Tests: `startup-sleep` +3 (the drain-1 case; the cases that must still wake; the loop records the tier).
   Baselines: Linux 2220 passed; Windows 2188 passed, 22 known failures, 10 skipped; `agent:verify` 182.
+- 2026-11-26: **Plan for the 72 h run on a VPS; separate hosting budget** (owner decisions). Hosting is capped at
+  €7/month, separate from the $5 model and test budget (CLAUDE.md rule 3). Provider: Hetzner Cloud CX23 (x86,
+  2 vCPU, 4 GB) with IPv4. The VPS agent starts fresh with its own wallet; the Windows agent stays as a local test
+  agent. The steps (supervision, Linux host check and systemd, VPS setup, new agent, 3 h smoke test with a crash
+  test, the 72 h run, review) are in the ROADMAP under Phase 2. Docs only.
