@@ -16,8 +16,8 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
    **Testing budget: $5 total real money until Phase 8** (this covers model API spend too). Default
    caps must keep any single day well below that (daily inference cap: $1). The testnet template is
    tighter for unattended runs: `modelStrategy` hourly 5¢, daily 30¢ (lifetime $5 and 5¢ per call unchanged).
-   **Hosting budget (separate, owner decision 2026-11-26): at most €7/month** for the VPS (Hetzner CX23 with
-   IPv4). It is not part of the $5, which stays for model and test spend. Anything else that costs money
+   **Hosting budget (separate, owner decision 2026-11-26): at most €8/month including VAT** for the VPS (Hetzner
+   CX23 with IPv4: €5.99 excl. VAT on Hetzner's page). It is not part of the $5, which stays for model and test spend. Anything else that costs money
    (domain, extra IPs, backups, a bigger server) needs the owner's approval first.
 4. **Safety is enforced in code, not prompts.** Never weaken the policy engine
    (`src/agent/policy-engine.ts`, `src/agent/policy-rules/`), path protection, the constitution,

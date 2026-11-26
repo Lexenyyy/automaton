@@ -1430,3 +1430,7 @@
   file and the env example). `agent:verify` +8 (system stop leaves no marker, `agent:resume`, `--until`, secrets
   folder/file unreadable = exit 78 without the value, the VPS layout readable).
   Baselines: Linux 2237 passed; Windows 2205 passed, 22 known failures, 10 skipped; `agent:verify` 199.
+- 2026-11-26: **Hosting cap raised to €8/month including VAT** (owner; was €7). Hetzner's page lists CX23 at €5.99/month
+  excl. VAT (IPv4 most likely included; €0.0096/hour, billed hourly with a monthly cap), which is about €7.01–7.61 with
+  EU VAT. The page also marks CX23 (and every 2 vCPU/4 GB plan) "currently unavailable"; the owner checks the console.
+  Owner SSH key for the VPS created on the Windows PC (ed25519, passphrase; only the public key leaves the PC).

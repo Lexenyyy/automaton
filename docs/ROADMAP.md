@@ -182,7 +182,7 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         `agent:facts:delete` (`471231d`); [x] H4 memory/CPU in the watchdog log.
   - [ ] **72 hours** (the "done when"), preferably on the VPS, with process supervision (restart with a
         crash-loop limit). `agent:down`/`agent:run` already give pause/resume (a restart honours a pending sleep).
-        Plan (owner decisions 2026-11-26): separate hosting budget, at most €7/month (CLAUDE.md rule 3); Hetzner
+        Plan (owner decisions 2026-11-26): separate hosting budget, at most €8/month incl. VAT (CLAUDE.md rule 3); Hetzner
         Cloud CX23 (x86, 2 vCPU, 4 GB) with IPv4; the VPS agent starts fresh with its own new wallet (`agent:init`);
         the Windows agent stays as a local test agent (never the same volumes on both). Steps, one commit each where
         code changes, stop for review after each:
