@@ -1,0 +1,2 @@
+# systemd units and apt config are copied to the Linux VPS as they are: always LF.
+docker/systemd/** text eol=lf

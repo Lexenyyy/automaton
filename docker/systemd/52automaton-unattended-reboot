@@ -1,0 +1,11 @@
+// /etc/apt/apt.conf.d/52automaton-unattended-reboot (fork, VPS; Ubuntu 24.04).
+// Security updates install automatically (unattended-upgrades), but by default
+// they never reboot, so a new kernel or libc would wait forever. Reboot only when
+// an update requires it (/var/run/reboot-required), at a fixed time. The server
+// runs in UTC (check: timedatectl), so this is 04:30 UTC.
+// The agent survives it: systemd stops the supervisor with SIGTERM (system stop,
+// no stop marker) and starts it again at boot (automaton-agent.service).
+// Check after install: apt-config dump | grep -i automatic-reboot
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:30";

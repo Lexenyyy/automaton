@@ -190,18 +190,28 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
               at most 3 times per 60 min, then gives up and leaves it stopped; `agent:down`/`agent:kill` write a stop
               marker so an owner stop is never restarted; the watchdog reports a pending restart (not a stop) and
               stops on a supervisor that gave up.
-        - [ ] 2. Linux host check of the `docker/*.mjs` scripts (home and log paths, `docker` CLI, signals) and a
+        - [x] 2. Linux host check of the `docker/*.mjs` scripts (home and log paths, `docker` CLI, signals) and a
               systemd unit that starts the supervisor at boot (and the watchdog for a run), with the stop-marker
-              rule decided for boots after an owner stop.
+              rule decided for boots after an owner stop. Done 2026-11-26: owner decision: after `agent:down`/`kill`
+              the agent stays stopped across reboots (`pnpm agent:resume`), a reboot without a marker resumes it;
+              security updates reboot when needed at 04:30 UTC. Found: a 0700 secrets folder on Linux hid the keys
+              from the runtime (now a clear refusal, exit 78; VPS layout root:10001 0750/0640), and verify's fake
+              secrets were unreadable on a Linux host (fixed). Real systemd/reboot behaviour is tested in step 5.
         - [ ] 3. VPS setup (owner, step-by-step instructions): CX23 in Falkenstein, Nuremberg or Helsinki; SSH keys
               only, no password login; firewall with only SSH open (no ports until Phase 5a); automatic security
               updates without automatic reboots; Docker Engine, Node 22, pnpm; repo clone; secrets folder outside the
               repo (`chmod 700`, new wallet passphrase, kept offline too); `agent:build`, `agent:verify` on the VPS.
         - [ ] 4. New agent on the VPS: `agent:init` (new encrypted wallet), test USDC and ETH from the owner's
               MetaMask (small), `agent:wallet`, preflight (gpt-6-luna PASS, no WARN except expected ones).
-        - [ ] 5. Smoke test: 3 h under `agent:supervise` with `agent:watch --hours 3`. Owner crash test: stop the
-              runtime container with `docker kill` (not `agent:kill`): the supervisor restarts it after 120 s and the
-              watchdog reports it; then `agent:down`: no restart.
+        - [ ] 5. Smoke test: 3 h under `automaton-agent.service` with `automaton-watch.service` (`--until` 3 h ahead).
+              Owner tests (each with the expected log lines; `agent:status` after each):
+              - crash: `docker kill` the runtime container (not `agent:kill`): restart after 120 s, the watchdog
+                reports "supervisor restarts it", no stop;
+              - reboot without a marker: `sudo reboot`: the supervisor log shows "system stop (SIGTERM)", after boot
+                the agent runs again (a pending sleep honoured) and the watchdog continues to the same `--until`;
+              - reboot after an owner stop: `pnpm agent:down`, `sudo reboot`: the agent stays stopped (unit exits 0,
+                "not starting it"); `pnpm agent:resume` + `sudo systemctl restart automaton-agent` brings it back;
+              - the automatic reboot setting: `apt-config dump | grep -i automatic-reboot` shows true / 04:30.
         - [ ] 6. The 72 h run: `agent:supervise` + `agent:watch --hours 72 --max-run-cents 20` (expected 5–10¢).
               During it, pause/resume (`agent:down`, then supervise `--resume`) and kill (`agent:kill`) once each.
         - [ ] 7. Read-only review (list below), "done when" checked, Phase 2 closed.

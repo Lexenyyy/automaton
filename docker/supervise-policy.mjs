@@ -113,13 +113,37 @@ export const readSupervisorState = (dir, project) => readJson(supervisorStateFil
 /**
  * Watchdog: is a supervisor about to (re)start the runtime? True when its state
  * is "waiting" (a restart is scheduled) or "running" (the runtime is starting),
- * its process is alive, and the state is fresh (written within the restart delay
- * plus 5 minutes). Anything else: the missing runtime is a stop.
+ * its process is alive (supervisorProcessAlive), and the state is fresh (written
+ * within the restart delay plus 5 minutes). Anything else: the missing runtime is a stop.
  */
-export function supervisorRestarting(state, now, pidAlive) {
-  if (!state || !["waiting", "running"].includes(state.state) || !pidAlive) return false;
+export function supervisorRestarting(state, now, processAlive) {
+  if (!state || !["waiting", "running"].includes(state.state) || !processAlive) return false;
   const freshMs = ((state.settings?.restartDelaySeconds ?? SUPERVISE_DEFAULTS.restartDelaySeconds) + 300) * 1000;
   return now - Date.parse(state.updatedAt ?? "") < freshMs;
+}
+
+/**
+ * Signals (owner decision 2026-11-26): Ctrl+C (SIGINT) in a terminal is an owner
+ * stop and writes the stop marker (the agent stays stopped, also across reboots,
+ * until --resume). SIGTERM/SIGHUP come from systemd (service stop, shutdown,
+ * reboot): a graceful stop WITHOUT the marker, so the next start (e.g. at boot)
+ * resumes the agent.
+ */
+export function signalWritesStopMarker(signal) {
+  return signal === "SIGINT";
+}
+
+/** When this machine booted (ms), from os.uptime(); rounded to the minute. */
+export function bootAt(uptimeSeconds, now = Date.now()) {
+  return Math.round((now - uptimeSeconds * 1000) / 60_000) * 60_000;
+}
+/** A state written before the last boot names a dead process even if its pid is in use again. */
+export function sameBoot(stateBootAt, currentBootAt) {
+  return Number.isFinite(stateBootAt) && Math.abs(stateBootAt - currentBootAt) <= 120_000;
+}
+/** The supervisor that wrote this state is still running (same boot, pid alive). */
+export function supervisorProcessAlive(state, currentBootAt, alive = pidAlive) {
+  return Boolean(state) && sameBoot(state.bootAt, currentBootAt) && alive(state.pid);
 }
 
 /** process.kill(pid, 0): true if the process exists (EPERM = exists, owned by someone else). */

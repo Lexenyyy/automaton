@@ -16,7 +16,11 @@
  * Never removes volumes or images: wallet, state and workspace are kept.
  * Exit 0 when nothing of the project is left running.
  *
- *   node docker/down-agent.mjs [--project <name>] [--timeout <seconds>]
+ *   node docker/down-agent.mjs [--project <name>] [--timeout <seconds>] [--no-stop-marker]
+ *
+ * It first writes the stop marker for agent:supervise (an owner stop is never
+ * restarted, also not at the next boot); --no-stop-marker is for the
+ * supervisor's own system stop (SIGTERM at shutdown/reboot) only.
  *
  * For an immediate stop use pnpm agent:kill.
  */
@@ -77,10 +81,16 @@ let problems = 0;
 
 // Supervision (agent:supervise): an owner stop is never restarted. Written
 // before anything stops, so the supervisor sees it when its runtime exits.
-try {
-  writeStopMarker(logDir(), project, "agent:down");
-} catch (err) {
-  console.error(`agent:down: could not write the stop marker (${err.message}); a supervisor may restart the agent.`);
+// --no-stop-marker: only the supervisor's system stop (SIGTERM from systemd at
+// shutdown/reboot) uses it, so the agent resumes at the next boot.
+if (args.includes("--no-stop-marker")) {
+  console.log("agent:down: system stop: no stop marker (the next supervised start resumes the agent).");
+} else {
+  try {
+    writeStopMarker(logDir(), project, "agent:down");
+  } catch (err) {
+    console.error(`agent:down: could not write the stop marker (${err.message}); a supervisor may restart the agent.`);
+  }
 }
 
 // 0. Logs of interactive (--rm) runtimes now: they vanish when they stop.

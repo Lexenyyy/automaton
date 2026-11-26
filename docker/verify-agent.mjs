@@ -18,6 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_PROJECT, SERVICE_IMAGES, gitBuildCommit, imageCommit, warnStaleRuntimes } from "./agent-instances.mjs";
+import { bootAt } from "./supervise-policy.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT = "automaton-verify";
@@ -33,6 +34,16 @@ fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
 // Fork (Phase 3): the template requires an encrypted wallet; fake passphrase for the throwaway wallet.
 const fakeWalletPassphrase = `verify-fake-passphrase-${crypto.randomBytes(16).toString("hex")}`;
 fs.writeFileSync(path.join(secretsDir, "wallet_passphrase"), fakeWalletPassphrase + "\n");
+// Linux host (VPS): the bind-mounted folder keeps host permissions, and mkdtemp
+// makes it 0700 for the host user, so the runtime (uid 10001) could not read the
+// fake secrets. They are throwaway values; make them readable. Docker Desktop
+// (Windows) ignores these permissions.
+function openFakeSecretsOnLinux() {
+  if (process.platform === "win32") return;
+  fs.chmodSync(secretsDir, 0o755);
+  for (const f of fs.readdirSync(secretsDir)) fs.chmodSync(path.join(secretsDir, f), 0o644);
+}
+openFakeSecretsOnLinux();
 
 const VERIFY_CREATOR = "0x000000000000000000000000000000000000dEaD";
 const BUILD_COMMIT = gitBuildCommit(ROOT);
@@ -341,6 +352,7 @@ try {
   fs.writeFileSync(path.join(secretsDir, "groq_api_key"), fakeSecret + "\n");
 fs.writeFileSync(path.join(secretsDir, "openai_api_key"), fakeOpenAiKey + "\n");
   fs.writeFileSync(path.join(secretsDir, "wallet_passphrase"), fakeWalletPassphrase + "\n");
+  openFakeSecretsOnLinux();
 
   console.log("agent:verify: starting the sandbox ...");
   docker([...COMPOSE, "up", "-d", "--wait", "sandbox"], { allowFail: false });
@@ -906,7 +918,7 @@ db.close();`], { allowFail: false });
   check(SV, "agent:kill writes the stop marker too", k2.status === 0 && stopMarkerNow()?.by === "agent:kill", JSON.stringify(stopMarkerNow()));
   // The watchdog and a supervisor's state file (this process stands in for a live supervisor).
   const stateFile = path.join(logsDir, `supervise-${PROJECT}.json`);
-  const writeState = (s) => fs.writeFileSync(stateFile, JSON.stringify({ pid: process.pid, project: PROJECT, updatedAt: new Date().toISOString(),
+  const writeState = (s) => fs.writeFileSync(stateFile, JSON.stringify({ pid: process.pid, bootAt: bootAt(os.uptime()), project: PROJECT, updatedAt: new Date().toISOString(),
     settings: { maxRestarts: 3, windowMinutes: 60, restartDelaySeconds: 120 }, restarts: [new Date().toISOString()], ...s }));
   writeState({ state: "waiting", reason: "runtime crashed (exit 137); restart 1 of 3 in 60 min, in 120 s", nextStartAt: new Date(Date.now() + 120_000).toISOString() });
   const sw1 = watch(["--once"]);
@@ -928,6 +940,54 @@ db.close();`], { allowFail: false });
   check(SV, "watchdog: a supervisor that gave up is a stop (exit 2), with its reason",
     swCode === 2 && swOut.includes("STOP: the supervisor gave up: runtime crashed (exit 1) after 3 restart(s)"), swOut.trim().slice(-800));
   fs.rmSync(stateFile, { force: true });
+
+  // ─── reboots and the VPS (systemd) ───────────────────────────
+  // systemd stops the supervisor with SIGTERM at shutdown/reboot: agent:down
+  // --no-stop-marker, so the agent resumes at boot. An owner stop keeps the marker.
+  console.log("agent:verify: reboot and VPS rules ...");
+  const RB = "reboot and VPS";
+  fs.rmSync(markerFile, { force: true });
+  standIn(`${PROJECT}-sysstop`, KEEP);
+  const d3 = down(["--no-stop-marker"]);
+  check(RB, "a system stop (agent:down --no-stop-marker, used on SIGTERM) stops the runtime but writes no stop marker",
+    d3.status === 0 && d3.stdout.includes("system stop: no stop marker") && stopMarkerNow() === null && projectContainers() === "",
+    (d3.stdout + d3.stderr).trim());
+  const s5 = supervise(["--restart-delay", "90"]);
+  check(RB, "after a system stop nothing blocks the next start (no marker; settings still checked first)",
+    s5.status === 2 && !s5.stderr.includes("not starting it"), (s5.stdout + s5.stderr).trim());
+  fs.writeFileSync(markerFile, JSON.stringify({ by: "agent:down", at: new Date().toISOString() }));
+  const r1 = spawnSync(process.execPath, [superviseScript, "--project", PROJECT, "--clear-stop"], { encoding: "utf-8", env, timeout: 60_000 });
+  check(RB, "agent:resume (--clear-stop) clears an owner stop and starts nothing",
+    r1.status === 0 && r1.stdout.includes("cleared the stop marker") && stopMarkerNow() === null && projectContainers() === "", (r1.stdout + r1.stderr).trim());
+  const wu1 = watch(["--until", "not-a-time"]);
+  check(RB, "watchdog --until must be a time (exit 2)", wu1.status === 2 && wu1.stderr.includes("--until must be an ISO time"), (wu1.stdout + wu1.stderr).trim());
+  const wu2 = watch(["--until", "2026-01-01T00:00:00Z"]);
+  check(RB, "watchdog --until already past (restart after the run's end): the run is complete, agent stopped (exit 0)",
+    wu2.status === 0 && wu2.stdout.includes("DONE: run complete at 2026-01-01T00:00:00.000Z"), (wu2.stdout + wu2.stderr).trim());
+
+  // Secrets on a Linux host: the runtime (uid/gid 10001) reads them through the
+  // bind mount with the host's permissions. Unreadable = clear refusal (exit 78),
+  // never the value; root:10001 0750/0640 (the VPS layout) works.
+  const SVOL = `${PROJECT}-secrets-perm`;
+  const fakeKey = `verify-perm-${crypto.randomBytes(8).toString("hex")}`;
+  docker(["volume", "rm", "-f", SVOL]);
+  const asRoot = (cmd) => docker(["run", "--rm", "--user", "0", "--entrypoint", "sh", "-v", `${SVOL}:/s`, SERVICE_IMAGES.runtime, "-c", cmd]);
+  asRoot(`printf '%s' '${fakeKey}' > /s/openai_api_key && chown 0:0 /s /s/openai_api_key && chmod 700 /s && chmod 600 /s/openai_api_key`);
+  const runVersion = () => docker(["run", "--rm", "-v", `${SVOL}:/run/secrets/automaton:ro`, SERVICE_IMAGES.runtime, "--version"]);
+  const p0 = runVersion();
+  check(RB, "a secrets folder the runtime cannot enter (0700, host user): clear refusal with the fix (exit 78), value never printed",
+    p0.code === 78 && p0.err.includes("the secrets folder is not readable by the runtime") && p0.err.includes("chown -R root:10001") &&
+      !(p0.out + p0.err).includes(fakeKey), (p0.out + p0.err).trim().slice(0, 400));
+  asRoot("chown 0:10001 /s && chmod 750 /s"); // folder fixed, the file still root-only (0600)
+  const p1 = runVersion();
+  check(RB, "a secret file the runtime cannot read: clear refusal naming the file (exit 78), value never printed",
+    p1.code === 78 && p1.err.includes("secret file openai_api_key is not readable by the runtime") &&
+      !(p1.out + p1.err).includes(fakeKey), (p1.out + p1.err).trim().slice(0, 400));
+  asRoot("chown 0:10001 /s /s/openai_api_key && chmod 750 /s && chmod 640 /s/openai_api_key");
+  const p2 = runVersion();
+  check(RB, "the VPS layout (root:10001, folder 0750, files 0640) is readable by the runtime",
+    p2.code === 0 && !(p2.out + p2.err).includes("not readable") && !(p2.out + p2.err).includes(fakeKey), (p2.out + p2.err).trim().slice(0, 400));
+  docker(["volume", "rm", "-f", SVOL]);
 
   exitCode = results.every((r) => r.ok) ? 0 : 1;
 } catch (err) {

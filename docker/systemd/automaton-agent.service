@@ -1,0 +1,50 @@
+# Automaton agent on the VPS (fork, Phase 2 VPS plan step 2). Testnet only.
+#
+# Starts the supervised agent at boot (docker/supervise-agent.mjs): a crashed
+# runtime is restarted after 120 s, at most 3 times per 60 min.
+#
+# Install (as root, paths as in the VPS setup: user "automaton", repo in its home):
+#   cp docker/systemd/automaton-agent.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now automaton-agent
+#
+# Reboots and stops (owner decision 2026-11-26):
+#   - reboot or shutdown (also the automatic security-update reboot): systemd sends
+#     SIGTERM to the supervisor = system stop: graceful, NO stop marker, so the
+#     agent resumes at the next boot;
+#   - `pnpm agent:down` / `pnpm agent:kill` = owner stop: stop marker, the agent
+#     stays stopped across reboots; this unit then exits 0 at boot without
+#     starting it. Resume (as the automaton user, in the repo):
+#       pnpm agent:resume                     (clears the marker, starts nothing)
+#       sudo systemctl restart automaton-agent
+#   - `systemctl stop automaton-agent` is a system stop too (no marker): the agent
+#     starts again at the next boot unless the unit is disabled
+#     (`systemctl disable --now automaton-agent`).
+
+[Unit]
+Description=Automaton agent (supervised, testnet)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+# The supervisor itself is restarted only if it dies abnormally (signal), at most 3 times an hour.
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=automaton
+Group=automaton
+WorkingDirectory=/home/automaton/automaton
+# AUTOMATON_SECRETS_DIR, AUTOMATON_CREATOR_ADDRESS (no secret values; see automaton.env.example).
+EnvironmentFile=/etc/automaton/automaton.env
+ExecStart=/usr/bin/node docker/supervise-agent.mjs
+# SIGTERM goes to the supervisor only; it stops the runtime itself (agent:down
+# --no-stop-marker, up to ~60 s) and exits after the runtime is gone.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=150
+# Exit 0 (stopped, or a stop marker at boot) and 2 (gave up after crashes) are final.
+Restart=on-abnormal
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

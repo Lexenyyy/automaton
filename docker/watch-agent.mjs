@@ -5,7 +5,11 @@
  *   node docker/watch-agent.mjs [--project <name>] [--hours <h>] [--interval <s>]
  *        [--max-run-cents <c>] [--max-hour-cents <c>] [--max-wake-turns <n>]
  *        [--max-hour-turns <n>] [--max-denials <n>] [--max-offline-wakes <n>]
- *        [--since <ISO time>] [--once] [--allow-tiers low_compute,critical,dead]
+ *        [--since <ISO time>] [--until <ISO time>] [--once] [--allow-tiers low_compute,critical,dead]
+ *
+ * --until: stop the agent at that time (instead of --hours from this start), so
+ * a watchdog restarted after a reboot (systemd) keeps the run's end; if it has
+ * already passed, the agent is stopped at once.
  *
  * Every --interval seconds (default 300) it checks Docker (agent:status logic)
  * and the activity report from state.db (`runtime --activity --json --since
@@ -47,7 +51,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configTemplate, DEFAULT_PROJECT, docker, isValidProject, logDir, runActivity, runningContainers, runningRuntimes } from "./agent-instances.mjs";
-import { pidAlive, readSupervisorState, supervisorRestarting } from "./supervise-policy.mjs";
+import os from "node:os";
+import { bootAt, readSupervisorState, supervisorProcessAlive, supervisorRestarting } from "./supervise-policy.mjs";
 
 const WHO = "agent:watch";
 const args = process.argv.slice(2);
@@ -114,7 +119,21 @@ if (sinceOpt !== undefined && !Number.isFinite(Date.parse(sinceOpt))) {
   console.error(`${WHO}: --since must be an ISO time, e.g. 2026-11-16T20:00:00Z`);
   process.exit(2);
 }
+// --until (VPS, systemd): stop the agent at a fixed time instead of after --hours
+// from this start, so a watchdog restarted after a reboot keeps the run's end.
+const untilOpt = opt("--until");
+if (untilOpt !== undefined && !Number.isFinite(Date.parse(untilOpt))) {
+  console.error(`${WHO}: --until must be an ISO time, e.g. 2026-11-30T12:00:00Z`);
+  process.exit(2);
+}
+if (untilOpt !== undefined && limits.hours) {
+  console.error(`${WHO}: use --hours or --until, not both`);
+  process.exit(2);
+}
+const BOOT_AT = bootAt(os.uptime());
 const started = new Date();
+// The run's end (ms), or null: --hours counts from now, --until is fixed.
+const endsAt = untilOpt !== undefined ? Date.parse(untilOpt) : limits.hours ? started.getTime() + limits.hours * 3_600_000 : null;
 const startIso = sinceOpt ? new Date(sinceOpt).toISOString() : started.toISOString();
 const countFrom = new Date(startIso).getTime();
 fs.mkdirSync(logDir(), { recursive: true });
@@ -179,7 +198,7 @@ function check() {
   // Supervision (agent:supervise): a crash it is about to restart is not a stop;
   // a supervisor that gave up is. Every restart is shown on the check line.
   const sup = readSupervisorState(logDir(), project);
-  const supAlive = sup ? pidAlive(sup.pid) : false;
+  const supAlive = supervisorProcessAlive(sup, BOOT_AT);
   if (runtimes.length === 0) {
     if (sup?.state === "gave_up") return `the supervisor gave up: ${sup.reason ?? "?"}`;
     if (supervisorRestarting(sup, Date.now(), supAlive)) {
@@ -282,7 +301,7 @@ function check() {
 }
 
 out(
-  `${WHO}: watching project "${project}" ${limits.hours ? `for ${limits.hours} h` : "until stopped"}, every ${limits.intervalS} s. ` +
+  `${WHO}: watching project "${project}" ${limits.hours ? `for ${limits.hours} h` : untilOpt !== undefined ? `until ${new Date(endsAt).toISOString()}` : "until stopped"}, every ${limits.intervalS} s. ` +
     `Limits: run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c, ${limits.maxWakeTurns} turns/wake, ` +
     `${limits.maxHourTurns} turns/hour, ${limits.maxDenials} denials/tool, ${limits.maxOfflineWakes} offline wakes; ` +
     `counting from ${startIso}. Config template: ${configTemplate().value ?? "invalid"}. Log: ${logFile}`,
@@ -294,9 +313,11 @@ if (allowTiers.size > 0) {
     `money caps (run ${limits.maxRunCents}c, hour ${limits.maxHourCents}c), turns per wake/hour, policy denials, forced wake ends, model unavailable, ` +
     `offline wakes, non-inference ledger entries, runtime count and old-image (build) checks.`);
 }
+// --until already passed (e.g. the watchdog restarts at boot after the run's end): the run is over.
+if (untilOpt !== undefined && Date.now() >= endsAt) stopAgent(`run complete at ${new Date(endsAt).toISOString()}`, 0);
 if (runningRuntimes(project, WHO).length === 0) {
   const sup0 = readSupervisorState(logDir(), project);
-  if (!supervisorRestarting(sup0, Date.now(), sup0 ? pidAlive(sup0.pid) : false)) {
+  if (!supervisorRestarting(sup0, Date.now(), supervisorProcessAlive(sup0, BOOT_AT))) {
     out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);
     process.exit(1);
   }
@@ -314,9 +335,9 @@ for (;;) {
     out(`${WHO}: --once: all checks passed.`);
     process.exit(0);
   }
-  if (limits.hours && Date.now() - started.getTime() >= limits.hours * 3_600_000) {
-    stopAgent(`run complete after ${limits.hours} h`, 0);
+  if (endsAt !== null && Date.now() >= endsAt) {
+    stopAgent(limits.hours ? `run complete after ${limits.hours} h` : `run complete at ${new Date(endsAt).toISOString()}`, 0);
   }
-  const untilEnd = limits.hours ? started.getTime() + limits.hours * 3_600_000 - Date.now() : Infinity;
+  const untilEnd = endsAt !== null ? endsAt - Date.now() : Infinity;
   await new Promise((r) => setTimeout(r, Math.max(1000, Math.min(limits.intervalS * 1000, untilEnd))));
 }

@@ -1,0 +1,40 @@
+# Watchdog for one unattended run on the VPS (fork, Phase 2 VPS plan step 2).
+#
+# Enable it only for a run; it survives reboots and keeps the run's end time
+# (--until), so an automatic security-update reboot does not restart the count.
+#
+#   1. Set the run in /etc/automaton/watch.env (see automaton.env.example):
+#        AUTOMATON_WATCH_SINCE=2026-12-01T12:00:00Z
+#        AUTOMATON_WATCH_UNTIL=2026-12-04T12:00:00Z
+#        AUTOMATON_WATCH_MAX_RUN_CENTS=20
+#   2. cp docker/systemd/automaton-watch.service /etc/systemd/system/
+#      systemctl daemon-reload && systemctl enable --now automaton-watch
+#   3. After the run: systemctl disable automaton-watch
+#
+# Exit 0 = run complete, 2 = a stop rule tripped: both run agent:down (stop
+# marker: the agent stays stopped) and are final. Exit 1 (e.g. "nothing to
+# watch" at boot before the supervisor has started the runtime) is retried.
+# Its log: ~/.automaton-logs/watch-<project>-<start>.log and the journal.
+
+[Unit]
+Description=Automaton watchdog (one run, until AUTOMATON_WATCH_UNTIL)
+Requires=docker.service
+After=docker.service automaton-agent.service
+StartLimitIntervalSec=3600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=automaton
+Group=automaton
+WorkingDirectory=/home/automaton/automaton
+EnvironmentFile=/etc/automaton/automaton.env
+EnvironmentFile=/etc/automaton/watch.env
+ExecStart=/usr/bin/node docker/watch-agent.mjs --since ${AUTOMATON_WATCH_SINCE} --until ${AUTOMATON_WATCH_UNTIL} --max-run-cents ${AUTOMATON_WATCH_MAX_RUN_CENTS}
+Restart=on-failure
+RestartSec=60
+RestartPreventExitStatus=2
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

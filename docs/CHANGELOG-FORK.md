@@ -1405,3 +1405,28 @@
   exits, 4th crash in the window gives up, old restarts expire, marker and state files, watchdog freshness).
   `agent:verify` +9 (marker by down and kill, refusals, watchdog with waiting / stale / gave-up supervisor state).
   Baselines: Linux 2230 passed; Windows 2198 passed, 22 known failures, 10 skipped; `agent:verify` 191.
+- 2026-11-26: **VPS plan step 2: systemd units, reboot rules, Linux host fixes.**
+  - Reboots (owner decision): a reboot or shutdown resumes the agent at boot; an owner stop does not.
+    `supervise-agent.mjs`: SIGTERM/SIGHUP (systemd) = system stop, `agent:down --no-stop-marker`; Ctrl+C = owner stop
+    (marker). New `pnpm agent:resume` (`--clear-stop`: clears an owner stop, starts nothing). The supervisor state
+    records the boot time, so a pid reused after a hard power-off is not taken for a live supervisor (the boot-time
+    supervisor would otherwise refuse to start).
+  - `docker/systemd/`: `automaton-agent.service` (boot start after Docker, user `automaton`, `KillMode=mixed` so only
+    the supervisor gets SIGTERM and stops the runtime itself, `TimeoutStopSec=150`, `Restart=on-abnormal`: exit 0 and
+    2 are final), `automaton-watch.service` (one run's watchdog, `--since`/`--until` from `/etc/automaton/watch.env`,
+    restarted on exit 1, final on 0/2), `automaton.env.example`, `52automaton-unattended-reboot`.
+    `.gitattributes` keeps them LF.
+  - Automatic security updates: Ubuntu's unattended-upgrades installs them but by default never reboots, so a new
+    kernel would wait forever. The apt file turns on reboot-when-required at a fixed 04:30 UTC; the agent survives it
+    (system stop, resume at boot).
+  - Watchdog `--until <ISO>` (fixed end, kept across reboots; already past = run complete at once; not with --hours).
+  - Linux host findings: (1) the runtime (uid/gid 10001) reads the secrets through the bind mount with host
+    permissions; a 0700 folder made every key look missing. `load-secrets.sh` now refuses (exit 78) when the folder or
+    a present file is unreadable, naming the file and the fix, never the value. VPS layout: `root:10001`, 0750/0640.
+    (2) `agent:verify`'s temporary fake secrets were 0700 on a Linux host; now made readable there. No other host
+    path is bind-mounted except the config template (0644 in a checkout).
+  Not tested here: real systemd, reboots and a real crash restart (no VPS yet, no real --run in verify): owner tests
+  in plan step 5. Tests: `supervise-policy` +7 (signal rule, boot-time check, static checks of both units, the apt
+  file and the env example). `agent:verify` +8 (system stop leaves no marker, `agent:resume`, `--until`, secrets
+  folder/file unreadable = exit 78 without the value, the VPS layout readable).
+  Baselines: Linux 2237 passed; Windows 2205 passed, 22 known failures, 10 skipped; `agent:verify` 199.

@@ -36,9 +36,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after supervision: 2230 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after the systemd/Linux host step: 2237 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2198 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2205 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -46,7 +46,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (191 checks after supervision).
+  (199 checks after the systemd/Linux host step).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -183,9 +183,18 @@ Two containers from `docker/compose.agent.yml`, testnet only:
     must expire), at most 3 restarts per 60 min; one more crash, or a lost lease (exit 3), and it gives up (exit 2,
     agent stays stopped). `agent:down` and `agent:kill` first write a stop marker (`~/.automaton-logs/stop-<project>.json`),
     so an owner stop is never restarted; while the marker exists the supervisor refuses to start (exit 0) until
-    `--resume`. Ctrl+C/SIGTERM = `agent:down`. Restarts honour a pending sleep. Log
-    `~/.automaton-logs/supervise-<project>-<start>.log`, state `supervise-<project>.json` (read by the watchdog).
-  - `agent:watch [--hours H]`: watchdog for unattended runs. Checks every 5 min (Docker + `--activity
+    `--resume`, or `pnpm agent:resume` (clears it, starts nothing). Ctrl+C (SIGINT) = owner stop (`agent:down`, marker);
+    SIGTERM/SIGHUP (systemd: service stop, shutdown, reboot) = system stop (`agent:down --no-stop-marker`), so the
+    agent resumes at the next boot (owner decision 2026-11-26). Restarts honour a pending sleep. Log
+    `~/.automaton-logs/supervise-<project>-<start>.log`, state `supervise-<project>.json` (with the boot time, so a
+    pid reused after a reboot is not taken for a live supervisor; read by the watchdog).
+  - VPS (`docker/systemd/`): `automaton-agent.service` (supervisor at boot, user `automaton`, `KillMode=mixed`,
+    `Restart=on-abnormal`), `automaton-watch.service` (one run's watchdog with `--since`/`--until` from
+    `/etc/automaton/watch.env`, survives reboots), `automaton.env.example` (`/etc/automaton/automaton.env`: secrets
+    folder and creator address, no secret values), `52automaton-unattended-reboot` (security updates reboot only when
+    needed, at 04:30 UTC; the Ubuntu default never reboots). Linux secrets folder: `root:10001`, folder 0750, files
+    0640; the runtime refuses to start (exit 78, names the file, never the value) when it cannot read the folder or a file.
+  - `agent:watch [--hours H | --until <ISO>]`: watchdog for unattended runs (`--until`: fixed end, kept across reboots). Checks every 5 min (Docker + `--activity
     --json --since <start>`); on a stop rule it runs `agent:down` and exits 2; after `--hours` it stops the
     agent and exits 0. Default rules: no/several/old-image runtime; spend > 5¢ since start or > 3¢ in an hour;
     > 6 turns in a wake or > 20 in an hour; a forced wake end; 3 policy denials of one tool; tier low_compute,
