@@ -14,7 +14,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { saveRuntimeLogs } from "./agent-instances.mjs";
+import { logDir, saveRuntimeLogs } from "./agent-instances.mjs";
+import { writeStopMarker } from "./supervise-policy.mjs";
 
 const args = process.argv.slice(2);
 const projectIndex = args.indexOf("--project");
@@ -40,6 +41,13 @@ const ids = (all) => {
 };
 
 const started = Date.now();
+// Supervision (agent:supervise): a kill is an owner stop, never restarted.
+// Written before the kill, so the supervisor sees it when its runtime dies.
+try {
+  writeStopMarker(logDir(), project, "agent:kill");
+} catch (err) {
+  console.error(`agent:kill: could not write the stop marker (${err.message}); a supervisor may restart the agent.`);
+}
 // Logs of interactive (--rm) runtimes first (they vanish when killed); the
 // kept (detached) ones after the kill. Saving takes well under a second.
 saveRuntimeLogs(project, "agent:kill", "autoRemove");

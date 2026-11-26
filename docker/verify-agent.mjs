@@ -11,7 +11,7 @@
  * extra is baked into the images.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -877,6 +877,57 @@ db.close();`], { allowFail: false });
   const d2 = down(["--timeout", "3"]);
   check("down command", "a runtime that ignores SIGTERM is force-stopped at the timeout and reported (exit 1)",
     d2.status === 1 && d2.stderr.includes("was force-stopped (exit 137)") && projectContainers() === "", (d2.stdout + d2.stderr).trim());
+
+  // ─── supervision (pnpm agent:supervise) ──────────────────────
+  // No real --run here (rule 6): refusals, the stop marker written by down/kill,
+  // and how the watchdog reads the supervisor's state. The crash → restart path
+  // is unit-tested (supervise-policy.test.ts) and tested by the owner on a real run.
+  console.log("agent:verify: supervision ...");
+  const SV = "supervision";
+  const superviseScript = path.join(ROOT, "docker", "supervise-agent.mjs");
+  const supervise = (extra) => spawnSync(process.execPath, [superviseScript, "--project", PROJECT, ...extra], { encoding: "utf-8", env, timeout: 60_000 });
+  const markerFile = path.join(logsDir, `stop-${PROJECT}.json`);
+  const stopMarkerNow = () => { try { return JSON.parse(fs.readFileSync(markerFile, "utf-8")); } catch { return null; } };
+  check(SV, "agent:down writes the stop marker (a supervisor never restarts an owner stop)", stopMarkerNow()?.by === "agent:down", JSON.stringify(stopMarkerNow()));
+  const s1 = supervise([]);
+  check(SV, "agent:supervise refuses to start while the owner's stop marker exists (exit 0, nothing started)",
+    s1.status === 0 && s1.stderr.includes("not starting it") && s1.stderr.includes("--resume") && projectContainers() === "", (s1.stdout + s1.stderr).trim());
+  const s2 = supervise(["--restart-delay", "90"]);
+  check(SV, "a restart delay shorter than the runtime lease (100 s minimum) is refused (exit 2)",
+    s2.status === 2 && s2.stderr.includes("--restart-delay must be a whole number from 100"), (s2.stdout + s2.stderr).trim());
+  const s3 = supervise(["--", "--init"]);
+  check(SV, "only --wake-now is passed to the first start (exit 2)", s3.status === 2 && s3.stderr.includes("only --wake-now"), (s3.stdout + s3.stderr).trim());
+  standIn(`${PROJECT}-sv-running`, KEEP);
+  const s4 = supervise(["--resume"]);
+  check(SV, "with a runtime already running it refuses (exit 1), starts nothing and keeps the stop marker",
+    s4.status === 1 && s4.stderr.includes("already running") && runtimeIds("running").split(/\s+/).filter(Boolean).length === 1 &&
+      stopMarkerNow()?.by === "agent:down", (s4.stdout + s4.stderr).trim());
+  const k2 = spawnSync(process.execPath, [killScript, "--project", PROJECT], { encoding: "utf-8", env, timeout: 60_000 });
+  check(SV, "agent:kill writes the stop marker too", k2.status === 0 && stopMarkerNow()?.by === "agent:kill", JSON.stringify(stopMarkerNow()));
+  // The watchdog and a supervisor's state file (this process stands in for a live supervisor).
+  const stateFile = path.join(logsDir, `supervise-${PROJECT}.json`);
+  const writeState = (s) => fs.writeFileSync(stateFile, JSON.stringify({ pid: process.pid, project: PROJECT, updatedAt: new Date().toISOString(),
+    settings: { maxRestarts: 3, windowMinutes: 60, restartDelaySeconds: 120 }, restarts: [new Date().toISOString()], ...s }));
+  writeState({ state: "waiting", reason: "runtime crashed (exit 137); restart 1 of 3 in 60 min, in 120 s", nextStartAt: new Date(Date.now() + 120_000).toISOString() });
+  const sw1 = watch(["--once"]);
+  check(SV, "watchdog: no runtime while a live supervisor waits to restart it is reported, not a stop",
+    sw1.status === 0 && sw1.stdout.includes("the supervisor restarts it") && sw1.stdout.includes("all checks passed"), (sw1.stdout + sw1.stderr).trim());
+  writeState({ state: "waiting", updatedAt: new Date(Date.now() - 3_600_000).toISOString() }); // stale: supervisor gone quiet
+  const sw2 = watch(["--once"]);
+  check(SV, "watchdog: a stale supervisor state does not excuse a missing runtime (nothing to watch, exit 1)",
+    sw2.status === 1 && sw2.stdout.includes("nothing to watch"), (sw2.stdout + sw2.stderr).trim());
+  writeState({ state: "waiting", reason: "restart pending", nextStartAt: new Date(Date.now() + 120_000).toISOString() });
+  const swRun = spawn(process.execPath, [watchScript, "--project", PROJECT, "--interval", "10"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let swOut = "";
+  swRun.stdout.on("data", (d) => (swOut += d));
+  const swExit = new Promise((r) => swRun.on("close", (c) => r(c)));
+  await new Promise((r) => setTimeout(r, 3000));
+  writeState({ state: "gave_up", reason: "runtime crashed (exit 1) after 3 restart(s) in the last 60 min (limit 3)" });
+  const swCode = await Promise.race([swExit, new Promise((r) => setTimeout(() => r("timeout"), 90_000))]);
+  if (swCode === "timeout") swRun.kill();
+  check(SV, "watchdog: a supervisor that gave up is a stop (exit 2), with its reason",
+    swCode === 2 && swOut.includes("STOP: the supervisor gave up: runtime crashed (exit 1) after 3 restart(s)"), swOut.trim().slice(-800));
+  fs.rmSync(stateFile, { force: true });
 
   exitCode = results.every((r) => r.ok) ? 0 : 1;
 } catch (err) {

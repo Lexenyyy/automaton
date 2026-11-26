@@ -36,9 +36,9 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
 - Keep changes small and focused; one concern per commit.
 - After changing code: `pnpm build` and `pnpm test` (vitest) must pass.
   **Main baseline: Linux in Docker.** Run `pnpm test:linux` (Docker Desktop must be running). It runs
-  `pnpm build` and the full suite in a Linux container. Baseline after the extra-wake fix: 2220 passed, 0 failed. Any failure there is a regression.
+  `pnpm build` and the full suite in a Linux container. Baseline after supervision: 2230 passed, 0 failed. Any failure there is a regression.
   **Secondary check: Windows.** `pnpm build` passes, and the full suite
-  (`npx vitest run --exclude "**/node_modules/**"`) shows 2188 passed, 22 failed and 10 skipped.
+  (`npx vitest run --exclude "**/node_modules/**"`) shows 2198 passed, 22 failed and 10 skipped.
   The 22 are Windows-only path failures that pass on Linux: `skills-hardening` (12),
   `command-injection` (5), `tools-security` (3), `path-protection` (1),
   `orchestration/local-worker-harness` (1). The 10 skipped are Linux-only: 8 sandbox tests (Unix
@@ -46,7 +46,7 @@ running on the owner's own infrastructure (own VPS, own model API keys), not onl
   Windows failure is a regression.
 - After changing anything the sandbox or Docker setup depends on (`src/sandbox/`, `src/conway/client.ts`,
   harnesses, skills, `src/conway/`, `src/runtime/`, `docker/`): `pnpm agent:verify` must also pass
-  (182 checks after model fix 3/3).
+  (191 checks after supervision).
 - Record notable changes and decisions in `docs/CHANGELOG-FORK.md`.
 - Environment: Windows + PowerShell. Use PowerShell-compatible commands.
 
@@ -177,13 +177,22 @@ Two containers from `docker/compose.agent.yml`, testnet only:
   - `agent:status`: running runtime containers (any terminal, with uptime), sandbox, and the activity
     report from state.db (runtime `--activity`, run as a label-free no-network `docker run`: state, tier,
     last turn, turns and inference spend last hour/today, sleep, budget pause). Changes nothing.
+  - `agent:supervise [--max-restarts 3] [--window-minutes 60] [--restart-delay 120] [--resume] [-- --wake-now]`
+    (`docker/supervise-agent.mjs`, rules in `docker/supervise-policy.mjs`): runs the agent like `agent:run` and
+    restarts it after a crash (any exit except 0) after the delay (at least 100 s: the crashed runtime's 90 s lease
+    must expire), at most 3 restarts per 60 min; one more crash, or a lost lease (exit 3), and it gives up (exit 2,
+    agent stays stopped). `agent:down` and `agent:kill` first write a stop marker (`~/.automaton-logs/stop-<project>.json`),
+    so an owner stop is never restarted; while the marker exists the supervisor refuses to start (exit 0) until
+    `--resume`. Ctrl+C/SIGTERM = `agent:down`. Restarts honour a pending sleep. Log
+    `~/.automaton-logs/supervise-<project>-<start>.log`, state `supervise-<project>.json` (read by the watchdog).
   - `agent:watch [--hours H]`: watchdog for unattended runs. Checks every 5 min (Docker + `--activity
     --json --since <start>`); on a stop rule it runs `agent:down` and exits 2; after `--hours` it stops the
     agent and exits 0. Default rules: no/several/old-image runtime; spend > 5¢ since start or > 3¢ in an hour;
     > 6 turns in a wake or > 20 in an hour; a forced wake end; 3 policy denials of one tool; tier low_compute,
     critical or dead ("high" does not stop it);
     any non-inference ledger entry; more than 4 offline wakes in a row (one offline wake is not a stop); a model
-    unavailable stop (`MODEL UNAVAILABLE: …` printed first, also with `--allow-tiers`). Each check line
+    unavailable stop (`MODEL UNAVAILABLE: …` printed first, also with `--allow-tiers`); a supervisor that gave up.
+    No runtime while a live supervisor is restarting it is reported, not a stop. Each check line
     also records runtime/sandbox memory and CPU (`docker stats`), the last line the peaks (never a stop rule).
     `--allow-tiers low_compute,critical,dead` (tier walk only; real tier names only, else exit 2) skips just those tier
     stops, prints a start banner, and leaves every other rule on. Log: `~/.automaton-logs/watch-*.log`. Ctrl+C stops only the watchdog.

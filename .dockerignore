@@ -14,6 +14,8 @@
 !scripts/
 !docker/runtime-entrypoint.sh
 !docker/load-secrets.sh
+# Supervision rules (pure module): unit-tested in src/__tests__/supervise-policy.test.ts.
+!docker/supervise-policy.mjs
 # Config template (no secrets; creatorAddress empty): tests check its limits. Not copied into the agent images.
 !docker/automaton.testnet.json
 !docker/automaton.paytest.json

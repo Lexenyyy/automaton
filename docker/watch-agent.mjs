@@ -16,7 +16,10 @@
  * ~/.automaton-logs/watch-<project>-<start>.log (AUTOMATON_LOG_DIR).
  *
  * Stop rules (defaults sit below the code caps, so the watchdog acts first):
- *   - no runtime running (exited or stopped), more than one, or an OLD IMAGE
+ *   - no runtime running (exited or stopped), more than one, or an OLD IMAGE.
+ *     Under agent:supervise: no runtime while the supervisor is restarting it
+ *     after a crash is reported but not a stop; a supervisor that gave up is.
+ *     Check lines show "supervised, N restart(s)".
  *   - inference spend since the watch started  > --max-run-cents  (default 5)
  *   - inference spend in the last hour         > --max-hour-cents (default 3)
  *   - turns in one wake (started after the watch) > --max-wake-turns (default 6)
@@ -44,6 +47,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configTemplate, DEFAULT_PROJECT, docker, isValidProject, logDir, runActivity, runningContainers, runningRuntimes } from "./agent-instances.mjs";
+import { pidAlive, readSupervisorState, supervisorRestarting } from "./supervise-policy.mjs";
 
 const WHO = "agent:watch";
 const args = process.argv.slice(2);
@@ -172,7 +176,24 @@ let activityFailures = 0;
 /** One check. Returns a reason to stop, or null. */
 function check() {
   const runtimes = runningRuntimes(project, WHO);
-  if (runtimes.length === 0) return "no runtime is running (it exited or was stopped)";
+  // Supervision (agent:supervise): a crash it is about to restart is not a stop;
+  // a supervisor that gave up is. Every restart is shown on the check line.
+  const sup = readSupervisorState(logDir(), project);
+  const supAlive = sup ? pidAlive(sup.pid) : false;
+  if (runtimes.length === 0) {
+    if (sup?.state === "gave_up") return `the supervisor gave up: ${sup.reason ?? "?"}`;
+    if (supervisorRestarting(sup, Date.now(), supAlive)) {
+      out(
+        `check: no runtime right now: the supervisor restarts it (${sup.reason ?? sup.state}` +
+          `${sup.nextStartAt ? `, next start ${sup.nextStartAt}` : ""}). Not a stop.`,
+      );
+      return null;
+    }
+    return "no runtime is running (it exited or was stopped)";
+  }
+  const supText = sup && supAlive && ["running", "waiting"].includes(sup.state)
+    ? ` | supervised, ${sup.restarts?.length ?? 0} restart(s)${sup.restarts?.length ? `, last ${sup.restarts.at(-1)}` : ""}`
+    : "";
   if (runtimes.length > 1) return `${runtimes.length} runtimes are running: ${runtimes.map((c) => c.name).join(", ")}`;
   if (runtimes[0].stale) return `${runtimes[0].name} runs an OLD IMAGE (build ${runtimes[0].commit})`;
 
@@ -209,6 +230,7 @@ function check() {
       `since start: ${s.turns} turns, ${cents(s.spendMc)}c | last hour: ${hourTurns} turns, ${cents(hourSpendMc)}c | ` +
       `this wake: ${a.turnsThisWake} turns | last wake end: ${wakeEnd?.reason ?? "-"}` +
       (a.offlineStreak > 0 ? ` | OFFLINE ${a.offlineStreak} wake(s) in a row` : "") +
+      supText +
       resourceText(runtimes[0].name),
   );
 
@@ -273,8 +295,12 @@ if (allowTiers.size > 0) {
     `offline wakes, non-inference ledger entries, runtime count and old-image (build) checks.`);
 }
 if (runningRuntimes(project, WHO).length === 0) {
-  out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);
-  process.exit(1);
+  const sup0 = readSupervisorState(logDir(), project);
+  if (!supervisorRestarting(sup0, Date.now(), sup0 ? pidAlive(sup0.pid) : false)) {
+    out(`${WHO}: no runtime of project "${project}" is running; nothing to watch. Start it first (pnpm agent:run --detach).`);
+    process.exit(1);
+  }
+  out(`${WHO}: no runtime right now, but the supervisor is restarting it; watching.`);
 }
 process.on("SIGINT", () => {
   out(`${WHO}: watchdog stopped (Ctrl+C). The agent is still running; stop it with pnpm agent:down.`);

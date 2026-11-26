@@ -186,7 +186,7 @@ Done when: runs 72h unattended without crashes or runaway cost; pause/kill work.
         Cloud CX23 (x86, 2 vCPU, 4 GB) with IPv4; the VPS agent starts fresh with its own new wallet (`agent:init`);
         the Windows agent stays as a local test agent (never the same volumes on both). Steps, one commit each where
         code changes, stop for review after each:
-        - [ ] 1. Supervision: `agent:supervise` restarts a crashed runtime after 120 s (longer than the 90 s lease),
+        - [x] 1. Supervision (2026-11-26): `agent:supervise` restarts a crashed runtime after 120 s (longer than the 90 s lease),
               at most 3 times per 60 min, then gives up and leaves it stopped; `agent:down`/`agent:kill` write a stop
               marker so an owner stop is never restarted; the watchdog reports a pending restart (not a stop) and
               stops on a supervisor that gave up.

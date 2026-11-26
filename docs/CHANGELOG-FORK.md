@@ -1385,3 +1385,23 @@
   2 vCPU, 4 GB) with IPv4. The VPS agent starts fresh with its own wallet; the Windows agent stays as a local test
   agent. The steps (supervision, Linux host check and systemd, VPS setup, new agent, 3 h smoke test with a crash
   test, the 72 h run, review) are in the ROADMAP under Phase 2. Docs only.
+- 2026-11-26: **Process supervision with a crash-loop limit: `pnpm agent:supervise`** (Phase 2, VPS plan step 1).
+  - `docker/supervise-agent.mjs` runs the agent like `agent:run` (through run-oneoff: same checks) and waits.
+    After an exit, `docker/supervise-policy.mjs` decides: an owner stop (stop marker) or exit 0 → done (exit 0);
+    lost lease (exit 3) → give up; any other exit is a crash → restart after `--restart-delay` (default 120 s,
+    minimum 100 s, because the crashed runtime's lease lives 90 s), at most `--max-restarts` (3) per
+    `--window-minutes` (60); one more crash → give up (exit 2), the agent stays stopped. Restarts honour a pending
+    sleep; `-- --wake-now` applies to the first start only (no other runtime args accepted). One supervisor per
+    project; it refuses while a runtime runs. Ctrl+C/SIGTERM runs `agent:down`.
+  - `agent:down` and `agent:kill` write a stop marker (`~/.automaton-logs/stop-<project>.json`) before they stop
+    anything, so an owner stop is never restarted. While it exists, the supervisor refuses to start (exit 0) until
+    `--resume` (checked after the "runtime already running" refusal, so a refused start keeps the marker).
+  - Watchdog: no runtime while a live supervisor (pid alive, state fresh) waits to restart it is reported, not a
+    stop; it can also start in that window; a supervisor that gave up is a stop rule; check lines show
+    "supervised, N restart(s)".
+  - Not done here: systemd unit and boot behaviour (plan step 2); the real crash → restart path is tested by the
+    owner on the VPS (step 5), not in `agent:verify` (no real `--run` there, rule 6).
+  Tests: `supervise-policy` (10: defaults and limits, delay > lease, owner stop never restarted, graceful/lease
+  exits, 4th crash in the window gives up, old restarts expire, marker and state files, watchdog freshness).
+  `agent:verify` +9 (marker by down and kill, refusals, watchdog with waiting / stale / gave-up supervisor state).
+  Baselines: Linux 2230 passed; Windows 2198 passed, 22 known failures, 10 skipped; `agent:verify` 191.

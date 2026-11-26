@@ -24,7 +24,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { saveRuntimeLogs } from "./agent-instances.mjs";
+import { logDir, saveRuntimeLogs } from "./agent-instances.mjs";
+import { writeStopMarker } from "./supervise-policy.mjs";
 
 const COMPOSE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "compose.agent.yml");
 
@@ -73,6 +74,14 @@ function exitCodeWhenStopped(id) {
 
 const started = Date.now();
 let problems = 0;
+
+// Supervision (agent:supervise): an owner stop is never restarted. Written
+// before anything stops, so the supervisor sees it when its runtime exits.
+try {
+  writeStopMarker(logDir(), project, "agent:down");
+} catch (err) {
+  console.error(`agent:down: could not write the stop marker (${err.message}); a supervisor may restart the agent.`);
+}
 
 // 0. Logs of interactive (--rm) runtimes now: they vanish when they stop.
 saveRuntimeLogs(project, "agent:down", "autoRemove");

@@ -69,6 +69,7 @@
     "agent:status": "node docker/status-agent.mjs",
     "agent:logs": "node docker/logs-agent.mjs",
     "agent:watch": "node docker/watch-agent.mjs",
+    "agent:supervise": "node docker/supervise-agent.mjs",
     "agent:settings": "node docker/run-oneoff.mjs -- --settings show",
     "agent:settings:reset": "node docker/run-oneoff.mjs -- --settings reset",
     "agent:soul": "node docker/run-oneoff.mjs -- --soul show",
